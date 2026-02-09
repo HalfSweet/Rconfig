@@ -1334,13 +1334,29 @@ mod app {
     assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
 
     let report = analyze_schema(&file);
+    let cycle_diags = report
+        .diagnostics
+        .iter()
+        .filter(|diag| diag.code == "E_CIRCULAR_ACTIVATION")
+        .collect::<Vec<_>>();
     assert!(
-        report
-            .diagnostics
-            .iter()
-            .any(|diag| diag.code == "E_CIRCULAR_ACTIVATION"),
+        !cycle_diags.is_empty(),
         "expected E_CIRCULAR_ACTIVATION, got: {:#?}",
         report.diagnostics
+    );
+    assert!(
+        cycle_diags
+            .iter()
+            .any(|diag| diag.path.as_deref() == Some("app::a")),
+        "expected cycle diagnostic path app::a, got: {:#?}",
+        cycle_diags
+    );
+    assert!(
+        cycle_diags
+            .iter()
+            .any(|diag| diag.path.as_deref() == Some("app::b")),
+        "expected cycle diagnostic path app::b, got: {:#?}",
+        cycle_diags
     );
 }
 

@@ -2144,14 +2144,16 @@ impl<'a> TypeChecker<'a> {
                 let signature = canonical_cycle_signature(&cycle);
                 if reported.insert(signature) {
                     let chain = cycle.join(" -> ");
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            "E_CIRCULAR_ACTIVATION",
-                            format!("activation dependency cycle detected: {}", chain),
-                            self.symbols.option_span(node).unwrap_or_default(),
-                        )
-                        .with_path(node.to_string()),
-                    );
+                    for cycle_node in cycle.iter().take(cycle.len().saturating_sub(1)) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E_CIRCULAR_ACTIVATION",
+                                format!("activation dependency cycle detected: {}", chain),
+                                self.symbols.option_span(cycle_node).unwrap_or_default(),
+                            )
+                            .with_path(cycle_node.clone()),
+                        );
+                    }
                 }
             }
             return;
