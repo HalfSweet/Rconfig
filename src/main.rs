@@ -207,7 +207,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 .map_err(|err| format!("failed to write {}: {err}", out.display()))?;
 
                 if let Some(schema_ir_path) = out_schema_ir.as_deref() {
-                    let schema_ir = render_schema_ir_json(&schema_report.symbols);
+                    let schema_ir = render_schema_ir_json(&schema_report.symbols, &schema_file);
                     fs::write(
                         schema_ir_path,
                         serde_json::to_string_pretty(&schema_ir)
@@ -416,19 +416,32 @@ fn write_diagnostics_json(path: Option<&Path>, diagnostics: &[Diagnostic]) -> Re
     .map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
 
-fn render_schema_ir_json(symbols: &rcfg_lang::SymbolTable) -> serde_json::Value {
+fn render_schema_ir_json(
+    symbols: &rcfg_lang::SymbolTable,
+    schema: &rcfg_lang::File,
+) -> serde_json::Value {
     let mut options = Vec::new();
     let mut enums = Vec::new();
     let mut mods = Vec::new();
+    let doc_sections = collect_doc_sections_index(schema);
 
     let mut symbols_list = symbols.iter().collect::<Vec<_>>();
     symbols_list.sort_by(|(left, _), (right, _)| left.cmp(right));
 
     for (path, info) in symbols_list {
+        let (summary, help) = doc_sections
+            .get(path)
+            .cloned()
+            .unwrap_or((None, None));
+        let entry = serde_json::json!({
+            "path": path,
+            "summary": summary,
+            "help": help,
+        });
         match info.kind {
-            SymbolKind::Option => options.push(serde_json::json!({ "path": path })),
-            SymbolKind::Enum => enums.push(serde_json::json!({ "path": path })),
-            SymbolKind::Mod => mods.push(serde_json::json!({ "path": path })),
+            SymbolKind::Option => options.push(entry),
+            SymbolKind::Enum => enums.push(entry),
+            SymbolKind::Mod => mods.push(entry),
         }
     }
 
@@ -440,6 +453,125 @@ fn render_schema_ir_json(symbols: &rcfg_lang::SymbolTable) -> serde_json::Value 
             "options": options,
         }
     })
+}
+
+fn collect_doc_sections_index(
+    schema: &rcfg_lang::File,
+) -> HashMap<String, (Option<String>, Option<String>)> {
+    let mut out = HashMap::new();
+    let mut scope = Vec::new();
+    collect_item_doc_sections(&schema.items, &mut scope, &mut out);
+    out
+}
+
+fn collect_item_doc_sections(
+    items: &[rcfg_lang::Item],
+    scope: &mut Vec<String>,
+    out: &mut HashMap<String, (Option<String>, Option<String>)>,
+) {
+    for item in items {
+        match item {
+            rcfg_lang::Item::Mod(module) => {
+                let path = scoped_path(scope, &module.name.value);
+                let (summary, help) = split_doc_summary_help(&module.meta.doc);
+                insert_doc_sections(out, path, summary, help);
+
+                scope.push(module.name.value.clone());
+                collect_item_doc_sections(&module.items, scope, out);
+                scope.pop();
+            }
+            rcfg_lang::Item::Enum(enum_decl) => {
+                let path = scoped_path(scope, &enum_decl.name.value);
+                let (summary, help) = split_doc_summary_help(&enum_decl.meta.doc);
+                insert_doc_sections(out, path, summary, help);
+            }
+            rcfg_lang::Item::Option(option) => {
+                let path = scoped_path(scope, &option.name.value);
+                let (summary, help) = split_doc_summary_help(&option.meta.doc);
+                insert_doc_sections(out, path, summary, help);
+            }
+            rcfg_lang::Item::When(when_block) => {
+                collect_item_doc_sections(&when_block.items, scope, out);
+            }
+            rcfg_lang::Item::Match(match_block) => {
+                for case in &match_block.cases {
+                    collect_item_doc_sections(&case.items, scope, out);
+                }
+            }
+            rcfg_lang::Item::Use(_)
+            | rcfg_lang::Item::Require(_)
+            | rcfg_lang::Item::Constraint(_) => {}
+        }
+    }
+}
+
+fn insert_doc_sections(
+    out: &mut HashMap<String, (Option<String>, Option<String>)>,
+    path: String,
+    summary: Option<String>,
+    help: Option<String>,
+) {
+    let entry = out.entry(path).or_insert((None, None));
+    if entry.0.is_none() && summary.is_some() {
+        entry.0 = summary;
+    }
+    if entry.1.is_none() && help.is_some() {
+        entry.1 = help;
+    }
+}
+
+fn split_doc_summary_help(doc: &[rcfg_lang::Spanned<String>]) -> (Option<String>, Option<String>) {
+    let mut summary_lines = Vec::new();
+    let mut help_lines = Vec::new();
+    let mut in_help = false;
+
+    for line in doc.iter().map(|entry| entry.value.trim_end().to_string()) {
+        if !in_help {
+            if line.trim().is_empty() {
+                if !summary_lines.is_empty() {
+                    in_help = true;
+                }
+                continue;
+            }
+            summary_lines.push(line);
+            continue;
+        }
+
+        help_lines.push(line);
+    }
+
+    while help_lines
+        .first()
+        .is_some_and(|line| line.trim().is_empty())
+    {
+        help_lines.remove(0);
+    }
+    while help_lines.last().is_some_and(|line| line.trim().is_empty()) {
+        help_lines.pop();
+    }
+
+    let summary = if summary_lines.is_empty() {
+        None
+    } else {
+        Some(summary_lines.join("
+"))
+    };
+    let help = if help_lines.is_empty() {
+        None
+    } else {
+        Some(help_lines.join("
+"))
+    };
+
+    (summary, help)
+}
+
+fn scoped_path(scope: &[String], name: &str) -> String {
+    if scope.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}::{}", scope.join("::"), name)
+    }
 }
 
 fn render_resolved_json(
