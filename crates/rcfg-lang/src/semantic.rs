@@ -1174,6 +1174,25 @@ impl<'a> TypeChecker<'a> {
             } => {
                 let left_ty = self.infer_expr_type(left, scope, self_ty);
                 let right_ty = self.infer_expr_type(right, scope, self_ty);
+
+                if matches!(
+                    op,
+                    BinaryOp::Eq
+                        | BinaryOp::Ne
+                        | BinaryOp::Lt
+                        | BinaryOp::Le
+                        | BinaryOp::Gt
+                        | BinaryOp::Ge
+                ) && is_untyped_int_literal_expr(left)
+                    && is_untyped_int_literal_expr(right)
+                {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E_UNTYPED_INT_LITERAL",
+                        "integer literal expression requires a typed context",
+                        *span,
+                    ));
+                }
+
                 self.check_binary(*op, &left_ty, &right_ty, *span)
             }
             Expr::InRange { expr, span, .. } => {
@@ -1401,6 +1420,14 @@ fn parse_env_int(raw: &str) -> Option<i128> {
         i128::from_str_radix(hex, 16).ok()
     } else {
         cleaned.parse::<i128>().ok()
+    }
+}
+
+fn is_untyped_int_literal_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Int(_, _) => true,
+        Expr::Group { expr, .. } => is_untyped_int_literal_expr(expr),
+        _ => false,
     }
 }
 

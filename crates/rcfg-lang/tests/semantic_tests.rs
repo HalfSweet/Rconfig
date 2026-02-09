@@ -823,3 +823,24 @@ mod app {
         report.diagnostics
     );
 }
+
+#[test]
+fn reports_untyped_int_literal_without_typed_context() {
+    let src = r#"
+when 1 < 2 {
+  option enabled: bool = false;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_UNTYPED_INT_LITERAL"),
+        "expected E_UNTYPED_INT_LITERAL, got: {:#?}",
+        report.diagnostics
+    );
+}
