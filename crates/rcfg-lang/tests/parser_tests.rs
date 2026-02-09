@@ -105,3 +105,19 @@ fn parses_expression_precedence() {
     };
     assert_eq!(op, &BinaryOp::Or);
 }
+
+#[test]
+fn reports_integer_literal_out_of_range() {
+    let src = r#"
+mod app {
+  option huge: i32 = 170141183460469231731687303715884105728;
+}
+"#;
+    let (_file, diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        diags
+            .iter()
+            .any(|diag| diag.code == "E_INT_LITERAL_OUT_OF_RANGE"),
+        "expected E_INT_LITERAL_OUT_OF_RANGE, got: {diags:#?}"
+    );
+}

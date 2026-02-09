@@ -1147,8 +1147,8 @@ impl Parser {
         let parsed = parse_integer_text(&token.lexeme);
         let Ok(value) = parsed else {
             self.push_error(
-                "E_PARSE_INVALID_LITERAL",
-                format!("invalid integer literal `{}`", token.lexeme),
+                "E_INT_LITERAL_OUT_OF_RANGE",
+                format!("integer literal `{}` is out of range", token.lexeme),
                 token.span,
             );
             return None;
