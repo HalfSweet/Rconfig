@@ -13,5 +13,7 @@ pub use error::{Diagnostic, Severity};
 pub use parser::{
     parse_schema, parse_schema_with_diagnostics, parse_values, parse_values_with_diagnostics,
 };
-pub use semantic::{analyze_schema, SemanticReport, SymbolInfo, SymbolKind, SymbolTable};
+pub use semantic::{
+    analyze_schema, analyze_values, SemanticReport, SymbolInfo, SymbolKind, SymbolTable,
+};
 pub use span::{Span, Spanned};

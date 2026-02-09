@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     BinaryOp, ConstraintItem, Expr, File, InSetElem, Item, MatchBlock, MatchPat, OptionDecl,
-    Path, Type, UnaryOp,
+    Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
 };
 use crate::error::Diagnostic;
 use crate::span::Span;
@@ -152,6 +152,26 @@ impl SymbolTable {
         variants.dedup();
         Some(variants)
     }
+
+    fn enum_owner_of_variant(&self, variant_path: &str) -> Option<&str> {
+        self.enum_variants.get(variant_path).map(String::as_str)
+    }
+
+    fn resolve_option_paths(&self, raw_path: &str) -> Vec<String> {
+        self.option_types
+            .keys()
+            .filter(|candidate| path_matches(candidate, raw_path))
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
+    fn resolve_enum_variant_paths(&self, raw_path: &str) -> Vec<String> {
+        self.enum_variants
+            .keys()
+            .filter(|candidate| path_matches(candidate, raw_path))
+            .cloned()
+            .collect::<Vec<_>>()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -177,6 +197,12 @@ pub fn analyze_schema(file: &File) -> SemanticReport {
         symbols,
         diagnostics,
     }
+}
+
+pub fn analyze_values(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnostic> {
+    let mut checker = ValuesChecker::new(symbols);
+    checker.check(values);
+    checker.diagnostics
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -290,6 +316,163 @@ enum ResolvePathResult {
 struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
     diagnostics: Vec<Diagnostic>,
+}
+
+struct ValuesChecker<'a> {
+    symbols: &'a SymbolTable,
+    diagnostics: Vec<Diagnostic>,
+    aliases: HashMap<String, String>,
+}
+
+impl<'a> ValuesChecker<'a> {
+    fn new(symbols: &'a SymbolTable) -> Self {
+        Self {
+            symbols,
+            diagnostics: Vec::new(),
+            aliases: HashMap::new(),
+        }
+    }
+
+    fn check(&mut self, values: &ValuesFile) {
+        for stmt in &values.stmts {
+            match stmt {
+                ValuesStmt::Include(_) => {}
+                ValuesStmt::Use(use_stmt) => {
+                    self.register_use_alias(use_stmt);
+                }
+                ValuesStmt::Assign(assign) => {
+                    let lhs = self.resolve_assignment_target(&assign.path);
+                    self.check_assignment_value(lhs.as_deref(), &assign.value);
+                }
+            }
+        }
+    }
+
+    fn register_use_alias(&mut self, use_stmt: &crate::ast::UseStmt) {
+        let Some(alias) = &use_stmt.alias else {
+            return;
+        };
+
+        if self.aliases.contains_key(&alias.value) {
+            self.diagnostics.push(Diagnostic::error(
+                "E_USE_ALIAS_CONFLICT",
+                format!("use alias `{}` is already defined", alias.value),
+                alias.span,
+            ));
+            return;
+        }
+
+        self.aliases
+            .insert(alias.value.clone(), use_stmt.path.to_string());
+    }
+
+    fn resolve_assignment_target(&mut self, path: &Path) -> Option<String> {
+        let expanded = expand_with_aliases(path, &self.aliases);
+        let candidates = self.symbols.resolve_option_paths(&expanded);
+
+        if candidates.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E_SYMBOL_NOT_FOUND",
+                format!("assignment target `{}` cannot be resolved", path.to_string()),
+                path.span,
+            ));
+            return None;
+        }
+
+        if candidates.len() > 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E_AMBIGUOUS_PATH",
+                format!(
+                    "assignment target `{}` is ambiguous: {}",
+                    path.to_string(),
+                    candidates.join(", ")
+                ),
+                path.span,
+            ));
+            return None;
+        }
+
+        let resolved = candidates[0].clone();
+        if resolved == "ctx" || resolved.starts_with("ctx::") {
+            self.diagnostics.push(Diagnostic::error(
+                "E_CONTEXT_ASSIGNMENT_NOT_ALLOWED",
+                "assigning values to `ctx` is not allowed",
+                path.span,
+            ));
+            return None;
+        }
+
+        Some(resolved)
+    }
+
+    fn check_assignment_value(&mut self, target: Option<&str>, value: &ValueExpr) {
+        let Some(target) = target else {
+            return;
+        };
+
+        let Some(expected) = self.symbols.option_type(target).cloned() else {
+            self.diagnostics.push(Diagnostic::error(
+                "E_SYMBOL_NOT_FOUND",
+                format!("assignment target `{}` is not an option", target),
+                value.span(),
+            ));
+            return;
+        };
+
+        let actual = self.value_expr_type(value);
+        if !actual.is_unknown() && !expected.same_as(&actual) {
+            self.diagnostics.push(Diagnostic::error(
+                "E_TYPE_MISMATCH",
+                format!(
+                    "value type mismatch for `{}`: expected {:?}, got {:?}",
+                    target, expected, actual
+                ),
+                value.span(),
+            ));
+        }
+    }
+
+    fn value_expr_type(&mut self, value: &ValueExpr) -> ValueType {
+        match value {
+            ValueExpr::Bool(_, _) => ValueType::Bool,
+            ValueExpr::Int(_, _) => ValueType::Int,
+            ValueExpr::String(_, _) => ValueType::String,
+            ValueExpr::Env { .. } => ValueType::Unknown,
+            ValueExpr::Path(path) => {
+                let expanded = expand_with_aliases(path, &self.aliases);
+                let mut matches = self.symbols.resolve_enum_variant_paths(&expanded);
+                if matches.is_empty() {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E_VALUE_PATH_NOT_ENUM_VARIANT",
+                        format!("value path `{}` is not an enum variant", path.to_string()),
+                        path.span,
+                    ));
+                    return ValueType::Unknown;
+                }
+
+                if matches.len() > 1 {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E_AMBIGUOUS_ENUM_VARIANT",
+                        format!(
+                            "enum variant `{}` is ambiguous: {}",
+                            path.to_string(),
+                            matches.join(", ")
+                        ),
+                        path.span,
+                    ));
+                    return ValueType::Unknown;
+                }
+
+                let resolved = matches.remove(0);
+                let enum_name = self
+                    .symbols
+                    .enum_owner_of_variant(&resolved)
+                    .map(|owner| owner.rsplit("::").next().unwrap_or(owner).to_string())
+                    .unwrap_or_default();
+                ValueType::Enum(enum_name)
+            }
+        }
+    }
 }
 
 impl<'a> TypeChecker<'a> {
@@ -723,6 +906,32 @@ fn build_candidate_paths(scope: &[String], raw_path: &str) -> Vec<String> {
     candidates
 }
 
+fn expand_with_aliases(path: &Path, aliases: &HashMap<String, String>) -> String {
+    if path.segments.is_empty() {
+        return path.to_string();
+    }
+
+    let head = &path.segments[0].value;
+    if let Some(prefix) = aliases.get(head) {
+        let suffix = path
+            .segments
+            .iter()
+            .skip(1)
+            .map(|seg| seg.value.clone())
+            .collect::<Vec<_>>();
+        if suffix.is_empty() {
+            return prefix.clone();
+        }
+        return format!("{}::{}", prefix, suffix.join("::"));
+    }
+
+    path.to_string()
+}
+
+fn path_matches(candidate: &str, raw_path: &str) -> bool {
+    candidate == raw_path || candidate.ends_with(&format!("::{}", raw_path))
+}
+
 fn enum_name_matches(expected: &str, candidate: &str) -> bool {
     if expected == candidate {
         return true;
@@ -735,9 +944,15 @@ fn enum_name_matches(expected: &str, candidate: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::parse_schema_with_diagnostics;
+    use crate::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 
     use super::{analyze_schema, SymbolKind};
+
+    fn symbols_from(src: &str) -> super::SymbolTable {
+        let (file, parse_diags) = parse_schema_with_diagnostics(src);
+        assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+        analyze_schema(&file).symbols
+    }
 
     #[test]
     fn allows_open_module_redeclaration() {
@@ -966,6 +1181,79 @@ mod app {
                 .any(|diag| diag.code == "W_UNREACHABLE_CASE"),
             "expected W_UNREACHABLE_CASE, got: {:#?}",
             report.diagnostics
+        );
+    }
+
+    #[test]
+    fn values_detect_type_mismatch() {
+        let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let values_src = r#"
+app::enabled = 1;
+"#;
+        let (values, diags) = parse_values_with_diagnostics(values_src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+        let semantic_diags = super::analyze_values(&values, &symbols);
+        assert!(
+            semantic_diags
+                .iter()
+                .any(|diag| diag.code == "E_TYPE_MISMATCH"),
+            "expected E_TYPE_MISMATCH, got: {semantic_diags:#?}"
+        );
+    }
+
+    #[test]
+    fn values_detect_ctx_assignment() {
+        let schema_src = r#"
+mod ctx {
+  option arch: string;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let values_src = r#"
+ctx::arch = "arm";
+"#;
+        let (values, diags) = parse_values_with_diagnostics(values_src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+        let semantic_diags = super::analyze_values(&values, &symbols);
+        assert!(
+            semantic_diags
+                .iter()
+                .any(|diag| diag.code == "E_CONTEXT_ASSIGNMENT_NOT_ALLOWED"),
+            "expected E_CONTEXT_ASSIGNMENT_NOT_ALLOWED, got: {semantic_diags:#?}"
+        );
+    }
+
+    #[test]
+    fn values_support_use_alias_for_assignment_target() {
+        let schema_src = r#"
+mod sdk {
+  mod usart1 {
+    option enable: bool = false;
+  }
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let values_src = r#"
+use sdk::usart1 as uart;
+uart::enable = true;
+"#;
+        let (values, diags) = parse_values_with_diagnostics(values_src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+        let semantic_diags = super::analyze_values(&values, &symbols);
+        assert!(
+            semantic_diags.is_empty(),
+            "expected no diagnostics, got: {semantic_diags:#?}"
         );
     }
 }
