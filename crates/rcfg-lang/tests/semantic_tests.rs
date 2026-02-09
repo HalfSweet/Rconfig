@@ -1633,6 +1633,73 @@ constraint {
 }
 
 #[test]
+fn require_failure_includes_generated_message_key() {
+    let src = r#"
+mod app {
+  constraint {
+    require!(false);
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    let diag = report
+        .diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_REQUIRE_FAILED")
+        .expect("expected E_REQUIRE_FAILED");
+    assert_eq!(diag.message_key.as_deref(), Some("main.app.require.1"));
+}
+
+#[test]
+fn require_failure_prefers_msg_attribute_as_message_key() {
+    let src = r#"
+mod app {
+  constraint {
+    #[msg("demo.app.require.custom")]
+    require!(false);
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    let diag = report
+        .diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_REQUIRE_FAILED")
+        .expect("expected E_REQUIRE_FAILED");
+    assert_eq!(
+        diag.message_key.as_deref(),
+        Some("demo.app.require.custom")
+    );
+}
+
+#[test]
+fn runtime_require_failure_includes_generated_message_key() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+  require!(enabled);
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    let diag = diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_REQUIRE_FAILED")
+        .expect("expected E_REQUIRE_FAILED");
+    assert_eq!(diag.message_key.as_deref(), Some("main.app.require.1"));
+}
+
+#[test]
 fn does_not_report_require_failed_for_statically_true_expr() {
     let src = r#"
 constraint {

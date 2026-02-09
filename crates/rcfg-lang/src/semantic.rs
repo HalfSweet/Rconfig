@@ -991,6 +991,7 @@ struct TypeChecker<'a> {
     diagnostics: Vec<Diagnostic>,
     activation_edges: HashMap<String, HashSet<String>>,
     used_enum_variants: HashSet<String>,
+    require_counters: HashMap<String, usize>,
 }
 
 #[derive(Default)]
@@ -1672,12 +1673,14 @@ impl<'a> ValuesChecker<'a> {
     fn runtime_require_diagnostics(&self, runtime: &RuntimeState) -> Vec<(Diagnostic, Option<usize>)> {
         let mut diagnostics = Vec::new();
         let mut scope = Vec::new();
+        let mut require_counters = HashMap::new();
         collect_runtime_require_diagnostics(
             self.symbols,
             self.symbols.schema_items(),
             &mut scope,
             runtime,
             &mut diagnostics,
+            &mut require_counters,
         );
         diagnostics
     }
@@ -1695,6 +1698,7 @@ impl<'a> TypeChecker<'a> {
             diagnostics: Vec::new(),
             activation_edges: HashMap::new(),
             used_enum_variants: HashSet::new(),
+            require_counters: HashMap::new(),
         }
     }
 
@@ -1893,15 +1897,21 @@ impl<'a> TypeChecker<'a> {
         scope: &[String],
         self_ty: Option<&ValueType>,
     ) {
-        self.lint_require_msg(require);
+        let ordinal = next_require_ordinal(&mut self.require_counters, scope);
+        let require_key = require_message_key(require, scope, ordinal);
+
+        self.lint_require_msg(require, &require_key);
         self.expect_bool_expr(&require.expr, scope, self_ty);
 
         if self.evaluate_const_bool_expr(&require.expr).is_some_and(|result| !result) {
-            self.diagnostics.push(Diagnostic::error(
-                "E_REQUIRE_FAILED",
-                "require condition is statically false",
-                require.span,
-            ));
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_REQUIRE_FAILED",
+                    "require condition is statically false",
+                    require.span,
+                )
+                .with_message_key(require_key),
+            );
         }
     }
 
@@ -2039,18 +2049,22 @@ impl<'a> TypeChecker<'a> {
         );
     }
 
-    fn lint_require_msg(&mut self, require: &crate::ast::RequireStmt) {
+    fn lint_require_msg(&mut self, require: &crate::ast::RequireStmt, require_key: &str) {
         let has_msg = require
             .meta
             .attrs
             .iter()
             .any(|attr| matches!(attr.kind, AttrKind::Msg(_)));
         if !has_msg {
-            self.diagnostics.push(Diagnostic::warning(
-                "L_REQUIRE_MISSING_MSG",
-                "require! is missing #[msg(\"...\")] for stable i18n key",
-                require.span,
-            ));
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    "L_REQUIRE_MISSING_MSG",
+                    "require! is missing #[msg(\"...\")] for stable i18n key",
+                    require.span,
+                )
+                .with_message_key(require_key.to_string())
+                .with_note(format!("auto-generated require key: {}", require_key)),
+            );
         }
     }
 
@@ -2895,6 +2909,37 @@ fn parse_env_int(raw: &str) -> Option<i128> {
     }
 }
 
+fn require_scope_key(scope: &[String]) -> String {
+    if scope.is_empty() {
+        "root".to_string()
+    } else {
+        scope.join(".")
+    }
+}
+
+fn next_require_ordinal(counters: &mut HashMap<String, usize>, scope: &[String]) -> usize {
+    let key = require_scope_key(scope);
+    let entry = counters.entry(key).or_insert(0);
+    *entry += 1;
+    *entry
+}
+
+fn require_message_key(require: &crate::ast::RequireStmt, scope: &[String], ordinal: usize) -> String {
+    if let Some(message) = require
+        .meta
+        .attrs
+        .iter()
+        .find_map(|attr| match &attr.kind {
+            AttrKind::Msg(value) => Some(value.clone()),
+            _ => None,
+        })
+    {
+        return message;
+    }
+
+    format!("main.{}.require.{}", require_scope_key(scope), ordinal)
+}
+
 fn redacted_int_arg(value: i128, secret: bool) -> DiagnosticArgValue {
     if secret {
         DiagnosticArgValue::String("[redacted]".to_string())
@@ -3210,11 +3255,14 @@ fn collect_runtime_require_diagnostics(
     scope: &mut Vec<String>,
     runtime: &RuntimeState,
     diagnostics: &mut Vec<(Diagnostic, Option<usize>)>,
+    require_counters: &mut HashMap<String, usize>,
 ) {
     for item in items {
         match item {
             Item::Use(_) | Item::Enum(_) | Item::Option(_) => {}
             Item::Require(require) => {
+                let ordinal = next_require_ordinal(require_counters, scope);
+                let require_key = require_message_key(require, scope, ordinal);
                 if !eval_expr_as_bool(&require.expr, symbols, scope, runtime, &mut HashSet::new())
                     .unwrap_or(false)
                 {
@@ -3223,7 +3271,8 @@ fn collect_runtime_require_diagnostics(
                             "E_REQUIRE_FAILED",
                             "require condition failed at runtime",
                             require.span,
-                        ),
+                        )
+                        .with_message_key(require_key),
                         None,
                     ));
                 }
@@ -3231,6 +3280,8 @@ fn collect_runtime_require_diagnostics(
             Item::Constraint(constraint) => {
                 for child in &constraint.items {
                     if let ConstraintItem::Require(require) = child {
+                        let ordinal = next_require_ordinal(require_counters, scope);
+                        let require_key = require_message_key(require, scope, ordinal);
                         if !eval_expr_as_bool(
                             &require.expr,
                             symbols,
@@ -3245,7 +3296,8 @@ fn collect_runtime_require_diagnostics(
                                     "E_REQUIRE_FAILED",
                                     "require condition failed at runtime",
                                     require.span,
-                                ),
+                                )
+                                .with_message_key(require_key),
                                 None,
                             ));
                         }
@@ -3260,6 +3312,7 @@ fn collect_runtime_require_diagnostics(
                     scope,
                     runtime,
                     diagnostics,
+                    require_counters,
                 );
                 scope.pop();
             }
@@ -3279,6 +3332,7 @@ fn collect_runtime_require_diagnostics(
                         scope,
                         runtime,
                         diagnostics,
+                        require_counters,
                     );
                 }
             }
@@ -3296,6 +3350,7 @@ fn collect_runtime_require_diagnostics(
                         scope,
                         runtime,
                         diagnostics,
+                        require_counters,
                     );
                 }
             }
