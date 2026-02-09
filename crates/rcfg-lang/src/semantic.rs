@@ -606,7 +606,8 @@ impl<'a> ValuesChecker<'a> {
                 "E_SYMBOL_NOT_FOUND",
                 format!("assignment target `{}` is not an option", target),
                 value.span(),
-            ));
+            )
+            .with_path(target));
             return;
         };
 
@@ -619,7 +620,8 @@ impl<'a> ValuesChecker<'a> {
                     target, expected, actual
                 ),
                 value.span(),
-            ));
+            )
+            .with_path(target));
         }
     }
 
@@ -633,11 +635,13 @@ impl<'a> ValuesChecker<'a> {
                 let expanded = expand_with_aliases(path, &self.aliases);
                 let option_matches = self.symbols.resolve_option_paths(&expanded);
                 if !option_matches.is_empty() {
+                    let resolved = option_matches[0].clone();
                     self.push_diag(Diagnostic::error(
                         "E_VALUE_PATH_RESOLVES_TO_OPTION",
                         format!("value path `{}` resolves to option", path.to_string()),
                         path.span,
-                    ));
+                    )
+                    .with_path(resolved));
                     return ValueType::Unknown;
                 }
 
@@ -1833,5 +1837,28 @@ mod app {
 
         let _ = std::fs::remove_file(&bad);
         let _ = std::fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn values_type_mismatch_diag_contains_option_path() {
+        let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let values_src = r#"
+app::enabled = 1;
+"#;
+        let (values, diags) = parse_values_with_diagnostics(values_src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+        let semantic_diags = super::analyze_values(&values, &symbols);
+        let diag = semantic_diags
+            .iter()
+            .find(|diag| diag.code == "E_TYPE_MISMATCH")
+            .expect("missing E_TYPE_MISMATCH");
+        assert_eq!(diag.path.as_deref(), Some("app::enabled"));
     }
 }

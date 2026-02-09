@@ -12,6 +12,7 @@ pub struct Diagnostic {
     pub code: &'static str,
     pub message: String,
     pub span: Span,
+    pub path: Option<String>,
     pub source: Option<String>,
     pub include_chain: Vec<String>,
 }
@@ -23,6 +24,7 @@ impl Diagnostic {
             code,
             message: message.into(),
             span,
+            path: None,
             source: None,
             include_chain: Vec::new(),
         }
@@ -34,9 +36,15 @@ impl Diagnostic {
             code,
             message: message.into(),
             span,
+            path: None,
             source: None,
             include_chain: Vec::new(),
         }
+    }
+
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.path = Some(path.into());
+        self
     }
 
     pub fn with_source(mut self, source: impl Into<String>) -> Self {
