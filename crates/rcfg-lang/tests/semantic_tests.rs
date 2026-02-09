@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use rcfg_lang::{
     analyze_schema, analyze_schema_strict, analyze_values, analyze_values_strict,
     analyze_values_from_path, analyze_values_from_path_report, expand_values_includes_from_path,
-    expand_values_includes_with_origins, plan_c_header_exports, Severity, SymbolKind, SymbolTable,
+    expand_values_includes_with_origins, generate_exports, plan_c_header_exports,
+    resolve_values, ExportOptions, Severity, SymbolKind, SymbolTable,
 };
 use rcfg_lang::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 
@@ -1314,5 +1315,126 @@ mod a {
             .iter()
             .any(|diag| diag.code == "E_EXPORT_NAME_COLLISION"),
         "expected E_EXPORT_NAME_COLLISION, got: {diagnostics:#?}"
+    );
+}
+
+#[test]
+fn generates_c_and_cmake_exports_for_active_values() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+  option retries: u32 = 3;
+  enum Mode { off, on }
+  option mode: Mode = off;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::enabled = true;
+app::retries = 7;
+app::mode = on;
+"#;
+    let (values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let resolved = resolve_values(&values, &symbols);
+    let exports = generate_exports(&symbols, &resolved, &ExportOptions::default());
+
+    assert!(
+        exports.c_header.contains("#define CONFIG_APP_ENABLED 1"),
+        "expected bool define in c_header, got: {}",
+        exports.c_header
+    );
+    assert!(
+        exports.c_header.contains("#define CONFIG_APP_RETRIES 7"),
+        "expected int define in c_header, got: {}",
+        exports.c_header
+    );
+    assert!(
+        exports.c_header.contains("#define CONFIG_APP_MODE_OFF 0")
+            && exports.c_header.contains("#define CONFIG_APP_MODE_ON 1"),
+        "expected enum one-hot macros in c_header, got: {}",
+        exports.c_header
+    );
+
+    assert!(
+        exports.cmake.contains("set(CFG_APP_ENABLED ON)"),
+        "expected bool cmake export, got: {}",
+        exports.cmake
+    );
+    assert!(
+        exports.cmake.contains("set(CFG_APP_RETRIES 7)"),
+        "expected int cmake export, got: {}",
+        exports.cmake
+    );
+    assert!(
+        exports.cmake.contains("set(CFG_APP_MODE \"app::Mode::on\")"),
+        "expected enum cmake export, got: {}",
+        exports.cmake
+    );
+}
+
+#[test]
+fn skips_inactive_option_in_exports() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+  when enabled {
+    option hidden: u32 = 9;
+  }
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("app::enabled = false;");
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let resolved = resolve_values(&values, &symbols);
+    let exports = generate_exports(&symbols, &resolved, &ExportOptions::default());
+    assert!(
+        !exports.c_header.contains("CONFIG_APP_HIDDEN"),
+        "inactive option should not be exported in c_header: {}",
+        exports.c_header
+    );
+    assert!(
+        !exports.cmake.contains("CFG_APP_HIDDEN"),
+        "inactive option should not be exported in cmake: {}",
+        exports.cmake
+    );
+}
+
+#[test]
+fn supports_custom_export_prefixes() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = true;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let resolved = resolve_values(&values, &symbols);
+    let exports = generate_exports(
+        &symbols,
+        &resolved,
+        &ExportOptions {
+            include_secrets: false,
+            c_prefix: "MYCFG_".to_string(),
+            cmake_prefix: "MY_".to_string(),
+        },
+    );
+
+    assert!(
+        exports.c_header.contains("#define MYCFG_APP_ENABLED 1"),
+        "expected custom c prefix, got: {}",
+        exports.c_header
+    );
+    assert!(
+        exports.cmake.contains("set(MY_APP_ENABLED ON)"),
+        "expected custom cmake prefix, got: {}",
+        exports.cmake
     );
 }

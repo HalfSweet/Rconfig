@@ -19,9 +19,10 @@ pub use semantic::{
     analyze_values_from_path, analyze_values_from_path_strict, expand_values_includes_from_path,
     expand_values_includes_with_origins, analyze_values_from_path_report,
     analyze_values_from_path_report_strict, analyze_values_from_path_report_with_context,
-    analyze_values_from_path_report_with_context_strict, plan_c_header_exports, resolve_values,
-    resolve_values_with_context, PlannedExport, ResolvedConfig, ResolvedOption, ResolvedValue,
-    ValueSource, SemanticReport,
+    analyze_values_from_path_report_with_context_strict, generate_exports,
+    plan_c_header_exports, plan_c_header_exports_with_prefix, resolve_values,
+    resolve_values_with_context, ExportOptions, GeneratedExports, PlannedExport, ResolvedConfig,
+    ResolvedOption, ResolvedValue, ValueSource, SemanticReport,
     SymbolInfo, SymbolKind, SymbolTable, ValuesAnalysisReport, ValuesStmtOrigin,
 };
 pub use span::{Span, Spanned};

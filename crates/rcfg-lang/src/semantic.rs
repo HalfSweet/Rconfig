@@ -407,9 +407,41 @@ pub struct PlannedExport {
     pub name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportOptions {
+    pub include_secrets: bool,
+    pub c_prefix: String,
+    pub cmake_prefix: String,
+}
+
+impl Default for ExportOptions {
+    fn default() -> Self {
+        Self {
+            include_secrets: false,
+            c_prefix: "CONFIG_".to_string(),
+            cmake_prefix: "CFG_".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedExports {
+    pub c_header: String,
+    pub cmake: String,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 pub fn plan_c_header_exports(
     symbols: &SymbolTable,
     include_secrets: bool,
+) -> (Vec<PlannedExport>, Vec<Diagnostic>) {
+    plan_c_header_exports_with_prefix(symbols, include_secrets, "CONFIG_")
+}
+
+pub fn plan_c_header_exports_with_prefix(
+    symbols: &SymbolTable,
+    include_secrets: bool,
+    prefix: &str,
 ) -> (Vec<PlannedExport>, Vec<Diagnostic>) {
     let mut diagnostics = Vec::new();
     let mut planned = Vec::new();
@@ -434,7 +466,7 @@ pub fn plan_c_header_exports(
             continue;
         }
 
-        let export_name = normalize_export_name(&option_path);
+        let export_name = normalize_export_name_with_prefix(&option_path, prefix);
         if let Some(existing) = used_names.get(&export_name) {
             if existing != &option_path {
                 diagnostics.push(
@@ -460,6 +492,110 @@ pub fn plan_c_header_exports(
     }
 
     (planned, diagnostics)
+}
+
+pub fn generate_exports(
+    symbols: &SymbolTable,
+    resolved: &ResolvedConfig,
+    options: &ExportOptions,
+) -> GeneratedExports {
+    let (planned, mut diagnostics) =
+        plan_c_header_exports_with_prefix(symbols, options.include_secrets, &options.c_prefix);
+
+    let resolved_map = resolved
+        .options
+        .iter()
+        .map(|option| (option.path.clone(), option.clone()))
+        .collect::<HashMap<_, _>>();
+
+    let mut c_lines = Vec::new();
+    let mut cmake_lines = Vec::new();
+
+    for export in planned {
+        let Some(option) = resolved_map.get(&export.path) else {
+            continue;
+        };
+        if !option.active {
+            continue;
+        }
+        if symbols.option_is_secret(&export.path) && !options.include_secrets {
+            continue;
+        }
+
+        let cmake_name = normalize_export_name_with_prefix(&export.path, &options.cmake_prefix);
+        match option.value.as_ref() {
+            Some(ResolvedValue::Bool(value)) => {
+                if *value {
+                    c_lines.push(format!("#define {} 1", export.name));
+                }
+                cmake_lines.push(format!(
+                    "set({} {})",
+                    cmake_name,
+                    if *value { "ON" } else { "OFF" }
+                ));
+            }
+            Some(ResolvedValue::Int(value)) => {
+                c_lines.push(format!("#define {} {}", export.name, value));
+                cmake_lines.push(format!("set({} {})", cmake_name, value));
+            }
+            Some(ResolvedValue::String(value)) => {
+                let escaped = value.replace('"', "\\\"");
+                c_lines.push(format!("#define {} \"{}\"", export.name, escaped));
+                cmake_lines.push(format!("set({} \"{}\")", cmake_name, escaped));
+            }
+            Some(ResolvedValue::EnumVariant(selected_variant)) => {
+                cmake_lines.push(format!("set({} \"{}\")", cmake_name, selected_variant));
+
+                let enum_owner = symbols.enum_owner_of_variant(selected_variant);
+                let Some(enum_owner) = enum_owner else {
+                    diagnostics.push(Diagnostic::error(
+                        "E_VALUE_PATH_NOT_ENUM_VARIANT",
+                        format!(
+                            "resolved enum variant `{}` for `{}` cannot be resolved",
+                            selected_variant, export.path
+                        ),
+                        symbols.option_span(&export.path).unwrap_or_default(),
+                    ));
+                    continue;
+                };
+
+                let mut variants = symbols
+                    .enum_variants
+                    .iter()
+                    .filter(|(_, owner)| owner.as_str() == enum_owner)
+                    .map(|(variant_path, _)| variant_path.clone())
+                    .collect::<Vec<_>>();
+                variants.sort();
+
+                for variant in variants {
+                    let variant_name = normalize_export_name_with_prefix(
+                        &format!(
+                            "{}::{}",
+                            export.path,
+                            variant.rsplit("::").next().unwrap_or(&variant)
+                        ),
+                        &options.c_prefix,
+                    );
+                    let is_selected = variant == *selected_variant;
+                    c_lines.push(format!(
+                        "#define {} {}",
+                        variant_name,
+                        if is_selected { 1 } else { 0 }
+                    ));
+                }
+            }
+            None => {}
+        }
+    }
+
+    c_lines.sort();
+    cmake_lines.sort();
+
+    GeneratedExports {
+        c_header: c_lines.join("\n"),
+        cmake: cmake_lines.join("\n"),
+        diagnostics,
+    }
 }
 
 pub fn analyze_schema(file: &File) -> SemanticReport {
@@ -2379,7 +2515,7 @@ fn option_has_secret_attr(option: &OptionDecl) -> bool {
         .any(|attr| matches!(attr.kind, AttrKind::Secret))
 }
 
-fn normalize_export_name(path: &str) -> String {
+fn normalize_export_name_with_prefix(path: &str, prefix: &str) -> String {
     let mut normalized = String::new();
     let mut prev_underscore = false;
 
@@ -2407,7 +2543,7 @@ fn normalize_export_name(path: &str) -> String {
         format!("X_{}", normalized)
     };
 
-    format!("CONFIG_{}", normalized)
+    format!("{}{}", prefix, normalized)
 }
 
 fn module_has_metadata(module: &crate::ast::ModDecl) -> bool {
