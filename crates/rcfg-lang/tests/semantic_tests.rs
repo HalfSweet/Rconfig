@@ -980,3 +980,30 @@ mod app {
         report.diagnostics
     );
 }
+
+#[test]
+fn warns_inactive_assignment_for_conditional_option() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+  when enabled {
+    option hidden: u32;
+  }
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::hidden = 42;
+"#;
+    let (values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diag| diag.code == "W_INACTIVE_ASSIGNMENT"),
+        "expected W_INACTIVE_ASSIGNMENT, got: {diagnostics:#?}"
+    );
+}

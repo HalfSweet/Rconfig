@@ -610,6 +610,7 @@ impl<'a> ValuesChecker<'a> {
                     let lhs = self.resolve_assignment_target(&assign.path);
                     if let Some(resolved) = &lhs {
                         self.record_duplicate_assignment(resolved, assign.path.span);
+                        self.warn_inactive_assignment(resolved, assign.path.span);
                     }
                     self.check_assignment_value(lhs.as_deref(), &assign.value);
                 }
@@ -626,6 +627,24 @@ impl<'a> ValuesChecker<'a> {
                 span.join(previous),
             ));
         }
+    }
+
+    fn warn_inactive_assignment(&mut self, target: &str, span: Span) {
+        if self.symbols.option_is_always_active(target) {
+            return;
+        }
+
+        self.push_diag(
+            Diagnostic::warning(
+                "W_INACTIVE_ASSIGNMENT",
+                format!(
+                    "assignment to conditionally active option `{}` may be ignored",
+                    target
+                ),
+                span,
+            )
+            .with_path(target),
+        );
     }
 
     fn register_use_alias(&mut self, use_stmt: &crate::ast::UseStmt) {
