@@ -258,6 +258,37 @@ mod app {
 }
 
 #[test]
+fn reports_match_scrutinee_not_always_active() {
+    let src = r#"
+mod app {
+  enum Mode { off, on }
+  option gate: bool = false;
+
+  when gate {
+    option mode: Mode = off;
+  }
+
+  match mode {
+    case Mode::off => { }
+    case Mode::on => { }
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE"),
+        "expected E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn reports_match_overlap() {
     let src = r#"
 mod app {

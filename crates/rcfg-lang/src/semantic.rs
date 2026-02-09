@@ -2212,11 +2212,35 @@ impl<'a> TypeChecker<'a> {
         let ValueType::Enum(enum_name) = scrutinee_ty else {
             self.diagnostics.push(Diagnostic::error(
                 "E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE",
-                "match scrutinee must resolve to enum option",
+                "match scrutinee must resolve to always-active enum option",
                 block.expr.span(),
             ));
             return;
         };
+
+        let Some(scrutinee_option_path) = self.match_scrutinee_option_path(&block.expr, scope) else {
+            self.diagnostics.push(Diagnostic::error(
+                "E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE",
+                "match scrutinee must resolve to always-active enum option",
+                block.expr.span(),
+            ));
+            return;
+        };
+
+        if !self.symbols.option_is_always_active(&scrutinee_option_path) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE",
+                    format!(
+                        "match scrutinee option `{}` is not always-active",
+                        scrutinee_option_path
+                    ),
+                    block.expr.span(),
+                )
+                .with_path(scrutinee_option_path),
+            );
+            return;
+        }
 
         let variants = self
             .symbols
@@ -2272,6 +2296,22 @@ impl<'a> TypeChecker<'a> {
                 "match does not cover all enum variants",
                 block.span,
             ));
+        }
+    }
+
+    fn match_scrutinee_option_path(&self, expr: &Expr, scope: &[String]) -> Option<String> {
+        match expr {
+            Expr::Path(path) => {
+                if let ResolveOptionPathResult::Resolved(option_path, ValueType::Enum(_)) =
+                    self.symbols.resolve_option_path_in_scope(scope, path)
+                {
+                    Some(option_path)
+                } else {
+                    None
+                }
+            }
+            Expr::Group { expr, .. } => self.match_scrutinee_option_path(expr, scope),
+            _ => None,
         }
     }
 
