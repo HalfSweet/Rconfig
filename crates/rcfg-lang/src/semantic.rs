@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path as FsPath, PathBuf};
 
@@ -30,6 +30,56 @@ pub enum ValueType {
     String,
     Enum(String),
     Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedValue {
+    Bool(bool),
+    Int(i128),
+    String(String),
+    EnumVariant(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueSource {
+    User,
+    Default,
+    Context,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedOption {
+    pub path: String,
+    pub active: bool,
+    pub value: Option<ResolvedValue>,
+    pub source: Option<ValueSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ResolvedConfig {
+    pub options: Vec<ResolvedOption>,
+}
+
+impl ResolvedConfig {
+    fn value_map(&self) -> HashMap<String, ResolvedValue> {
+        self.options
+            .iter()
+            .filter_map(|option| {
+                option
+                    .value
+                    .as_ref()
+                    .map(|value| (option.path.clone(), value.clone()))
+            })
+            .collect::<HashMap<_, _>>()
+    }
+
+    fn active_set(&self) -> HashSet<String> {
+        self.options
+            .iter()
+            .filter(|option| option.active)
+            .map(|option| option.path.clone())
+            .collect::<HashSet<_>>()
+    }
 }
 
 impl ValueType {
@@ -72,6 +122,7 @@ pub struct SymbolTable {
     option_always_active: HashMap<String, bool>,
     enum_variants: HashMap<String, String>,
     enum_variant_spans: HashMap<String, Span>,
+    schema_items: Vec<Item>,
 }
 
 impl SymbolTable {
@@ -93,6 +144,10 @@ impl SymbolTable {
 
     pub fn option_type(&self, path: &str) -> Option<&ValueType> {
         self.option_types.get(path)
+    }
+
+    pub fn schema_items(&self) -> &[Item] {
+        &self.schema_items
     }
 
     fn insert_symbol(&mut self, symbol: SymbolInfo) {
@@ -125,6 +180,10 @@ impl SymbolTable {
 
     fn option_default(&self, path: &str) -> Option<&ConstValue> {
         self.option_defaults.get(path)
+    }
+
+    fn set_schema_items(&mut self, items: Vec<Item>) {
+        self.schema_items = items;
     }
 
     fn option_range(&self, path: &str) -> Option<&IntRange> {
