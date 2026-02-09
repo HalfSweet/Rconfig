@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use rcfg_lang::{
-    analyze_schema, analyze_schema_strict, analyze_values, analyze_values_strict,
-    analyze_values_from_path, analyze_values_from_path_report, expand_values_includes_from_path,
-    expand_values_includes_with_origins, generate_exports, plan_c_header_exports,
-    resolve_values, ExportOptions, Severity, SymbolKind, SymbolTable,
+    analyze_schema, analyze_schema_files, analyze_schema_strict, analyze_values,
+    analyze_values_strict, analyze_values_from_path, analyze_values_from_path_report,
+    expand_values_includes_from_path, expand_values_includes_with_origins, generate_exports,
+    plan_c_header_exports, resolve_values, ExportOptions, Severity, SymbolKind, SymbolTable,
 };
 use rcfg_lang::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 
@@ -29,6 +29,47 @@ mod uart {
     assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
 
     let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_SYMBOL_REDEFINED" && diag.code != "E_SYMBOL_KIND_CONFLICT"),
+        "semantic diagnostics: {:#?}",
+        report.diagnostics
+    );
+    assert!(matches!(
+        report.symbols.get("uart"),
+        Some(info) if info.kind == SymbolKind::Mod
+    ));
+    assert!(matches!(
+        report.symbols.get("uart::enable"),
+        Some(info) if info.kind == SymbolKind::Option
+    ));
+    assert!(matches!(
+        report.symbols.get("uart::baud"),
+        Some(info) if info.kind == SymbolKind::Option
+    ));
+}
+
+#[test]
+fn analyze_schema_files_merges_items() {
+    let src_a = r#"
+mod uart {
+  option enable: bool = false;
+}
+"#;
+    let src_b = r#"
+mod uart {
+  option baud: u32 = 115200;
+}
+"#;
+
+    let (file_a, parse_diags_a) = parse_schema_with_diagnostics(src_a);
+    let (file_b, parse_diags_b) = parse_schema_with_diagnostics(src_b);
+    assert!(parse_diags_a.is_empty(), "parse diagnostics: {parse_diags_a:#?}");
+    assert!(parse_diags_b.is_empty(), "parse diagnostics: {parse_diags_b:#?}");
+
+    let report = analyze_schema_files(&[file_a, file_b]);
     assert!(
         report
             .diagnostics

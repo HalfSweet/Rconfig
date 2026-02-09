@@ -618,18 +618,18 @@ pub fn generate_exports(
     }
 }
 
-pub fn analyze_schema(file: &File) -> SemanticReport {
+fn analyze_schema_items(items: &[Item]) -> SemanticReport {
     let mut collector = SymbolCollector::default();
     let mut root_scope = Vec::new();
-    collector.collect_items(&file.items, &mut root_scope);
+    collector.collect_items(items, &mut root_scope);
 
     let mut diagnostics = collector.diagnostics;
     let mut symbols = collector.symbols;
-    symbols.set_schema_items(file.items.clone());
+    symbols.set_schema_items(items.to_vec());
 
     let mut checker = TypeChecker::new(&symbols);
     let mut scope = Vec::new();
-    checker.check_items(&file.items, &mut scope);
+    checker.check_items(items, &mut scope);
     diagnostics.extend(checker.diagnostics);
 
     SemanticReport {
@@ -638,8 +638,26 @@ pub fn analyze_schema(file: &File) -> SemanticReport {
     }
 }
 
+pub fn analyze_schema(file: &File) -> SemanticReport {
+    analyze_schema_items(&file.items)
+}
+
 pub fn analyze_schema_strict(file: &File) -> SemanticReport {
     let mut report = analyze_schema(file);
+    promote_strict_diagnostics(&mut report.diagnostics);
+    report
+}
+
+pub fn analyze_schema_files(files: &[File]) -> SemanticReport {
+    let items = files
+        .iter()
+        .flat_map(|file| file.items.iter().cloned())
+        .collect::<Vec<_>>();
+    analyze_schema_items(&items)
+}
+
+pub fn analyze_schema_files_strict(files: &[File]) -> SemanticReport {
+    let mut report = analyze_schema_files(files);
     promote_strict_diagnostics(&mut report.diagnostics);
     report
 }
