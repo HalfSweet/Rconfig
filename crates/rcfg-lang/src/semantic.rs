@@ -70,6 +70,7 @@ pub struct SymbolTable {
     option_spans: HashMap<String, Span>,
     option_always_active: HashMap<String, bool>,
     enum_variants: HashMap<String, String>,
+    enum_variant_spans: HashMap<String, Span>,
 }
 
 impl SymbolTable {
@@ -133,8 +134,18 @@ impl SymbolTable {
         self.option_always_active.get(path).copied().unwrap_or(true)
     }
 
-    fn insert_enum_variant(&mut self, variant_path: String, enum_path: String) -> Option<String> {
+    fn insert_enum_variant(
+        &mut self,
+        variant_path: String,
+        enum_path: String,
+        span: Span,
+    ) -> Option<String> {
+        self.enum_variant_spans.insert(variant_path.clone(), span);
         self.enum_variants.insert(variant_path, enum_path)
+    }
+
+    fn enum_variant_span(&self, variant_path: &str) -> Option<Span> {
+        self.enum_variant_spans.get(variant_path).copied()
     }
 
     fn resolve_path_type(&self, scope: &[String], path: &Path) -> ResolvePathResult {
@@ -235,6 +246,35 @@ impl SymbolTable {
 
         let (path, ty) = matches.pop().expect("matches length was checked");
         ResolveOptionPathResult::Resolved(path, ty)
+    }
+
+    fn resolve_enum_variant_path_in_scope(
+        &self,
+        scope: &[String],
+        path: &Path,
+    ) -> ResolveEnumVariantPathResult {
+        let raw = path.to_string();
+        let candidates = build_candidate_paths(scope, &raw);
+
+        let mut matches = Vec::new();
+        for candidate in candidates {
+            if let Some(enum_path) = self.enum_variants.get(&candidate) {
+                matches.push((candidate.clone(), enum_path.clone()));
+            }
+        }
+
+        if matches.is_empty() {
+            return ResolveEnumVariantPathResult::NotFound;
+        }
+
+        if matches.len() > 1 {
+            return ResolveEnumVariantPathResult::Ambiguous(
+                matches.into_iter().map(|(path, _)| path).collect::<Vec<_>>(),
+            );
+        }
+
+        let (variant_path, enum_path) = matches.pop().expect("matches length was checked");
+        ResolveEnumVariantPathResult::Resolved(variant_path, enum_path)
     }
 
     fn path_resolves_to_option_in_scope(&self, scope: &[String], path: &Path) -> bool {
@@ -430,7 +470,11 @@ impl SymbolCollector {
                             let variant_path = format!("{}::{}", enum_path, variant.name.value);
                             if self
                                 .symbols
-                                .insert_enum_variant(variant_path.clone(), enum_path.clone())
+                                .insert_enum_variant(
+                                    variant_path.clone(),
+                                    enum_path.clone(),
+                                    variant.name.span,
+                                )
                                 .is_some()
                             {
                                 self.diagnostics.push(Diagnostic::error(
@@ -529,10 +573,18 @@ enum ResolveOptionPathResult {
     Ambiguous(Vec<String>),
 }
 
+#[derive(Debug)]
+enum ResolveEnumVariantPathResult {
+    Resolved(String, String),
+    NotFound,
+    Ambiguous(Vec<String>),
+}
+
 struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
     diagnostics: Vec<Diagnostic>,
     activation_edges: HashMap<String, HashSet<String>>,
+    used_enum_variants: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -994,6 +1046,7 @@ impl<'a> TypeChecker<'a> {
             symbols,
             diagnostics: Vec::new(),
             activation_edges: HashMap::new(),
+            used_enum_variants: HashSet::new(),
         }
     }
 
@@ -1001,6 +1054,7 @@ impl<'a> TypeChecker<'a> {
         let activation_deps = Vec::new();
         self.check_items_with_activation(items, scope, &activation_deps);
         self.check_activation_cycles();
+        self.check_unused_enum_variants();
     }
 
     fn check_items_with_activation(
@@ -1100,6 +1154,8 @@ impl<'a> TypeChecker<'a> {
             return;
         };
 
+        self.mark_default_enum_variant_usage(default, scope);
+
         let option_path = build_full_path(scope, &option.name.value);
         if option_path == "ctx" || option_path.starts_with("ctx::") {
             self.diagnostics.push(
@@ -1162,6 +1218,46 @@ impl<'a> TypeChecker<'a> {
                 ResolvePathResult::Resolved(ty) => ty,
                 ResolvePathResult::NotFound | ResolvePathResult::Ambiguous(_) => ValueType::Unknown,
             },
+        }
+    }
+
+    fn mark_default_enum_variant_usage(&mut self, default: &ConstValue, scope: &[String]) {
+        let ConstValue::EnumPath(path) = default else {
+            return;
+        };
+
+        match self.symbols.resolve_enum_variant_path_in_scope(scope, path) {
+            ResolveEnumVariantPathResult::Resolved(variant_path, _) => {
+                self.used_enum_variants.insert(variant_path);
+            }
+            ResolveEnumVariantPathResult::NotFound => {}
+            ResolveEnumVariantPathResult::Ambiguous(candidates) => {
+                let _ = candidates;
+            }
+        }
+    }
+
+    fn check_unused_enum_variants(&mut self) {
+        let mut variants = self
+            .symbols
+            .enum_variants
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        variants.sort();
+
+        for variant_path in variants {
+            if self.used_enum_variants.contains(&variant_path) {
+                continue;
+            }
+
+            self.diagnostics.push(Diagnostic::warning(
+                "L_UNUSED_ENUM_VARIANT",
+                format!("enum variant `{}` is never referenced", variant_path),
+                self.symbols
+                    .enum_variant_span(&variant_path)
+                    .unwrap_or_default(),
+            ));
         }
     }
 
@@ -1500,6 +1596,14 @@ impl<'a> TypeChecker<'a> {
                             path.span,
                         ));
                         continue;
+                    }
+
+                    if let ResolveEnumVariantPathResult::Resolved(variant_path, resolved_enum) =
+                        self.symbols.resolve_enum_variant_path_in_scope(scope, path)
+                    {
+                        if enum_name_matches(enum_name, &resolved_enum) {
+                            self.used_enum_variants.insert(variant_path);
+                        }
                     }
 
                     result.insert(variant_name);

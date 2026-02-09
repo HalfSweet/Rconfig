@@ -1130,3 +1130,52 @@ app::hidden = 42;
         .expect("expected E_INACTIVE_ASSIGNMENT");
     assert_eq!(diag.severity, Severity::Error);
 }
+
+#[test]
+fn warns_unused_enum_variant() {
+    let src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "L_UNUSED_ENUM_VARIANT"),
+        "expected L_UNUSED_ENUM_VARIANT, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn no_unused_enum_variant_when_all_referenced() {
+    let src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+
+  match mode {
+    case Mode::off => { }
+    case Mode::on => { }
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diag| diag.code != "L_UNUSED_ENUM_VARIANT"),
+        "unexpected L_UNUSED_ENUM_VARIANT diagnostics: {:#?}",
+        report.diagnostics
+    );
+}
