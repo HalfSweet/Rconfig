@@ -1179,3 +1179,45 @@ mod app {
         report.diagnostics
     );
 }
+
+#[test]
+fn reports_require_failed_for_statically_false_expr() {
+    let src = r#"
+constraint {
+  require!(true && false);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_REQUIRE_FAILED"),
+        "expected E_REQUIRE_FAILED, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn does_not_report_require_failed_for_statically_true_expr() {
+    let src = r#"
+constraint {
+  require!(true || false);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_REQUIRE_FAILED"),
+        "unexpected E_REQUIRE_FAILED diagnostics: {:#?}",
+        report.diagnostics
+    );
+}

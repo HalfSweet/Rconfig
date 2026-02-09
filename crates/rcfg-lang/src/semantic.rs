@@ -580,6 +580,13 @@ enum ResolveEnumVariantPathResult {
     Ambiguous(Vec<String>),
 }
 
+#[derive(Debug, Clone)]
+enum ConstScalar {
+    Bool(bool),
+    Int(i128),
+    String(String),
+}
+
 struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
     diagnostics: Vec<Diagnostic>,
@@ -1077,14 +1084,12 @@ impl<'a> TypeChecker<'a> {
                     self.record_activation_dependencies(&option_path, activation_deps);
                 }
                 Item::Require(require) => {
-                    self.lint_require_msg(require);
-                    self.expect_bool_expr(&require.expr, scope, None);
+                    self.check_require_stmt(require, scope, None);
                 }
                 Item::Constraint(constraint) => {
                     for item in &constraint.items {
                         if let ConstraintItem::Require(require) = item {
-                            self.lint_require_msg(require);
-                            self.expect_bool_expr(&require.expr, scope, None);
+                            self.check_require_stmt(require, scope, None);
                         }
                     }
                 }
@@ -1143,8 +1148,7 @@ impl<'a> TypeChecker<'a> {
         if let Some(attached) = &option.attached_constraints {
             let self_ty = option_type_to_value_type(&option.ty);
             for require in &attached.requires {
-                self.lint_require_msg(require);
-                self.expect_bool_expr(&require.expr, scope, Some(&self_ty));
+                self.check_require_stmt(require, scope, Some(&self_ty));
             }
         }
     }
@@ -1218,6 +1222,102 @@ impl<'a> TypeChecker<'a> {
                 ResolvePathResult::Resolved(ty) => ty,
                 ResolvePathResult::NotFound | ResolvePathResult::Ambiguous(_) => ValueType::Unknown,
             },
+        }
+    }
+
+    fn check_require_stmt(
+        &mut self,
+        require: &crate::ast::RequireStmt,
+        scope: &[String],
+        self_ty: Option<&ValueType>,
+    ) {
+        self.lint_require_msg(require);
+        self.expect_bool_expr(&require.expr, scope, self_ty);
+
+        if self.evaluate_const_bool_expr(&require.expr).is_some_and(|result| !result) {
+            self.diagnostics.push(Diagnostic::error(
+                "E_REQUIRE_FAILED",
+                "require condition is statically false",
+                require.span,
+            ));
+        }
+    }
+
+    fn evaluate_const_bool_expr(&self, expr: &Expr) -> Option<bool> {
+        match expr {
+            Expr::Bool(value, _) => Some(*value),
+            Expr::Unary {
+                op: UnaryOp::Not,
+                expr,
+                ..
+            } => self.evaluate_const_bool_expr(expr).map(|value| !value),
+            Expr::Binary {
+                op,
+                left,
+                right,
+                ..
+            } => {
+                let left = self.evaluate_const_scalar(left)?;
+                let right = self.evaluate_const_scalar(right)?;
+                match op {
+                    BinaryOp::Or => match (left, right) {
+                        (ConstScalar::Bool(l), ConstScalar::Bool(r)) => Some(l || r),
+                        _ => None,
+                    },
+                    BinaryOp::And => match (left, right) {
+                        (ConstScalar::Bool(l), ConstScalar::Bool(r)) => Some(l && r),
+                        _ => None,
+                    },
+                    BinaryOp::Eq => Some(match (left, right) {
+                        (ConstScalar::Bool(l), ConstScalar::Bool(r)) => l == r,
+                        (ConstScalar::Int(l), ConstScalar::Int(r)) => l == r,
+                        (ConstScalar::String(l), ConstScalar::String(r)) => l == r,
+                        _ => return None,
+                    }),
+                    BinaryOp::Ne => Some(match (left, right) {
+                        (ConstScalar::Bool(l), ConstScalar::Bool(r)) => l != r,
+                        (ConstScalar::Int(l), ConstScalar::Int(r)) => l != r,
+                        (ConstScalar::String(l), ConstScalar::String(r)) => l != r,
+                        _ => return None,
+                    }),
+                    BinaryOp::Lt => Some(match (left, right) {
+                        (ConstScalar::Int(l), ConstScalar::Int(r)) => l < r,
+                        _ => return None,
+                    }),
+                    BinaryOp::Le => Some(match (left, right) {
+                        (ConstScalar::Int(l), ConstScalar::Int(r)) => l <= r,
+                        _ => return None,
+                    }),
+                    BinaryOp::Gt => Some(match (left, right) {
+                        (ConstScalar::Int(l), ConstScalar::Int(r)) => l > r,
+                        _ => return None,
+                    }),
+                    BinaryOp::Ge => Some(match (left, right) {
+                        (ConstScalar::Int(l), ConstScalar::Int(r)) => l >= r,
+                        _ => return None,
+                    }),
+                }
+            }
+            Expr::Group { expr, .. } => self.evaluate_const_bool_expr(expr),
+            _ => None,
+        }
+    }
+
+    fn evaluate_const_scalar(&self, expr: &Expr) -> Option<ConstScalar> {
+        match expr {
+            Expr::Bool(value, _) => Some(ConstScalar::Bool(*value)),
+            Expr::Int(value, _) => Some(ConstScalar::Int(*value)),
+            Expr::String(value, _) => Some(ConstScalar::String(value.clone())),
+            Expr::Group { expr, .. } => self.evaluate_const_scalar(expr),
+            Expr::Unary {
+                op: UnaryOp::Not,
+                expr,
+                ..
+            } => self
+                .evaluate_const_bool_expr(expr)
+                .map(|value| ConstScalar::Bool(!value)),
+            Expr::Binary { .. } => None,
+            _ => None,
         }
     }
 
