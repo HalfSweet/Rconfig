@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path as FsPath, PathBuf};
 
@@ -58,28 +58,6 @@ pub struct ResolvedOption {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ResolvedConfig {
     pub options: Vec<ResolvedOption>,
-}
-
-impl ResolvedConfig {
-    fn value_map(&self) -> HashMap<String, ResolvedValue> {
-        self.options
-            .iter()
-            .filter_map(|option| {
-                option
-                    .value
-                    .as_ref()
-                    .map(|value| (option.path.clone(), value.clone()))
-            })
-            .collect::<HashMap<_, _>>()
-    }
-
-    fn active_set(&self) -> HashSet<String> {
-        self.options
-            .iter()
-            .filter(|option| option.active)
-            .map(|option| option.path.clone())
-            .collect::<HashSet<_>>()
-    }
 }
 
 impl ValueType {
@@ -441,7 +419,8 @@ pub fn analyze_schema(file: &File) -> SemanticReport {
     collector.collect_items(&file.items, &mut root_scope);
 
     let mut diagnostics = collector.diagnostics;
-    let symbols = collector.symbols;
+    let mut symbols = collector.symbols;
+    symbols.set_schema_items(file.items.clone());
 
     let mut checker = TypeChecker::new(&symbols);
     let mut scope = Vec::new();
