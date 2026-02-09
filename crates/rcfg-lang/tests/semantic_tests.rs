@@ -894,3 +894,46 @@ app::channel = 8;
         "unexpected E_RANGE_VIOLATION diagnostics: {diagnostics:#?}"
     );
 }
+
+#[test]
+fn warns_require_missing_msg_attribute() {
+    let src = r#"
+constraint {
+  require!(true);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "L_REQUIRE_MISSING_MSG"),
+        "expected L_REQUIRE_MISSING_MSG, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn require_with_msg_attribute_suppresses_lint() {
+    let src = r#"
+constraint {
+  #[msg("app.require.ok")]
+  require!(true);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diag| diag.code != "L_REQUIRE_MISSING_MSG"),
+        "unexpected L_REQUIRE_MISSING_MSG diagnostics: {:#?}",
+        report.diagnostics
+    );
+}

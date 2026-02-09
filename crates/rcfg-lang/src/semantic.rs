@@ -915,11 +915,13 @@ impl<'a> TypeChecker<'a> {
                     self.check_option(option, scope);
                 }
                 Item::Require(require) => {
+                    self.lint_require_msg(require);
                     self.expect_bool_expr(&require.expr, scope, None);
                 }
                 Item::Constraint(constraint) => {
                     for item in &constraint.items {
                         if let ConstraintItem::Require(require) = item {
+                            self.lint_require_msg(require);
                             self.expect_bool_expr(&require.expr, scope, None);
                         }
                     }
@@ -947,6 +949,7 @@ impl<'a> TypeChecker<'a> {
         if let Some(attached) = &option.attached_constraints {
             let self_ty = option_type_to_value_type(&option.ty);
             for require in &attached.requires {
+                self.lint_require_msg(require);
                 self.expect_bool_expr(&require.expr, scope, Some(&self_ty));
             }
         }
@@ -1019,6 +1022,21 @@ impl<'a> TypeChecker<'a> {
                 ResolvePathResult::Resolved(ty) => ty,
                 ResolvePathResult::NotFound | ResolvePathResult::Ambiguous(_) => ValueType::Unknown,
             },
+        }
+    }
+
+    fn lint_require_msg(&mut self, require: &crate::ast::RequireStmt) {
+        let has_msg = require
+            .meta
+            .attrs
+            .iter()
+            .any(|attr| matches!(attr.kind, AttrKind::Msg(_)));
+        if !has_msg {
+            self.diagnostics.push(Diagnostic::warning(
+                "L_REQUIRE_MISSING_MSG",
+                "require! is missing #[msg(\"...\")] for stable i18n key",
+                require.span,
+            ));
         }
     }
 
