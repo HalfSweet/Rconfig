@@ -9,7 +9,7 @@ pub enum Severity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     pub severity: Severity,
-    pub code: &'static str,
+    pub code: String,
     pub message: String,
     pub span: Span,
     pub path: Option<String>,
@@ -18,10 +18,10 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    pub fn error(code: &'static str, message: impl Into<String>, span: Span) -> Self {
+    pub fn error(code: impl Into<String>, message: impl Into<String>, span: Span) -> Self {
         Self {
             severity: Severity::Error,
-            code,
+            code: code.into(),
             message: message.into(),
             span,
             path: None,
@@ -30,10 +30,10 @@ impl Diagnostic {
         }
     }
 
-    pub fn warning(code: &'static str, message: impl Into<String>, span: Span) -> Self {
+    pub fn warning(code: impl Into<String>, message: impl Into<String>, span: Span) -> Self {
         Self {
             severity: Severity::Warning,
-            code,
+            code: code.into(),
             message: message.into(),
             span,
             path: None,
