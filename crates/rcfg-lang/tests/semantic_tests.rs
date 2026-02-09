@@ -878,6 +878,28 @@ mod app {
 }
 
 #[test]
+fn reports_default_not_constant_for_option_path() {
+    let src = r#"
+mod app {
+  option base: u8 = 1;
+  option channel: u8 = base;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_DEFAULT_NOT_CONSTANT"),
+        "expected E_DEFAULT_NOT_CONSTANT, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn reports_default_out_of_range() {
     let src = r#"
 mod app {

@@ -1791,6 +1791,23 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
+        if let ConstValue::EnumPath(path) = default {
+            if self.symbols.path_resolves_to_option_in_scope(scope, path) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E_DEFAULT_NOT_CONSTANT",
+                        format!(
+                            "default value for option `{}` must be a constant enum variant or literal",
+                            option_path
+                        ),
+                        path.span,
+                    )
+                    .with_path(option_path),
+                );
+                return;
+            }
+        }
+
         let expected = option_type_to_value_type(&option.ty);
         let actual = self.infer_const_type(default, scope);
         let type_matches = match (&expected, &actual) {
