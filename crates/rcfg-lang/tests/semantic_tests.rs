@@ -648,3 +648,127 @@ app::enabled = 1;
         .expect("missing E_TYPE_MISMATCH");
     assert_eq!(diag.path.as_deref(), Some("app::enabled"));
 }
+
+#[test]
+fn reports_context_default_not_allowed() {
+    let src = r#"
+mod ctx {
+  option arch: string = "arm";
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_CONTEXT_DEFAULT_NOT_ALLOWED"),
+        "expected E_CONTEXT_DEFAULT_NOT_ALLOWED, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn reports_default_type_mismatch() {
+    let src = r#"
+mod app {
+  option retries: u32 = true;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_DEFAULT_TYPE_MISMATCH"),
+        "expected E_DEFAULT_TYPE_MISMATCH, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn reports_default_out_of_range() {
+    let src = r#"
+mod app {
+  option channel: u8 = 300;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_DEFAULT_OUT_OF_RANGE"),
+        "expected E_DEFAULT_OUT_OF_RANGE, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn reports_missing_value_for_active_option_without_default() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    let diag = diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_MISSING_VALUE")
+        .expect("expected E_MISSING_VALUE");
+    assert_eq!(diag.path.as_deref(), Some("app::enabled"));
+}
+
+#[test]
+fn default_value_satisfies_missing_value_check() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    assert!(
+        diagnostics.iter().all(|diag| diag.code != "E_MISSING_VALUE"),
+        "unexpected E_MISSING_VALUE diagnostics: {diagnostics:#?}"
+    );
+}
+
+#[test]
+fn conditional_option_is_not_required_by_missing_value_check() {
+    let schema_src = r#"
+mod app {
+  option gate: bool = false;
+  when gate {
+    option hidden: u32;
+  }
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    assert!(
+        diagnostics.iter().all(|diag| diag.code != "E_MISSING_VALUE"),
+        "unexpected E_MISSING_VALUE diagnostics: {diagnostics:#?}"
+    );
+}

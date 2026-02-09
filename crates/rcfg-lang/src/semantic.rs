@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path as FsPath, PathBuf};
 
 use crate::ast::{
-    BinaryOp, ConstraintItem, Expr, File, InSetElem, Item, MatchBlock, MatchPat, OptionDecl,
-    Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
+    BinaryOp, ConstValue, ConstraintItem, Expr, File, InSetElem, Item, MatchBlock, MatchPat,
+    OptionDecl, Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
 };
 use crate::error::Diagnostic;
 use crate::parser::parse_values_with_diagnostics;
@@ -65,6 +65,9 @@ impl ValueType {
 pub struct SymbolTable {
     symbols: HashMap<String, SymbolInfo>,
     option_types: HashMap<String, ValueType>,
+    option_defaults: HashMap<String, ConstValue>,
+    option_spans: HashMap<String, Span>,
+    option_always_active: HashMap<String, bool>,
     enum_variants: HashMap<String, String>,
 }
 
@@ -95,6 +98,30 @@ impl SymbolTable {
 
     fn insert_option_type(&mut self, path: String, ty: ValueType) {
         self.option_types.insert(path, ty);
+    }
+
+    fn insert_option_default(&mut self, path: String, value: ConstValue) {
+        self.option_defaults.insert(path, value);
+    }
+
+    fn insert_option_span(&mut self, path: String, span: Span) {
+        self.option_spans.insert(path, span);
+    }
+
+    fn insert_option_always_active(&mut self, path: String, is_always_active: bool) {
+        self.option_always_active.insert(path, is_always_active);
+    }
+
+    fn option_default(&self, path: &str) -> Option<&ConstValue> {
+        self.option_defaults.get(path)
+    }
+
+    fn option_span(&self, path: &str) -> Option<Span> {
+        self.option_spans.get(path).copied()
+    }
+
+    fn option_is_always_active(&self, path: &str) -> bool {
+        self.option_always_active.get(path).copied().unwrap_or(true)
     }
 
     fn insert_enum_variant(&mut self, variant_path: String, enum_path: String) -> Option<String> {
@@ -226,7 +253,16 @@ fn analyze_values_with_stmt_indexes(
 ) -> (Vec<Diagnostic>, Vec<Option<usize>>) {
     let mut checker = ValuesChecker::new(symbols);
     checker.check(values);
-    (checker.diagnostics, checker.diagnostic_stmt_indexes)
+
+    let missing_diags = checker.missing_value_diagnostics();
+    let mut diagnostics = checker.diagnostics;
+    let mut stmt_indexes = checker.diagnostic_stmt_indexes;
+    for diagnostic in missing_diags {
+        diagnostics.push(diagnostic);
+        stmt_indexes.push(None);
+    }
+
+    (diagnostics, stmt_indexes)
 }
 
 pub fn analyze_values_from_path_report(
@@ -286,6 +322,15 @@ struct SymbolCollector {
 
 impl SymbolCollector {
     fn collect_items(&mut self, items: &[Item], scope: &mut Vec<String>) {
+        self.collect_items_in_context(items, scope, false);
+    }
+
+    fn collect_items_in_context(
+        &mut self,
+        items: &[Item],
+        scope: &mut Vec<String>,
+        in_conditional: bool,
+    ) {
         for item in items {
             match item {
                 Item::Use(_) | Item::Require(_) | Item::Constraint(_) => {}
@@ -293,7 +338,14 @@ impl SymbolCollector {
                     let full_path = build_full_path(scope, &option.name.value);
                     if self.declare(scope, &option.name.value, SymbolKind::Option, option.name.span) {
                         self.symbols
-                            .insert_option_type(full_path, option_type_to_value_type(&option.ty));
+                            .insert_option_type(full_path.clone(), option_type_to_value_type(&option.ty));
+                        self.symbols
+                            .insert_option_span(full_path.clone(), option.name.span);
+                        self.symbols
+                            .insert_option_always_active(full_path.clone(), !in_conditional);
+                        if let Some(default) = option.default.clone() {
+                            self.symbols.insert_option_default(full_path, default);
+                        }
                     }
                 }
                 Item::Enum(enum_decl) => {
@@ -318,15 +370,15 @@ impl SymbolCollector {
                 Item::Mod(module) => {
                     self.declare(scope, &module.name.value, SymbolKind::Mod, module.name.span);
                     scope.push(module.name.value.clone());
-                    self.collect_items(&module.items, scope);
+                    self.collect_items_in_context(&module.items, scope, in_conditional);
                     scope.pop();
                 }
                 Item::When(when_block) => {
-                    self.collect_items(&when_block.items, scope);
+                    self.collect_items_in_context(&when_block.items, scope, true);
                 }
                 Item::Match(match_block) => {
                     for case in &match_block.cases {
-                        self.collect_items(&case.items, scope);
+                        self.collect_items_in_context(&case.items, scope, true);
                     }
                 }
             }
@@ -726,6 +778,46 @@ impl<'a> ValuesChecker<'a> {
         ));
     }
 
+    fn missing_value_diagnostics(&self) -> Vec<Diagnostic> {
+        let mut option_paths = self
+            .symbols
+            .option_types
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        option_paths.sort();
+
+        let mut diagnostics = Vec::new();
+        for option_path in option_paths {
+            if option_path == "ctx" || option_path.starts_with("ctx::") {
+                continue;
+            }
+            if !self.symbols.option_is_always_active(&option_path) {
+                continue;
+            }
+            if self.symbols.option_default(&option_path).is_some() {
+                continue;
+            }
+            if self.assigned.contains_key(&option_path) {
+                continue;
+            }
+
+            diagnostics.push(
+                Diagnostic::error(
+                    "E_MISSING_VALUE",
+                    format!(
+                        "active option `{}` has no value from assignments or defaults",
+                        option_path
+                    ),
+                    self.symbols.option_span(&option_path).unwrap_or_default(),
+                )
+                .with_path(option_path),
+            );
+        }
+
+        diagnostics
+    }
+
     fn push_diag(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
         self.diagnostic_stmt_indexes.push(self.current_stmt_index);
@@ -780,11 +872,83 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_option(&mut self, option: &OptionDecl, scope: &[String]) {
+        self.check_option_default(option, scope);
+
         if let Some(attached) = &option.attached_constraints {
             let self_ty = option_type_to_value_type(&option.ty);
             for require in &attached.requires {
                 self.expect_bool_expr(&require.expr, scope, Some(&self_ty));
             }
+        }
+    }
+
+    fn check_option_default(&mut self, option: &OptionDecl, scope: &[String]) {
+        let Some(default) = &option.default else {
+            return;
+        };
+
+        let option_path = build_full_path(scope, &option.name.value);
+        if option_path == "ctx" || option_path.starts_with("ctx::") {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_CONTEXT_DEFAULT_NOT_ALLOWED",
+                    "`ctx` option cannot define schema default value",
+                    default.span(),
+                )
+                .with_path(option_path),
+            );
+            return;
+        }
+
+        let expected = option_type_to_value_type(&option.ty);
+        let actual = self.infer_const_type(default, scope);
+        let type_matches = match (&expected, &actual) {
+            (ValueType::Enum(expected_name), ValueType::Enum(actual_name)) => {
+                enum_name_matches(expected_name, actual_name)
+            }
+            _ => expected.same_as(&actual),
+        };
+
+        if !type_matches {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_DEFAULT_TYPE_MISMATCH",
+                    format!("default value type mismatch for option `{}`", option_path),
+                    default.span(),
+                )
+                .with_path(option_path),
+            );
+            return;
+        }
+
+        if let ConstValue::Int(value, span) = default {
+            if let Some((min, max)) = int_type_bounds(&option.ty) {
+                if *value < min || *value > max {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E_DEFAULT_OUT_OF_RANGE",
+                            format!(
+                                "default value `{}` for option `{}` is out of range [{}..={}]",
+                                value, option_path, min, max
+                            ),
+                            *span,
+                        )
+                        .with_path(option_path),
+                    );
+                }
+            }
+        }
+    }
+
+    fn infer_const_type(&self, value: &ConstValue, scope: &[String]) -> ValueType {
+        match value {
+            ConstValue::Bool(_, _) => ValueType::Bool,
+            ConstValue::Int(_, _) => ValueType::Int,
+            ConstValue::String(_, _) => ValueType::String,
+            ConstValue::EnumPath(path) => match self.symbols.resolve_path_type(scope, path) {
+                ResolvePathResult::Resolved(ty) => ty,
+                ResolvePathResult::NotFound | ResolvePathResult::Ambiguous(_) => ValueType::Unknown,
+            },
         }
     }
 
@@ -1201,6 +1365,16 @@ fn parse_env_int(raw: &str) -> Option<i128> {
     }
 }
 
+fn int_type_bounds(ty: &Type) -> Option<(i128, i128)> {
+    match ty {
+        Type::U8(_) => Some((u8::MIN as i128, u8::MAX as i128)),
+        Type::U16(_) => Some((u16::MIN as i128, u16::MAX as i128)),
+        Type::U32(_) => Some((u32::MIN as i128, u32::MAX as i128)),
+        Type::I32(_) => Some((i32::MIN as i128, i32::MAX as i128)),
+        _ => None,
+    }
+}
+
 fn enum_name_matches(expected: &str, candidate: &str) -> bool {
     if expected == candidate {
         return true;
@@ -1210,4 +1384,3 @@ fn enum_name_matches(expected: &str, candidate: &str) -> bool {
     let candidate_base = candidate.rsplit("::").next().unwrap_or(candidate);
     expected_base == candidate_base
 }
-
