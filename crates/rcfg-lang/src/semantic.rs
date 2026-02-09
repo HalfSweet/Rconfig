@@ -208,6 +208,13 @@ pub fn analyze_values(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnos
     checker.diagnostics
 }
 
+pub fn analyze_values_from_path(entry: &FsPath, symbols: &SymbolTable) -> (ValuesFile, Vec<Diagnostic>) {
+    let (expanded, mut diagnostics) = expand_values_includes_from_path(entry);
+    let mut semantic = analyze_values(&expanded, symbols);
+    diagnostics.append(&mut semantic);
+    (expanded, diagnostics)
+}
+
 pub fn expand_values_includes_from_path(entry: &FsPath) -> (ValuesFile, Vec<Diagnostic>) {
     let mut expander = IncludeExpander::default();
     let mut stmts = Vec::new();
@@ -1560,6 +1567,38 @@ app::enabled = false;
 
         let _ = std::fs::remove_file(&a);
         let _ = std::fs::remove_file(&b);
+        let _ = std::fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn analyze_values_from_path_runs_include_and_semantic_checks() {
+        let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let tmp = std::env::temp_dir().join(format!(
+            "rcfg_values_from_path_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        let base = tmp.join("base.rcfgv");
+        let root = tmp.join("root.rcfgv");
+
+        std::fs::write(&base, "app::enabled = 1;\n").expect("write base");
+        std::fs::write(&root, "include \"base.rcfgv\";\n").expect("write root");
+
+        let (_expanded, diags) = super::analyze_values_from_path(&root, &symbols);
+        assert!(
+            diags.iter().any(|diag| diag.code == "E_TYPE_MISMATCH"),
+            "expected E_TYPE_MISMATCH, got: {diags:#?}"
+        );
+
+        let _ = std::fs::remove_file(&base);
+        let _ = std::fs::remove_file(&root);
         let _ = std::fs::remove_dir(&tmp);
     }
 }
