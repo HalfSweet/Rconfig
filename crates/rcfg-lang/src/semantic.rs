@@ -342,6 +342,14 @@ struct IncludeExpander {
 }
 
 impl IncludeExpander {
+    fn current_chain(&self, next: &PathBuf) -> Vec<String> {
+        self.stack
+            .iter()
+            .chain(std::iter::once(next))
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+    }
+
     fn expand_file(&mut self, file: &FsPath, output: &mut Vec<ValuesStmt>) {
         let canonical = match fs::canonicalize(file) {
             Ok(path) => path,
@@ -350,7 +358,9 @@ impl IncludeExpander {
                     "E_INCLUDE_NOT_FOUND",
                     format!("include file not found: {}", file.display()),
                     Span::default(),
-                ));
+                )
+                .with_source(file.display().to_string())
+                .with_include_chain(self.current_chain(&file.to_path_buf())));
                 return;
             }
         };
@@ -366,7 +376,9 @@ impl IncludeExpander {
                 "E_INCLUDE_CYCLE",
                 format!("include cycle detected: {}", chain),
                 Span::default(),
-            ));
+            )
+            .with_source(canonical.display().to_string())
+            .with_include_chain(self.current_chain(&canonical)));
             return;
         }
 
@@ -377,7 +389,9 @@ impl IncludeExpander {
                     "E_INCLUDE_NOT_FOUND",
                     format!("failed to read include file: {}", canonical.display()),
                     Span::default(),
-                ));
+                )
+                .with_source(canonical.display().to_string())
+                .with_include_chain(self.current_chain(&canonical)));
                 return;
             }
         };
@@ -1544,6 +1558,15 @@ app::enabled = false;
             diags.iter().any(|diag| diag.code == "E_INCLUDE_NOT_FOUND"),
             "expected E_INCLUDE_NOT_FOUND, got: {diags:#?}"
         );
+        let diag = diags
+            .iter()
+            .find(|diag| diag.code == "E_INCLUDE_NOT_FOUND")
+            .expect("missing E_INCLUDE_NOT_FOUND");
+        assert!(diag.source.is_some(), "expected source in diagnostic");
+        assert!(
+            !diag.include_chain.is_empty(),
+            "expected include chain in diagnostic"
+        );
     }
 
     #[test]
@@ -1563,6 +1586,15 @@ app::enabled = false;
         assert!(
             diags.iter().any(|diag| diag.code == "E_INCLUDE_CYCLE"),
             "expected E_INCLUDE_CYCLE, got: {diags:#?}"
+        );
+        let diag = diags
+            .iter()
+            .find(|diag| diag.code == "E_INCLUDE_CYCLE")
+            .expect("missing E_INCLUDE_CYCLE");
+        assert!(diag.source.is_some(), "expected source in diagnostic");
+        assert!(
+            diag.include_chain.len() >= 2,
+            "expected include chain with at least two nodes"
         );
 
         let _ = std::fs::remove_file(&a);
