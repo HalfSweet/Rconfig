@@ -327,6 +327,53 @@ fn resolve_schema_path(schema: Option<&Path>, manifest: Option<&ManifestModel>) 
     Err("--schema is required (or provide --manifest with entry.schema)".to_string())
 }
 
+fn diagnostic_arg_to_json(value: &rcfg_lang::DiagnosticArgValue) -> serde_json::Value {
+    match value {
+        rcfg_lang::DiagnosticArgValue::Bool(raw) => serde_json::json!(raw),
+        rcfg_lang::DiagnosticArgValue::Int(raw) => serde_json::json!(raw),
+        rcfg_lang::DiagnosticArgValue::String(raw) => serde_json::json!(raw),
+    }
+}
+
+fn diagnostic_to_json(diag: &Diagnostic) -> serde_json::Value {
+    let args = diag
+        .args
+        .iter()
+        .map(|(key, value)| (key.clone(), diagnostic_arg_to_json(value)))
+        .collect::<serde_json::Map<_, _>>();
+    let related = diag
+        .related
+        .iter()
+        .map(|item| {
+            serde_json::json!({
+                "message": item.message,
+                "path": item.path,
+                "span": {
+                    "start": item.span.start,
+                    "end": item.span.end,
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+
+    serde_json::json!({
+        "severity": match diag.severity { Severity::Error => "error", Severity::Warning => "warning" },
+        "code": diag.code,
+        "message": diag.message,
+        "message_key": diag.message_key,
+        "note": diag.note,
+        "args": args,
+        "related": related,
+        "path": diag.path,
+        "source": diag.source,
+        "include_chain": diag.include_chain,
+        "span": {
+            "start": diag.span.start,
+            "end": diag.span.end,
+        }
+    })
+}
+
 fn print_diagnostics(diags: &[Diagnostic], format: OutputFormat) {
     match format {
         OutputFormat::Human => {
@@ -344,23 +391,7 @@ fn print_diagnostics(diags: &[Diagnostic], format: OutputFormat) {
             }
         }
         OutputFormat::Json => {
-            let payload = diags
-                .iter()
-                .map(|diag| {
-                    serde_json::json!({
-                        "severity": match diag.severity { Severity::Error => "error", Severity::Warning => "warning" },
-                        "code": diag.code,
-                        "message": diag.message,
-                        "path": diag.path,
-                        "source": diag.source,
-                        "include_chain": diag.include_chain,
-                        "span": {
-                            "start": diag.span.start,
-                            "end": diag.span.end,
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
+            let payload = diags.iter().map(diagnostic_to_json).collect::<Vec<_>>();
             if let Ok(text) = serde_json::to_string_pretty(&payload) {
                 println!("{}", text);
             }
@@ -374,20 +405,7 @@ fn write_diagnostics_json(path: Option<&Path>, diagnostics: &[Diagnostic]) -> Re
     };
     let payload = diagnostics
         .iter()
-        .map(|diag| {
-            serde_json::json!({
-                "severity": match diag.severity { Severity::Error => "error", Severity::Warning => "warning" },
-                "code": diag.code,
-                "message": diag.message,
-                "path": diag.path,
-                "source": diag.source,
-                "include_chain": diag.include_chain,
-                "span": {
-                    "start": diag.span.start,
-                    "end": diag.span.end,
-                }
-            })
-        })
+        .map(diagnostic_to_json)
         .collect::<Vec<_>>();
 
     fs::write(

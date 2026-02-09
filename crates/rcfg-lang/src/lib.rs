@@ -9,7 +9,7 @@ pub use ast::{
     Attr, AttrKind, ConstValue, EnumVariant, Expr, File, IntRange, Item, MatchCase, MatchPat,
     OptionAttachedConstraints, OptionDecl, Path, Type, UseStmt, ValueExpr, ValuesFile,
 };
-pub use error::{Diagnostic, Severity};
+pub use error::{Diagnostic, DiagnosticArgValue, RelatedInfo, Severity};
 pub use parser::{
     parse_schema, parse_schema_with_diagnostics, parse_values, parse_values_with_diagnostics,
 };
