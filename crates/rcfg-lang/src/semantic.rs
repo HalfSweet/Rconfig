@@ -419,7 +419,7 @@ impl<'a> ValuesChecker<'a> {
             return;
         };
 
-        let actual = self.value_expr_type(value);
+        let actual = self.value_expr_type(value, &expected);
         if !actual.is_unknown() && !expected.same_as(&actual) {
             self.diagnostics.push(Diagnostic::error(
                 "E_TYPE_MISMATCH",
@@ -432,14 +432,24 @@ impl<'a> ValuesChecker<'a> {
         }
     }
 
-    fn value_expr_type(&mut self, value: &ValueExpr) -> ValueType {
+    fn value_expr_type(&mut self, value: &ValueExpr, expected: &ValueType) -> ValueType {
         match value {
             ValueExpr::Bool(_, _) => ValueType::Bool,
             ValueExpr::Int(_, _) => ValueType::Int,
             ValueExpr::String(_, _) => ValueType::String,
-            ValueExpr::Env { .. } => ValueType::Unknown,
+            ValueExpr::Env { name, .. } => self.env_value_type(name.value.as_str(), expected, value.span()),
             ValueExpr::Path(path) => {
                 let expanded = expand_with_aliases(path, &self.aliases);
+                let option_matches = self.symbols.resolve_option_paths(&expanded);
+                if !option_matches.is_empty() {
+                    self.diagnostics.push(Diagnostic::error(
+                        "E_VALUE_PATH_RESOLVES_TO_OPTION",
+                        format!("value path `{}` resolves to option", path.to_string()),
+                        path.span,
+                    ));
+                    return ValueType::Unknown;
+                }
+
                 let mut matches = self.symbols.resolve_enum_variant_paths(&expanded);
                 if matches.is_empty() {
                     self.diagnostics.push(Diagnostic::error(
@@ -472,6 +482,53 @@ impl<'a> ValuesChecker<'a> {
                 ValueType::Enum(enum_name)
             }
         }
+    }
+
+    fn env_value_type(&mut self, name: &str, expected: &ValueType, span: Span) -> ValueType {
+        let raw = match std::env::var(name) {
+            Ok(value) => value,
+            Err(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E_ENV_NOT_SET",
+                    format!("environment variable `{}` is not set", name),
+                    span,
+                ));
+                return ValueType::Unknown;
+            }
+        };
+
+        match expected {
+            ValueType::Bool => {
+                if raw == "true" || raw == "false" {
+                    ValueType::Bool
+                } else {
+                    self.push_env_parse_failed(name, &raw, "bool", span);
+                    ValueType::Unknown
+                }
+            }
+            ValueType::Int => {
+                if parse_env_int(&raw).is_some() {
+                    ValueType::Int
+                } else {
+                    self.push_env_parse_failed(name, &raw, "int", span);
+                    ValueType::Unknown
+                }
+            }
+            ValueType::String => ValueType::String,
+            ValueType::Enum(_) => ValueType::Unknown,
+            ValueType::Unknown => ValueType::Unknown,
+        }
+    }
+
+    fn push_env_parse_failed(&mut self, name: &str, value: &str, expected: &str, span: Span) {
+        self.diagnostics.push(Diagnostic::error(
+            "E_ENV_PARSE_FAILED",
+            format!(
+                "failed to parse env `{}` value `{}` as {}",
+                name, value, expected
+            ),
+            span,
+        ));
     }
 }
 
@@ -932,6 +989,18 @@ fn path_matches(candidate: &str, raw_path: &str) -> bool {
     candidate == raw_path || candidate.ends_with(&format!("::{}", raw_path))
 }
 
+fn parse_env_int(raw: &str) -> Option<i128> {
+    let cleaned = raw.replace('_', "");
+    if let Some(hex) = cleaned
+        .strip_prefix("0x")
+        .or_else(|| cleaned.strip_prefix("0X"))
+    {
+        i128::from_str_radix(hex, 16).ok()
+    } else {
+        cleaned.parse::<i128>().ok()
+    }
+}
+
 fn enum_name_matches(expected: &str, candidate: &str) -> bool {
     if expected == candidate {
         return true;
@@ -1255,5 +1324,86 @@ uart::enable = true;
             semantic_diags.is_empty(),
             "expected no diagnostics, got: {semantic_diags:#?}"
         );
+    }
+
+    #[test]
+    fn values_report_value_path_resolves_to_option() {
+        let schema_src = r#"
+mod app {
+  option a: bool = false;
+  option b: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let values_src = r#"
+app::a = app::b;
+"#;
+        let (values, diags) = parse_values_with_diagnostics(values_src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+        let semantic_diags = super::analyze_values(&values, &symbols);
+        assert!(
+            semantic_diags
+                .iter()
+                .any(|diag| diag.code == "E_VALUE_PATH_RESOLVES_TO_OPTION"),
+            "expected E_VALUE_PATH_RESOLVES_TO_OPTION, got: {semantic_diags:#?}"
+        );
+    }
+
+    #[test]
+    fn values_env_reports_missing_var() {
+        let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+        let missing = "RCFG_TEST_MISSING_ENV";
+        unsafe {
+            std::env::remove_var(missing);
+        }
+
+        let values_src = format!("app::enabled = env(\"{}\");", missing);
+        let (values, diags) = parse_values_with_diagnostics(&values_src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+        let semantic_diags = super::analyze_values(&values, &symbols);
+        assert!(
+            semantic_diags
+                .iter()
+                .any(|diag| diag.code == "E_ENV_NOT_SET"),
+            "expected E_ENV_NOT_SET, got: {semantic_diags:#?}"
+        );
+    }
+
+    #[test]
+    fn values_env_reports_parse_failure_for_bool() {
+        let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+        let key = "RCFG_TEST_BOOL_ENV";
+        unsafe {
+            std::env::set_var(key, "TRUE");
+        }
+
+        let values_src = format!("app::enabled = env(\"{}\");", key);
+        let (values, diags) = parse_values_with_diagnostics(&values_src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+        let semantic_diags = super::analyze_values(&values, &symbols);
+        assert!(
+            semantic_diags
+                .iter()
+                .any(|diag| diag.code == "E_ENV_PARSE_FAILED"),
+            "expected E_ENV_PARSE_FAILED, got: {semantic_diags:#?}"
+        );
+
+        unsafe {
+            std::env::remove_var(key);
+        }
     }
 }
