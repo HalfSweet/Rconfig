@@ -300,6 +300,7 @@ schema = "src/schema.rcfg"
     assert!(stdout.contains("L_MISSING_DOC"), "{stdout}");
 }
 
+
 #[test]
 fn rcfg_i18n_extract_generates_template_toml() {
     let root = fixture_path("cli_i18n_extract");
@@ -381,4 +382,51 @@ schema = "src/schema.rcfg"
         text.contains("\"demo.app.require.custom\" = \"require condition failed\""),
         "{text}"
     );
+}
+
+#[test]
+fn rcfg_check_uses_i18n_message_fallback() {
+    let root = fixture_path("cli_i18n_fallback");
+    let schema = root.join("schema.rcfg");
+    let values = root.join("values.rcfgv");
+    let i18n = root.join("i18n/zh-CN.toml");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+
+  #[msg("demo.app.require.fail")]
+  require!(enabled == true);
+}
+"#,
+    );
+    write_file(&values, "");
+    write_file(
+        &i18n,
+        r#"
+locale = "zh-CN"
+
+[strings]
+"demo.app.require.fail" = "需要启用 app::enabled"
+"#,
+    );
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "check",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--i18n",
+            i18n.to_str().expect("i18n path"),
+        ])
+        .output()
+        .expect("run rcfg check");
+    assert!(!output.status.success(), "rcfg check should fail");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("需要启用 app::enabled"), "{stdout}");
 }
