@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path as FsPath, PathBuf};
 
 use crate::ast::{
     BinaryOp, ConstraintItem, Expr, File, InSetElem, Item, MatchBlock, MatchPat, OptionDecl,
     Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
 };
 use crate::error::Diagnostic;
+use crate::parser::parse_values_with_diagnostics;
 use crate::span::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,6 +208,13 @@ pub fn analyze_values(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnos
     checker.diagnostics
 }
 
+pub fn expand_values_includes_from_path(entry: &FsPath) -> (ValuesFile, Vec<Diagnostic>) {
+    let mut expander = IncludeExpander::default();
+    let mut stmts = Vec::new();
+    expander.expand_file(entry, &mut stmts);
+    (ValuesFile { stmts }, expander.diagnostics)
+}
+
 #[derive(Debug, Clone, Copy)]
 struct DeclInfo {
     kind: SymbolKind,
@@ -316,6 +326,76 @@ enum ResolvePathResult {
 struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
     diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Default)]
+struct IncludeExpander {
+    diagnostics: Vec<Diagnostic>,
+    stack: Vec<PathBuf>,
+}
+
+impl IncludeExpander {
+    fn expand_file(&mut self, file: &FsPath, output: &mut Vec<ValuesStmt>) {
+        let canonical = match fs::canonicalize(file) {
+            Ok(path) => path,
+            Err(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E_INCLUDE_NOT_FOUND",
+                    format!("include file not found: {}", file.display()),
+                    Span::default(),
+                ));
+                return;
+            }
+        };
+
+        if let Some(index) = self.stack.iter().position(|path| path == &canonical) {
+            let chain = self.stack[index..]
+                .iter()
+                .chain(std::iter::once(&canonical))
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            self.diagnostics.push(Diagnostic::error(
+                "E_INCLUDE_CYCLE",
+                format!("include cycle detected: {}", chain),
+                Span::default(),
+            ));
+            return;
+        }
+
+        let text = match fs::read_to_string(&canonical) {
+            Ok(content) => content,
+            Err(_) => {
+                self.diagnostics.push(Diagnostic::error(
+                    "E_INCLUDE_NOT_FOUND",
+                    format!("failed to read include file: {}", canonical.display()),
+                    Span::default(),
+                ));
+                return;
+            }
+        };
+
+        let (values, mut parse_diags) = parse_values_with_diagnostics(&text);
+        self.diagnostics.append(&mut parse_diags);
+
+        self.stack.push(canonical.clone());
+        let base_dir = canonical
+            .parent()
+            .map(FsPath::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+
+        for stmt in values.stmts {
+            match stmt {
+                ValuesStmt::Include(include) => {
+                    let target = base_dir.join(include.path.value);
+                    self.expand_file(&target, output);
+                }
+                other => output.push(other),
+            }
+        }
+
+        self.stack.pop();
+    }
 }
 
 struct ValuesChecker<'a> {
@@ -1028,6 +1108,8 @@ fn enum_name_matches(expected: &str, candidate: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 
     use super::{analyze_schema, SymbolKind};
@@ -1445,5 +1527,39 @@ app::enabled = false;
                 .any(|diag| diag.code == "W_DUPLICATE_ASSIGNMENT"),
             "expected W_DUPLICATE_ASSIGNMENT, got: {semantic_diags:#?}"
         );
+    }
+
+    #[test]
+    fn include_expander_reports_not_found() {
+        let missing = PathBuf::from("/tmp/rcfg-not-found-include.rcfgv");
+        let (_values, diags) = super::expand_values_includes_from_path(&missing);
+        assert!(
+            diags.iter().any(|diag| diag.code == "E_INCLUDE_NOT_FOUND"),
+            "expected E_INCLUDE_NOT_FOUND, got: {diags:#?}"
+        );
+    }
+
+    #[test]
+    fn include_expander_reports_cycle() {
+        let tmp = std::env::temp_dir().join(format!(
+            "rcfg_include_cycle_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        let a = tmp.join("a.rcfgv");
+        let b = tmp.join("b.rcfgv");
+        std::fs::write(&a, "include \"b.rcfgv\";\n").expect("write a");
+        std::fs::write(&b, "include \"a.rcfgv\";\n").expect("write b");
+
+        let (_values, diags) = super::expand_values_includes_from_path(&a);
+        assert!(
+            diags.iter().any(|diag| diag.code == "E_INCLUDE_CYCLE"),
+            "expected E_INCLUDE_CYCLE, got: {diags:#?}"
+        );
+
+        let _ = std::fs::remove_file(&a);
+        let _ = std::fs::remove_file(&b);
+        let _ = std::fs::remove_dir(&tmp);
     }
 }
