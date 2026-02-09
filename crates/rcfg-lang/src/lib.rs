@@ -2,6 +2,7 @@ pub mod ast;
 pub mod error;
 pub mod lexer;
 pub mod parser;
+pub mod semantic;
 pub mod span;
 
 pub use ast::{
@@ -12,4 +13,5 @@ pub use error::{Diagnostic, Severity};
 pub use parser::{
     parse_schema, parse_schema_with_diagnostics, parse_values, parse_values_with_diagnostics,
 };
+pub use semantic::{analyze_schema, SemanticReport, SymbolInfo, SymbolKind, SymbolTable};
 pub use span::{Span, Spanned};
