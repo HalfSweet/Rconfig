@@ -15,6 +15,7 @@ pub use parser::{
 };
 pub use semantic::{
     analyze_schema, analyze_values, analyze_values_from_path, expand_values_includes_from_path,
-    SemanticReport, SymbolInfo, SymbolKind, SymbolTable,
+    expand_values_includes_with_origins, analyze_values_from_path_report, SemanticReport,
+    SymbolInfo, SymbolKind, SymbolTable, ValuesAnalysisReport, ValuesStmtOrigin,
 };
 pub use span::{Span, Spanned};

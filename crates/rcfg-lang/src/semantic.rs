@@ -183,6 +183,19 @@ pub struct SemanticReport {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValuesStmtOrigin {
+    pub source: String,
+    pub include_chain: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ValuesAnalysisReport {
+    pub values: ValuesFile,
+    pub stmt_origins: Vec<ValuesStmtOrigin>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 pub fn analyze_schema(file: &File) -> SemanticReport {
     let mut collector = SymbolCollector::default();
     let mut root_scope = Vec::new();
@@ -208,18 +221,43 @@ pub fn analyze_values(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnos
     checker.diagnostics
 }
 
-pub fn analyze_values_from_path(entry: &FsPath, symbols: &SymbolTable) -> (ValuesFile, Vec<Diagnostic>) {
-    let (expanded, mut diagnostics) = expand_values_includes_from_path(entry);
-    let mut semantic = analyze_values(&expanded, symbols);
+pub fn analyze_values_from_path_report(
+    entry: &FsPath,
+    symbols: &SymbolTable,
+) -> ValuesAnalysisReport {
+    let (values, stmt_origins, mut diagnostics) = expand_values_includes_with_origins(entry);
+    let mut semantic = analyze_values(&values, symbols);
     diagnostics.append(&mut semantic);
-    (expanded, diagnostics)
+    ValuesAnalysisReport {
+        values,
+        stmt_origins,
+        diagnostics,
+    }
+}
+
+pub fn analyze_values_from_path(entry: &FsPath, symbols: &SymbolTable) -> (ValuesFile, Vec<Diagnostic>) {
+    let report = analyze_values_from_path_report(entry, symbols);
+    (report.values, report.diagnostics)
 }
 
 pub fn expand_values_includes_from_path(entry: &FsPath) -> (ValuesFile, Vec<Diagnostic>) {
+    let (values, _, diagnostics) = expand_values_includes_with_origins(entry);
+    (values, diagnostics)
+}
+
+pub fn expand_values_includes_with_origins(
+    entry: &FsPath,
+) -> (ValuesFile, Vec<ValuesStmtOrigin>, Vec<Diagnostic>) {
     let mut expander = IncludeExpander::default();
     let mut stmts = Vec::new();
     expander.expand_file(entry, &mut stmts);
-    (ValuesFile { stmts }, expander.diagnostics)
+    let mut values_stmts = Vec::with_capacity(stmts.len());
+    let mut origins = Vec::with_capacity(stmts.len());
+    for expanded in stmts {
+        values_stmts.push(expanded.stmt);
+        origins.push(expanded.origin);
+    }
+    (ValuesFile { stmts: values_stmts }, origins, expander.diagnostics)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -341,6 +379,12 @@ struct IncludeExpander {
     stack: Vec<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+struct ExpandedValuesStmt {
+    stmt: ValuesStmt,
+    origin: ValuesStmtOrigin,
+}
+
 impl IncludeExpander {
     fn current_chain(&self, next: &PathBuf) -> Vec<String> {
         self.stack
@@ -350,7 +394,7 @@ impl IncludeExpander {
             .collect::<Vec<_>>()
     }
 
-    fn expand_file(&mut self, file: &FsPath, output: &mut Vec<ValuesStmt>) {
+    fn expand_file(&mut self, file: &FsPath, output: &mut Vec<ExpandedValuesStmt>) {
         let canonical = match fs::canonicalize(file) {
             Ok(path) => path,
             Err(_) => {
@@ -419,7 +463,13 @@ impl IncludeExpander {
                     let target = base_dir.join(include.path.value);
                     self.expand_file(&target, output);
                 }
-                other => output.push(other),
+                other => output.push(ExpandedValuesStmt {
+                    stmt: other,
+                    origin: ValuesStmtOrigin {
+                        source: canonical.display().to_string(),
+                        include_chain: self.current_chain(&canonical),
+                    },
+                }),
             }
         }
 
@@ -1611,6 +1661,37 @@ app::enabled = false;
     }
 
     #[test]
+    fn include_expander_provides_stmt_origins() {
+        let tmp = std::env::temp_dir().join(format!(
+            "rcfg_stmt_origin_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        let base = tmp.join("base.rcfgv");
+        let root = tmp.join("root.rcfgv");
+        std::fs::write(&base, "app::enabled = true;\n").expect("write base");
+        std::fs::write(&root, "include \"base.rcfgv\";\n").expect("write root");
+
+        let (values, origins, diags) = super::expand_values_includes_with_origins(&root);
+        assert!(diags.is_empty(), "unexpected diagnostics: {diags:#?}");
+        assert_eq!(values.stmts.len(), 1);
+        assert_eq!(origins.len(), 1);
+        assert!(origins[0].source.ends_with("base.rcfgv"));
+        assert!(
+            origins[0]
+                .include_chain
+                .iter()
+                .any(|item| item.ends_with("root.rcfgv")),
+            "expected include chain to contain root file"
+        );
+
+        let _ = std::fs::remove_file(&base);
+        let _ = std::fs::remove_file(&root);
+        let _ = std::fs::remove_dir(&tmp);
+    }
+
+    #[test]
     fn analyze_values_from_path_runs_include_and_semantic_checks() {
         let schema_src = r#"
 mod app {
@@ -1636,6 +1717,36 @@ mod app {
             diags.iter().any(|diag| diag.code == "E_TYPE_MISMATCH"),
             "expected E_TYPE_MISMATCH, got: {diags:#?}"
         );
+
+        let _ = std::fs::remove_file(&base);
+        let _ = std::fs::remove_file(&root);
+        let _ = std::fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn analyze_values_from_path_report_returns_origins() {
+        let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let tmp = std::env::temp_dir().join(format!(
+            "rcfg_report_origin_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        let base = tmp.join("base.rcfgv");
+        let root = tmp.join("root.rcfgv");
+        std::fs::write(&base, "app::enabled = true;\n").expect("write base");
+        std::fs::write(&root, "include \"base.rcfgv\";\n").expect("write root");
+
+        let report = super::analyze_values_from_path_report(&root, &symbols);
+        assert_eq!(report.values.stmts.len(), 1);
+        assert_eq!(report.stmt_origins.len(), 1);
+        assert!(report.stmt_origins[0].source.ends_with("base.rcfgv"));
 
         let _ = std::fs::remove_file(&base);
         let _ = std::fs::remove_file(&root);
