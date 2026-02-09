@@ -47,6 +47,7 @@ for diag in values_report.diagnostics {
 
 ## 诊断与溯源
 
+- `Diagnostic.path`：关联配置路径（如 `app::enabled`），便于按 option 聚合错误
 - `Diagnostic.source`：诊断对应的文件来源（若可确定）
 - `Diagnostic.include_chain`：include 链（根文件 -> 当前文件）
 - `ValuesAnalysisReport.stmt_origins`：展开后每条 values 语句的来源映射
