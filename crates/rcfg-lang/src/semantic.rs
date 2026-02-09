@@ -212,6 +212,31 @@ impl SymbolTable {
             .collect::<Vec<_>>()
     }
 
+    fn resolve_option_path_in_scope(&self, scope: &[String], path: &Path) -> ResolveOptionPathResult {
+        let raw = path.to_string();
+        let candidates = build_candidate_paths(scope, &raw);
+
+        let mut matches = Vec::new();
+        for candidate in candidates {
+            if let Some(ty) = self.option_types.get(&candidate) {
+                matches.push((candidate.clone(), ty.clone()));
+            }
+        }
+
+        if matches.is_empty() {
+            return ResolveOptionPathResult::NotFound;
+        }
+
+        if matches.len() > 1 {
+            return ResolveOptionPathResult::Ambiguous(
+                matches.into_iter().map(|(path, _)| path).collect::<Vec<_>>(),
+            );
+        }
+
+        let (path, ty) = matches.pop().expect("matches length was checked");
+        ResolveOptionPathResult::Resolved(path, ty)
+    }
+
     fn path_resolves_to_option_in_scope(&self, scope: &[String], path: &Path) -> bool {
         let raw = path.to_string();
         let candidates = build_candidate_paths(scope, &raw);
@@ -464,6 +489,13 @@ impl SymbolCollector {
 #[derive(Debug)]
 enum ResolvePathResult {
     Resolved(ValueType),
+    NotFound,
+    Ambiguous(Vec<String>),
+}
+
+#[derive(Debug)]
+enum ResolveOptionPathResult {
+    Resolved(String, ValueType),
     NotFound,
     Ambiguous(Vec<String>),
 }
@@ -947,6 +979,7 @@ impl<'a> TypeChecker<'a> {
                 }
                 Item::When(when_block) => {
                     self.expect_bool_expr(&when_block.condition, scope, None);
+                    self.check_inactive_value_references(&when_block.condition, scope);
                     self.check_items(&when_block.items, scope);
                 }
                 Item::Match(match_block) => {
@@ -954,6 +987,7 @@ impl<'a> TypeChecker<'a> {
                     for case in &match_block.cases {
                         if let Some(guard) = &case.guard {
                             self.expect_bool_expr(guard, scope, None);
+                            self.check_inactive_value_references(guard, scope);
                         }
                         self.check_items(&case.items, scope);
                     }
@@ -1073,6 +1107,53 @@ impl<'a> TypeChecker<'a> {
                 "require! is missing #[msg(\"...\")] for stable i18n key",
                 require.span,
             ));
+        }
+    }
+
+    fn check_inactive_value_references(&mut self, expr: &Expr, scope: &[String]) {
+        match expr {
+            Expr::Path(path) => match self.symbols.resolve_option_path_in_scope(scope, path) {
+                ResolveOptionPathResult::Resolved(option_path, ty) => {
+                    if !self.symbols.option_is_always_active(&option_path) && !ty.is_bool() {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                "E_INACTIVE_VALUE_REFERENCE",
+                                format!(
+                                    "activation condition cannot read inactive non-bool option `{}`",
+                                    option_path
+                                ),
+                                path.span,
+                            )
+                            .with_path(option_path),
+                        );
+                    }
+                }
+                ResolveOptionPathResult::NotFound => {}
+                ResolveOptionPathResult::Ambiguous(candidates) => {
+                    let _ = candidates;
+                }
+            },
+            Expr::Unary { expr, .. } => self.check_inactive_value_references(expr, scope),
+            Expr::Binary { left, right, .. } => {
+                self.check_inactive_value_references(left, scope);
+                self.check_inactive_value_references(right, scope);
+            }
+            Expr::Call { args, .. } => {
+                for arg in args {
+                    self.check_inactive_value_references(arg, scope);
+                }
+            }
+            Expr::InRange { expr, .. } => self.check_inactive_value_references(expr, scope),
+            Expr::InSet { expr, elems, .. } => {
+                self.check_inactive_value_references(expr, scope);
+                for elem in elems {
+                    if let InSetElem::Path(path) = elem {
+                        self.check_inactive_value_references(&Expr::Path(path.clone()), scope);
+                    }
+                }
+            }
+            Expr::Group { expr, .. } => self.check_inactive_value_references(expr, scope),
+            Expr::Bool(_, _) | Expr::Int(_, _) | Expr::String(_, _) | Expr::SelfValue(_) => {}
         }
     }
 

@@ -1007,3 +1007,32 @@ app::hidden = 42;
         "expected W_INACTIVE_ASSIGNMENT, got: {diagnostics:#?}"
     );
 }
+
+#[test]
+fn reports_inactive_value_reference_in_when_condition() {
+    let src = r#"
+mod app {
+  option enabled: bool = false;
+
+  when enabled {
+    option level: u32 = 1;
+  }
+
+  when level > 0 {
+    option extra: bool = false;
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_INACTIVE_VALUE_REFERENCE"),
+        "expected E_INACTIVE_VALUE_REFERENCE, got: {:#?}",
+        report.diagnostics
+    );
+}
