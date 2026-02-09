@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path as FsPath, PathBuf};
 
 use crate::ast::{
-    BinaryOp, ConstValue, ConstraintItem, Expr, File, InSetElem, Item, MatchBlock, MatchPat,
-    OptionDecl, Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
+    AttrKind, BinaryOp, ConstValue, ConstraintItem, Expr, File, InSetElem, IntRange, Item,
+    MatchBlock, MatchPat, OptionDecl, Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
 };
 use crate::error::Diagnostic;
 use crate::parser::parse_values_with_diagnostics;
@@ -66,6 +66,7 @@ pub struct SymbolTable {
     symbols: HashMap<String, SymbolInfo>,
     option_types: HashMap<String, ValueType>,
     option_defaults: HashMap<String, ConstValue>,
+    option_ranges: HashMap<String, IntRange>,
     option_spans: HashMap<String, Span>,
     option_always_active: HashMap<String, bool>,
     enum_variants: HashMap<String, String>,
@@ -104,6 +105,10 @@ impl SymbolTable {
         self.option_defaults.insert(path, value);
     }
 
+    fn insert_option_range(&mut self, path: String, range: IntRange) {
+        self.option_ranges.insert(path, range);
+    }
+
     fn insert_option_span(&mut self, path: String, span: Span) {
         self.option_spans.insert(path, span);
     }
@@ -114,6 +119,10 @@ impl SymbolTable {
 
     fn option_default(&self, path: &str) -> Option<&ConstValue> {
         self.option_defaults.get(path)
+    }
+
+    fn option_range(&self, path: &str) -> Option<&IntRange> {
+        self.option_ranges.get(path)
     }
 
     fn option_span(&self, path: &str) -> Option<Span> {
@@ -353,7 +362,10 @@ impl SymbolCollector {
                         self.symbols
                             .insert_option_always_active(full_path.clone(), !in_conditional);
                         if let Some(default) = option.default.clone() {
-                            self.symbols.insert_option_default(full_path, default);
+                            self.symbols.insert_option_default(full_path.clone(), default);
+                        }
+                        if let Some(range) = extract_range_attr(option) {
+                            self.symbols.insert_option_range(full_path, range);
                         }
                     }
                 }
@@ -699,6 +711,39 @@ impl<'a> ValuesChecker<'a> {
                 value.span(),
             )
             .with_path(target));
+            return;
+        }
+
+        if matches!(expected, ValueType::Int) {
+            if let (Some(range), Some(actual)) = (
+                self.symbols.option_range(target),
+                extract_int_from_value_expr(value),
+            ) {
+                let violates = if range.inclusive {
+                    actual < range.start || actual > range.end
+                } else {
+                    actual < range.start || actual >= range.end
+                };
+
+                if violates {
+                    let max = if range.inclusive {
+                        range.end.to_string()
+                    } else {
+                        format!("{} (exclusive)", range.end)
+                    };
+                    self.push_diag(
+                        Diagnostic::error(
+                            "E_RANGE_VIOLATION",
+                            format!(
+                                "value `{}` for `{}` is outside range [{}..={}]",
+                                actual, target, range.start, max
+                            ),
+                            value.span(),
+                        )
+                        .with_path(target),
+                    );
+                }
+            }
         }
     }
 
@@ -1346,6 +1391,24 @@ impl<'a> TypeChecker<'a> {
 
 fn module_has_metadata(module: &crate::ast::ModDecl) -> bool {
     !module.meta.attrs.is_empty() || !module.meta.doc.is_empty()
+}
+
+fn extract_range_attr(option: &OptionDecl) -> Option<IntRange> {
+    option.meta.attrs.iter().find_map(|attr| {
+        if let AttrKind::Range(range) = &attr.kind {
+            Some(range.clone())
+        } else {
+            None
+        }
+    })
+}
+
+fn extract_int_from_value_expr(value: &ValueExpr) -> Option<i128> {
+    if let ValueExpr::Int(value, _) = value {
+        Some(*value)
+    } else {
+        None
+    }
 }
 
 fn option_type_to_value_type(ty: &Type) -> ValueType {

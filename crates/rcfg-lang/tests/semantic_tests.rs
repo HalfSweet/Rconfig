@@ -844,3 +844,53 @@ when 1 < 2 {
         report.diagnostics
     );
 }
+
+#[test]
+fn reports_range_violation_for_assignment_literal() {
+    let schema_src = r#"
+mod app {
+  #[range(1..=8)]
+  option channel: u32 = 1;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::channel = 9;
+"#;
+    let (values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_RANGE_VIOLATION"),
+        "expected E_RANGE_VIOLATION, got: {diagnostics:#?}"
+    );
+}
+
+#[test]
+fn accepts_assignment_within_range() {
+    let schema_src = r#"
+mod app {
+  #[range(1..=8)]
+  option channel: u32 = 1;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::channel = 8;
+"#;
+    let (values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_RANGE_VIOLATION"),
+        "unexpected E_RANGE_VIOLATION diagnostics: {diagnostics:#?}"
+    );
+}
