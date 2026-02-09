@@ -6,7 +6,7 @@ use crate::ast::{
     AttrKind, BinaryOp, ConstValue, ConstraintItem, Expr, File, InSetElem, IntRange, Item,
     MatchBlock, MatchPat, OptionDecl, Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
 };
-use crate::error::{Diagnostic, Severity};
+use crate::error::{Diagnostic, DiagnosticArgValue, Severity};
 use crate::parser::parse_values_with_diagnostics;
 use crate::span::Span;
 
@@ -1314,7 +1314,11 @@ impl<'a> ValuesChecker<'a> {
                             ),
                             value.span(),
                         )
-                        .with_path(target),
+                        .with_path(target)
+                        .with_arg("actual", DiagnosticArgValue::Int(actual))
+                        .with_arg("min", DiagnosticArgValue::Int(range.start))
+                        .with_arg("max", DiagnosticArgValue::Int(range.end))
+                        .with_arg("inclusive", DiagnosticArgValue::Bool(range.inclusive)),
                     );
                     return;
                 }
@@ -1859,7 +1863,10 @@ impl<'a> TypeChecker<'a> {
                             ),
                             *span,
                         )
-                        .with_path(option_path),
+                        .with_path(option_path)
+                        .with_arg("actual", DiagnosticArgValue::Int(*value))
+                        .with_arg("min", DiagnosticArgValue::Int(min))
+                        .with_arg("max", DiagnosticArgValue::Int(max)),
                     );
                 }
             }

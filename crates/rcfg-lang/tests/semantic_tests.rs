@@ -4,7 +4,8 @@ use rcfg_lang::{
     analyze_schema, analyze_schema_files, analyze_schema_strict, analyze_values,
     analyze_values_strict, analyze_values_from_path, analyze_values_from_path_report,
     expand_values_includes_from_path, expand_values_includes_with_origins, generate_exports,
-    plan_c_header_exports, resolve_values, ExportOptions, Severity, SymbolKind, SymbolTable,
+    plan_c_header_exports, resolve_values, DiagnosticArgValue, ExportOptions, Severity, SymbolKind,
+    SymbolTable,
 };
 use rcfg_lang::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 
@@ -1147,6 +1148,36 @@ app::channel = 9;
             .iter()
             .any(|diag| diag.code == "E_RANGE_VIOLATION"),
         "expected E_RANGE_VIOLATION, got: {diagnostics:#?}"
+    );
+}
+
+#[test]
+fn range_violation_diagnostic_includes_args() {
+    let schema_src = r#"
+mod app {
+  #[range(1..=8)]
+  option channel: u32 = 1;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::channel = 9;
+"#;
+    let (values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    let diag = diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_RANGE_VIOLATION")
+        .expect("expected E_RANGE_VIOLATION");
+    assert_eq!(diag.args.get("actual"), Some(&DiagnosticArgValue::Int(9)));
+    assert_eq!(diag.args.get("min"), Some(&DiagnosticArgValue::Int(1)));
+    assert_eq!(diag.args.get("max"), Some(&DiagnosticArgValue::Int(8)));
+    assert_eq!(
+        diag.args.get("inclusive"),
+        Some(&DiagnosticArgValue::Bool(true))
     );
 }
 
