@@ -399,6 +399,99 @@ mod app {
 }
 
 #[test]
+fn values_env_parses_enum_variant_short_name() {
+    let schema_src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+    let key = "RCFG_TEST_ENUM_ENV_SHORT";
+    unsafe {
+        std::env::set_var(key, "on");
+    }
+
+    let values_src = format!("app::mode = env(\"{}\");", key);
+    let (values, diags) = parse_values_with_diagnostics(&values_src);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+    let semantic_diags = analyze_values(&values, &symbols);
+    assert!(
+        semantic_diags
+            .iter()
+            .all(|diag| diag.code != "E_ENV_PARSE_FAILED" && diag.code != "E_TYPE_MISMATCH"),
+        "unexpected diagnostics: {semantic_diags:#?}"
+    );
+
+    unsafe {
+        std::env::remove_var(key);
+    }
+}
+
+#[test]
+fn values_env_parses_enum_variant_fully_qualified_name() {
+    let schema_src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+    let key = "RCFG_TEST_ENUM_ENV_FQ";
+    unsafe {
+        std::env::set_var(key, "app::Mode::on");
+    }
+
+    let values_src = format!("app::mode = env(\"{}\");", key);
+    let (values, diags) = parse_values_with_diagnostics(&values_src);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+    let semantic_diags = analyze_values(&values, &symbols);
+    assert!(
+        semantic_diags
+            .iter()
+            .all(|diag| diag.code != "E_ENV_PARSE_FAILED" && diag.code != "E_TYPE_MISMATCH"),
+        "unexpected diagnostics: {semantic_diags:#?}"
+    );
+
+    unsafe {
+        std::env::remove_var(key);
+    }
+}
+
+#[test]
+fn values_env_reports_parse_failure_for_enum() {
+    let schema_src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+    let key = "RCFG_TEST_ENUM_ENV_BAD";
+    unsafe {
+        std::env::set_var(key, "invalid");
+    }
+
+    let values_src = format!("app::mode = env(\"{}\");", key);
+    let (values, diags) = parse_values_with_diagnostics(&values_src);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+    let semantic_diags = analyze_values(&values, &symbols);
+    assert!(
+        semantic_diags
+            .iter()
+            .any(|diag| diag.code == "E_ENV_PARSE_FAILED"),
+        "expected E_ENV_PARSE_FAILED, got: {semantic_diags:#?}"
+    );
+
+    unsafe {
+        std::env::remove_var(key);
+    }
+}
+
+#[test]
 fn values_warn_duplicate_assignments() {
     let schema_src = r#"
 mod app {

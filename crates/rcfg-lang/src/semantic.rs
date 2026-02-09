@@ -1277,44 +1277,138 @@ impl<'a> ValuesChecker<'a> {
     }
 
     fn parse_value_expr(&mut self, value: &ValueExpr, expected: &ValueType) -> ParsedValue {
-        let actual_type = self.value_expr_type(value, expected);
-        let resolved_value = match value {
-            ValueExpr::Bool(raw, _) => Some(ResolvedValue::Bool(*raw)),
-            ValueExpr::Int(raw, _) => Some(ResolvedValue::Int(*raw)),
-            ValueExpr::String(raw, _) => Some(ResolvedValue::String(raw.clone())),
+        match value {
+            ValueExpr::Bool(raw, _) => ParsedValue {
+                actual_type: ValueType::Bool,
+                resolved_value: Some(ResolvedValue::Bool(*raw)),
+                int_value: None,
+            },
+            ValueExpr::Int(raw, _) => ParsedValue {
+                actual_type: ValueType::Int,
+                resolved_value: Some(ResolvedValue::Int(*raw)),
+                int_value: Some(*raw),
+            },
+            ValueExpr::String(raw, _) => ParsedValue {
+                actual_type: ValueType::String,
+                resolved_value: Some(ResolvedValue::String(raw.clone())),
+                int_value: None,
+            },
             ValueExpr::Path(path) => {
-                let expanded = expand_with_aliases(path, &self.aliases);
-                let mut matches = self.symbols.resolve_enum_variant_paths(&expanded);
-                if matches.len() == 1 {
-                    Some(ResolvedValue::EnumVariant(matches.remove(0)))
-                } else {
-                    None
+                let actual_type = self.value_expr_type(value, expected);
+                let resolved_value = {
+                    let expanded = expand_with_aliases(path, &self.aliases);
+                    let mut matches = self.symbols.resolve_enum_variant_paths(&expanded);
+                    if matches.len() == 1 {
+                        Some(ResolvedValue::EnumVariant(matches.remove(0)))
+                    } else {
+                        None
+                    }
+                };
+                ParsedValue {
+                    actual_type,
+                    int_value: resolved_value.as_ref().and_then(ResolvedValue::as_int),
+                    resolved_value,
                 }
             }
-            ValueExpr::Env { name, .. } => match expected {
-                ValueType::Bool => match std::env::var(name.value.as_str()) {
-                    Ok(raw) if raw == "true" => Some(ResolvedValue::Bool(true)),
-                    Ok(raw) if raw == "false" => Some(ResolvedValue::Bool(false)),
-                    _ => None,
-                },
-                ValueType::Int => std::env::var(name.value.as_str())
-                    .ok()
-                    .and_then(|raw| parse_env_int(&raw))
-                    .map(ResolvedValue::Int),
-                ValueType::String => std::env::var(name.value.as_str())
-                    .ok()
-                    .map(ResolvedValue::String),
-                ValueType::Enum(_) | ValueType::Unknown => None,
+            ValueExpr::Env { name, .. } => self.parse_env_value(name.value.as_str(), expected, value.span()),
+        }
+    }
+
+    fn parse_env_value(&mut self, name: &str, expected: &ValueType, span: Span) -> ParsedValue {
+        let raw = match std::env::var(name) {
+            Ok(value) => value,
+            Err(_) => {
+                self.push_diag(Diagnostic::error(
+                    "E_ENV_NOT_SET",
+                    format!("environment variable `{}` is not set", name),
+                    span,
+                ));
+                return ParsedValue {
+                    actual_type: ValueType::Unknown,
+                    resolved_value: None,
+                    int_value: None,
+                };
+            }
+        };
+
+        let (actual_type, resolved_value) = match expected {
+            ValueType::Bool => {
+                if raw == "true" {
+                    (ValueType::Bool, Some(ResolvedValue::Bool(true)))
+                } else if raw == "false" {
+                    (ValueType::Bool, Some(ResolvedValue::Bool(false)))
+                } else {
+                    self.push_env_parse_failed(name, &raw, "bool", span);
+                    (ValueType::Unknown, None)
+                }
+            }
+            ValueType::Int => match parse_env_int(&raw) {
+                Some(value) => (ValueType::Int, Some(ResolvedValue::Int(value))),
+                None => {
+                    self.push_env_parse_failed(name, &raw, "int", span);
+                    (ValueType::Unknown, None)
+                }
             },
+            ValueType::String => (ValueType::String, Some(ResolvedValue::String(raw))),
+            ValueType::Enum(expected_enum) => {
+                let enum_variant = self.resolve_env_enum_variant(name, &raw, expected_enum, span);
+                if let Some(variant) = enum_variant {
+                    (ValueType::Enum(expected_enum.clone()), Some(ResolvedValue::EnumVariant(variant)))
+                } else {
+                    (ValueType::Unknown, None)
+                }
+            }
+            ValueType::Unknown => (ValueType::Unknown, None),
         };
 
         let int_value = resolved_value.as_ref().and_then(ResolvedValue::as_int);
-
         ParsedValue {
             actual_type,
             resolved_value,
             int_value,
         }
+    }
+
+    fn resolve_env_enum_variant(
+        &mut self,
+        env_name: &str,
+        raw: &str,
+        expected_enum: &str,
+        span: Span,
+    ) -> Option<String> {
+        let mut candidates = self
+            .symbols
+            .resolve_enum_variant_paths(raw)
+            .into_iter()
+            .filter(|candidate| {
+                self.symbols
+                    .enum_owner_of_variant(candidate)
+                    .is_some_and(|owner| enum_name_matches(expected_enum, owner))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort();
+        candidates.dedup();
+
+        if candidates.is_empty() {
+            self.push_env_parse_failed(env_name, raw, &format!("enum {}", expected_enum), span);
+            return None;
+        }
+
+        if candidates.len() > 1 {
+            self.push_diag(Diagnostic::error(
+                "E_AMBIGUOUS_ENUM_VARIANT",
+                format!(
+                    "env value `{}` is ambiguous for enum `{}`: {}",
+                    raw,
+                    expected_enum,
+                    candidates.join(", ")
+                ),
+                span,
+            ));
+            return None;
+        }
+
+        candidates.into_iter().next()
     }
 
     fn value_expr_type(&mut self, value: &ValueExpr, expected: &ValueType) -> ValueType {
@@ -1372,39 +1466,7 @@ impl<'a> ValuesChecker<'a> {
     }
 
     fn env_value_type(&mut self, name: &str, expected: &ValueType, span: Span) -> ValueType {
-        let raw = match std::env::var(name) {
-            Ok(value) => value,
-            Err(_) => {
-                self.push_diag(Diagnostic::error(
-                    "E_ENV_NOT_SET",
-                    format!("environment variable `{}` is not set", name),
-                    span,
-                ));
-                return ValueType::Unknown;
-            }
-        };
-
-        match expected {
-            ValueType::Bool => {
-                if raw == "true" || raw == "false" {
-                    ValueType::Bool
-                } else {
-                    self.push_env_parse_failed(name, &raw, "bool", span);
-                    ValueType::Unknown
-                }
-            }
-            ValueType::Int => {
-                if parse_env_int(&raw).is_some() {
-                    ValueType::Int
-                } else {
-                    self.push_env_parse_failed(name, &raw, "int", span);
-                    ValueType::Unknown
-                }
-            }
-            ValueType::String => ValueType::String,
-            ValueType::Enum(_) => ValueType::Unknown,
-            ValueType::Unknown => ValueType::Unknown,
-        }
+        self.parse_env_value(name, expected, span).actual_type
     }
 
     fn push_env_parse_failed(&mut self, name: &str, value: &str, expected: &str, span: Span) {
