@@ -141,7 +141,12 @@ fn require_i18n_message_key(
         return message;
     }
 
-    format!("{}.{}.require.{}", package, require_scope_key(scope), ordinal)
+    format!(
+        "{}.{}.require.{}",
+        package,
+        require_scope_key(scope),
+        ordinal
+    )
 }
 
 pub(crate) fn render_i18n_template_toml(

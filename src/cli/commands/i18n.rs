@@ -28,8 +28,9 @@ pub(crate) fn execute(
             let strings = collect_i18n_template_strings(schema_file, package);
             let rendered = render_i18n_template_toml(&locale, &strings)?;
             if let Some(parent) = out.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|err| format!("failed to create output dir {}: {err}", parent.display()))?;
+                fs::create_dir_all(parent).map_err(|err| {
+                    format!("failed to create output dir {}: {err}", parent.display())
+                })?;
             }
             fs::write(&out, rendered)
                 .map_err(|err| format!("failed to write {}: {err}", out.display()))?;

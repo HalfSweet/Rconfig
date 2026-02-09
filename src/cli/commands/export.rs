@@ -7,9 +7,7 @@ use rcfg_lang::{
 };
 
 use crate::cli::args::OutputFormat;
-use crate::cli::{
-    I18nCatalog, analyze_values_report, print_diagnostics, resolve_with_context,
-};
+use crate::cli::{I18nCatalog, analyze_values_report, print_diagnostics, resolve_with_context};
 
 pub(crate) fn execute(
     values: &Path,

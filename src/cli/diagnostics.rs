@@ -97,11 +97,7 @@ fn localize_diagnostic_message(diag: &Diagnostic, i18n: Option<&I18nCatalog>) ->
         return message.clone();
     }
 
-    if let Some(message) = i18n
-        .strings
-        .get(&diag.code)
-        .filter(|text| !text.is_empty())
-    {
+    if let Some(message) = i18n.strings.get(&diag.code).filter(|text| !text.is_empty()) {
         return message.clone();
     }
 

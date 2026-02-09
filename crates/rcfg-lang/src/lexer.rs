@@ -294,7 +294,11 @@ impl Lexer {
         Some((TokenKind::DocComment, end, content))
     }
 
-    fn lex_string(&mut self, source: &str, start: usize) -> Result<(usize, String), (usize, String)> {
+    fn lex_string(
+        &mut self,
+        source: &str,
+        start: usize,
+    ) -> Result<(usize, String), (usize, String)> {
         let bytes = source.as_bytes();
         let mut i = start + 1;
         let mut output = String::new();

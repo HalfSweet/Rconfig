@@ -133,7 +133,10 @@ pub(crate) fn split_doc_summary_help(
         help_lines.push(line);
     }
 
-    while help_lines.first().is_some_and(|line| line.trim().is_empty()) {
+    while help_lines
+        .first()
+        .is_some_and(|line| line.trim().is_empty())
+    {
         help_lines.remove(0);
     }
     while help_lines.last().is_some_and(|line| line.trim().is_empty()) {

@@ -1,5 +1,7 @@
-use rcfg_lang::{parse_schema_with_diagnostics, parse_values_with_diagnostics, Expr, Item, MatchPat};
 use rcfg_lang::ast::{BinaryOp, ConstraintItem};
+use rcfg_lang::{
+    Expr, Item, MatchPat, parse_schema_with_diagnostics, parse_values_with_diagnostics,
+};
 
 #[test]
 fn parses_schema_with_when_match_and_require() {
@@ -47,7 +49,10 @@ mod uart {
         panic!("expected match block");
     };
     assert_eq!(match_block.cases.len(), 2);
-    assert!(matches!(match_block.cases[1].pattern, MatchPat::Wildcard(_)));
+    assert!(matches!(
+        match_block.cases[1].pattern,
+        MatchPat::Wildcard(_)
+    ));
 }
 
 #[test]

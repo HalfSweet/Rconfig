@@ -223,9 +223,9 @@ pub enum ConstValue {
 impl ConstValue {
     pub fn span(&self) -> Span {
         match self {
-            ConstValue::Bool(_, span)
-            | ConstValue::Int(_, span)
-            | ConstValue::String(_, span) => *span,
+            ConstValue::Bool(_, span) | ConstValue::Int(_, span) | ConstValue::String(_, span) => {
+                *span
+            }
             ConstValue::EnumPath(path) => path.span,
         }
     }
@@ -361,7 +361,9 @@ pub enum ValueExpr {
 impl ValueExpr {
     pub fn span(&self) -> Span {
         match self {
-            ValueExpr::Bool(_, span) | ValueExpr::Int(_, span) | ValueExpr::String(_, span) => *span,
+            ValueExpr::Bool(_, span) | ValueExpr::Int(_, span) | ValueExpr::String(_, span) => {
+                *span
+            }
             ValueExpr::Path(path) => path.span,
             ValueExpr::Env { span, .. } => *span,
         }

@@ -1,8 +1,8 @@
 use crate::ast::{
     AssignStmt, Attr, AttrArg, AttrKind, BinaryOp, ConstValue, ConstraintBlock, ConstraintItem,
-    EnumDecl, EnumVariant, Expr, File, IncludeStmt, InSetElem, IntRange, Item, ItemMeta, MatchBlock,
-    MatchCase, MatchPat, ModDecl, OptionAttachedConstraints, OptionDecl, Path, RequireStmt, Type,
-    UnaryOp, UseStmt, ValueExpr, ValuesFile, ValuesStmt, WhenBlock,
+    EnumDecl, EnumVariant, Expr, File, InSetElem, IncludeStmt, IntRange, Item, ItemMeta,
+    MatchBlock, MatchCase, MatchPat, ModDecl, OptionAttachedConstraints, OptionDecl, Path,
+    RequireStmt, Type, UnaryOp, UseStmt, ValueExpr, ValuesFile, ValuesStmt, WhenBlock,
 };
 use crate::error::{Diagnostic, Severity};
 use crate::lexer::{Lexer, Token, TokenKind};
@@ -270,7 +270,8 @@ impl Parser {
                     if !self.at(TokenKind::RParen) {
                         loop {
                             if self.at(TokenKind::String) {
-                                if let Some(text) = self.parse_string_literal("attribute argument") {
+                                if let Some(text) = self.parse_string_literal("attribute argument")
+                                {
                                     args.push(AttrArg::Str(text.value));
                                 }
                             } else if let Some(expr) = self.parse_expr() {
@@ -364,7 +365,11 @@ impl Parser {
     }
 
     fn parse_enum_decl(&mut self, meta: ItemMeta) -> Option<EnumDecl> {
-        let start = self.expect(TokenKind::KwEnum, "E_PARSE_EXPECTED_TOKEN", "expected `enum`")?;
+        let start = self.expect(
+            TokenKind::KwEnum,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `enum`",
+        )?;
         let name = self.parse_ident("enum name")?;
         self.expect(
             TokenKind::LBrace,
@@ -596,7 +601,11 @@ impl Parser {
     }
 
     fn parse_when_block(&mut self, meta: ItemMeta) -> Option<WhenBlock> {
-        let start = self.expect(TokenKind::KwWhen, "E_PARSE_EXPECTED_TOKEN", "expected `when`")?;
+        let start = self.expect(
+            TokenKind::KwWhen,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `when`",
+        )?;
         let condition = self.parse_expr()?;
 
         self.expect(
@@ -631,7 +640,11 @@ impl Parser {
     }
 
     fn parse_match_block(&mut self, meta: ItemMeta) -> Option<MatchBlock> {
-        let start = self.expect(TokenKind::KwMatch, "E_PARSE_EXPECTED_TOKEN", "expected `match`")?;
+        let start = self.expect(
+            TokenKind::KwMatch,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `match`",
+        )?;
         let expr = self.parse_expr()?;
 
         self.expect(
@@ -677,7 +690,11 @@ impl Parser {
     }
 
     fn parse_match_case(&mut self, meta: ItemMeta) -> Option<MatchCase> {
-        let start = self.expect(TokenKind::KwCase, "E_PARSE_EXPECTED_TOKEN", "expected `case`")?;
+        let start = self.expect(
+            TokenKind::KwCase,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `case`",
+        )?;
         let pattern = self.parse_match_pattern()?;
         let guard = if self.eat(TokenKind::KwIf).is_some() {
             self.parse_expr()
@@ -775,9 +792,9 @@ impl Parser {
                 let token = self.bump();
                 Some(ConstValue::String(token.lexeme, token.span))
             }
-            TokenKind::Integer | TokenKind::Minus => self.parse_int_literal().map(|(value, span)| {
-                ConstValue::Int(value, span)
-            }),
+            TokenKind::Integer | TokenKind::Minus => self
+                .parse_int_literal()
+                .map(|(value, span)| ConstValue::Int(value, span)),
             TokenKind::Ident => self.parse_path().map(ConstValue::EnumPath),
             _ => {
                 let token = self.peek().clone();
@@ -1422,4 +1439,3 @@ fn parse_integer_text(text: &str) -> Result<i128, ()> {
         cleaned.parse::<i128>().map_err(|_| ())
     }
 }
-

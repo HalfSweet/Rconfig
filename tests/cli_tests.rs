@@ -300,7 +300,6 @@ schema = "src/schema.rcfg"
     assert!(stdout.contains("L_MISSING_DOC"), "{stdout}");
 }
 
-
 #[test]
 fn rcfg_i18n_extract_generates_template_toml() {
     let root = fixture_path("cli_i18n_extract");

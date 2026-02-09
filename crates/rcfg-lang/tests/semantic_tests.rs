@@ -1,17 +1,19 @@
 use std::path::PathBuf;
 
-use rcfg_lang::{
-    analyze_schema, analyze_schema_files, analyze_schema_strict, analyze_values,
-    analyze_values_strict, analyze_values_from_path, analyze_values_from_path_report,
-    expand_values_includes_from_path, expand_values_includes_with_origins, generate_exports,
-    plan_c_header_exports, resolve_values, DiagnosticArgValue, ExportOptions, Severity, SymbolKind,
-    SymbolTable,
-};
 use rcfg_lang::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
+use rcfg_lang::{
+    DiagnosticArgValue, ExportOptions, Severity, SymbolKind, SymbolTable, analyze_schema,
+    analyze_schema_files, analyze_schema_strict, analyze_values, analyze_values_from_path,
+    analyze_values_from_path_report, analyze_values_strict, expand_values_includes_from_path,
+    expand_values_includes_with_origins, generate_exports, plan_c_header_exports, resolve_values,
+};
 
 fn symbols_from(src: &str) -> SymbolTable {
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
     analyze_schema(&file).symbols
 }
 
@@ -27,7 +29,10 @@ mod uart {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -67,8 +72,14 @@ mod uart {
 
     let (file_a, parse_diags_a) = parse_schema_with_diagnostics(src_a);
     let (file_b, parse_diags_b) = parse_schema_with_diagnostics(src_b);
-    assert!(parse_diags_a.is_empty(), "parse diagnostics: {parse_diags_a:#?}");
-    assert!(parse_diags_b.is_empty(), "parse diagnostics: {parse_diags_b:#?}");
+    assert!(
+        parse_diags_a.is_empty(),
+        "parse diagnostics: {parse_diags_a:#?}"
+    );
+    assert!(
+        parse_diags_b.is_empty(),
+        "parse diagnostics: {parse_diags_b:#?}"
+    );
 
     let report = analyze_schema_files(&[file_a, file_b]);
     assert!(
@@ -105,7 +116,10 @@ mod a {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -125,7 +139,10 @@ mod foo { }
 option foo: bool = false;
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -149,7 +166,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -172,7 +192,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -195,7 +218,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -217,7 +243,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -239,7 +268,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -260,7 +292,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -286,7 +321,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -317,7 +355,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -344,7 +385,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -371,7 +415,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -701,10 +748,7 @@ fn include_expander_reports_not_found() {
 
 #[test]
 fn include_expander_reports_cycle() {
-    let tmp = std::env::temp_dir().join(format!(
-        "rcfg_include_cycle_{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("rcfg_include_cycle_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
 
     let a = tmp.join("a.rcfgv");
@@ -734,10 +778,7 @@ fn include_expander_reports_cycle() {
 
 #[test]
 fn include_expander_provides_stmt_origins() {
-    let tmp = std::env::temp_dir().join(format!(
-        "rcfg_stmt_origin_{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("rcfg_stmt_origin_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
 
     let base = tmp.join("base.rcfgv");
@@ -772,10 +813,7 @@ mod app {
 "#;
     let symbols = symbols_from(schema_src);
 
-    let tmp = std::env::temp_dir().join(format!(
-        "rcfg_values_from_path_{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("rcfg_values_from_path_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
 
     let base = tmp.join("base.rcfgv");
@@ -804,10 +842,7 @@ mod app {
 "#;
     let symbols = symbols_from(schema_src);
 
-    let tmp = std::env::temp_dir().join(format!(
-        "rcfg_report_origin_{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("rcfg_report_origin_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
 
     let base = tmp.join("base.rcfgv");
@@ -818,7 +853,10 @@ mod app {
     let report = analyze_values_from_path_report(&root, &symbols);
     assert_eq!(report.values.stmts.len(), 1);
     assert_eq!(report.stmt_origins.len(), 1);
-    assert_eq!(report.diagnostics.len(), report.diagnostic_stmt_indexes.len());
+    assert_eq!(
+        report.diagnostics.len(),
+        report.diagnostic_stmt_indexes.len()
+    );
     assert!(report.stmt_origins[0].source.ends_with("base.rcfgv"));
 
     let _ = std::fs::remove_file(&base);
@@ -835,10 +873,7 @@ mod app {
 "#;
     let symbols = symbols_from(schema_src);
 
-    let tmp = std::env::temp_dir().join(format!(
-        "rcfg_diag_stmt_map_{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("rcfg_diag_stmt_map_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
 
     let values = tmp.join("values.rcfgv");
@@ -858,10 +893,7 @@ mod app {
 
 #[test]
 fn include_expander_attaches_source_to_parse_diagnostics() {
-    let tmp = std::env::temp_dir().join(format!(
-        "rcfg_parse_diag_source_{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("rcfg_parse_diag_source_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
 
     let bad = tmp.join("bad.rcfgv");
@@ -873,7 +905,9 @@ fn include_expander_attaches_source_to_parse_diagnostics() {
         .find(|diag| diag.code == "E_PARSE_EXPECTED_TOKEN")
         .expect("expected parse diagnostic");
     assert!(
-        diag.source.as_deref().is_some_and(|source| source.ends_with("bad.rcfgv")),
+        diag.source
+            .as_deref()
+            .is_some_and(|source| source.ends_with("bad.rcfgv")),
         "expected source to include bad.rcfgv, got: {diag:#?}"
     );
     assert!(
@@ -916,7 +950,10 @@ mod ctx {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -937,7 +974,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -959,7 +999,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -980,7 +1023,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1003,7 +1049,10 @@ mod app {
     let symbols = symbols_from(schema_src);
 
     let (values, values_diags) = parse_values_with_diagnostics("");
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     let diag = diagnostics
@@ -1023,11 +1072,16 @@ mod app {
     let symbols = symbols_from(schema_src);
 
     let (values, values_diags) = parse_values_with_diagnostics("");
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     assert!(
-        diagnostics.iter().all(|diag| diag.code != "E_MISSING_VALUE"),
+        diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_MISSING_VALUE"),
         "unexpected E_MISSING_VALUE diagnostics: {diagnostics:#?}"
     );
 }
@@ -1045,11 +1099,16 @@ mod app {
     let symbols = symbols_from(schema_src);
 
     let (values, values_diags) = parse_values_with_diagnostics("");
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     assert!(
-        diagnostics.iter().all(|diag| diag.code != "E_MISSING_VALUE"),
+        diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_MISSING_VALUE"),
         "unexpected E_MISSING_VALUE diagnostics: {diagnostics:#?}"
     );
 }
@@ -1068,7 +1127,10 @@ mod uart {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1092,7 +1154,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1113,7 +1178,10 @@ when 1 < 2 {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1140,7 +1208,10 @@ mod app {
 app::channel = 9;
 "#;
     let (values, values_diags) = parse_values_with_diagnostics(values_src);
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     assert!(
@@ -1165,7 +1236,10 @@ mod app {
 app::channel = 9;
 "#;
     let (values, values_diags) = parse_values_with_diagnostics(values_src);
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     let diag = diagnostics
@@ -1196,7 +1270,10 @@ mod app {
 app::token = 9;
 "#;
     let (values, values_diags) = parse_values_with_diagnostics(values_src);
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     let diag = diagnostics
@@ -1225,7 +1302,10 @@ mod app {
 app::channel = 8;
 "#;
     let (values, values_diags) = parse_values_with_diagnostics(values_src);
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     assert!(
@@ -1244,7 +1324,10 @@ constraint {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1266,7 +1349,10 @@ constraint {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1287,7 +1373,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1309,7 +1398,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1338,7 +1430,10 @@ mod app {
 app::hidden = 42;
 "#;
     let (values, values_diags) = parse_values_with_diagnostics(values_src);
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     assert!(
@@ -1365,7 +1460,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1392,7 +1490,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     let cycle_diags = report
@@ -1431,7 +1532,10 @@ mod ctx {
     let symbols = symbols_from(schema_src);
 
     let (values, values_diags) = parse_values_with_diagnostics("");
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     assert!(
@@ -1458,7 +1562,10 @@ mod app {
     let symbols = symbols_from(schema_src);
 
     let (values, values_diags) = parse_values_with_diagnostics("");
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     assert!(
@@ -1477,7 +1584,10 @@ constraint {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema_strict(&file);
     let diag = report
@@ -1504,7 +1614,10 @@ mod app {
 app::hidden = 42;
 "#;
     let (values, values_diags) = parse_values_with_diagnostics(values_src);
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values_strict(&values, &symbols);
     let diag = diagnostics
@@ -1528,7 +1641,10 @@ app::retries = 2;
 app::retries = 3;
 "#;
     let (values, values_diags) = parse_values_with_diagnostics(values_src);
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values_strict(&values, &symbols);
     let diag = diagnostics
@@ -1551,7 +1667,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema_strict(&file);
     let diag = report
@@ -1571,7 +1690,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1598,7 +1720,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1619,7 +1744,10 @@ constraint {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1642,7 +1770,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     let diag = report
@@ -1664,7 +1795,10 @@ mod app {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     let diag = report
@@ -1672,10 +1806,7 @@ mod app {
         .iter()
         .find(|diag| diag.code == "E_REQUIRE_FAILED")
         .expect("expected E_REQUIRE_FAILED");
-    assert_eq!(
-        diag.message_key.as_deref(),
-        Some("demo.app.require.custom")
-    );
+    assert_eq!(diag.message_key.as_deref(), Some("demo.app.require.custom"));
 }
 
 #[test]
@@ -1689,7 +1820,10 @@ mod app {
     let symbols = symbols_from(schema_src);
 
     let (values, values_diags) = parse_values_with_diagnostics("");
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let diagnostics = analyze_values(&values, &symbols);
     let diag = diagnostics
@@ -1707,7 +1841,10 @@ constraint {
 }
 "#;
     let (file, parse_diags) = parse_schema_with_diagnostics(src);
-    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
 
     let report = analyze_schema(&file);
     assert!(
@@ -1806,7 +1943,10 @@ app::retries = 7;
 app::mode = on;
 "#;
     let (values, values_diags) = parse_values_with_diagnostics(values_src);
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let resolved = resolve_values(&values, &symbols);
     let exports = generate_exports(&symbols, &resolved, &ExportOptions::default());
@@ -1839,7 +1979,9 @@ app::mode = on;
         exports.cmake
     );
     assert!(
-        exports.cmake.contains("set(CFG_APP_MODE \"app::Mode::on\")"),
+        exports
+            .cmake
+            .contains("set(CFG_APP_MODE \"app::Mode::on\")"),
         "expected enum cmake export, got: {}",
         exports.cmake
     );
@@ -1858,7 +2000,10 @@ mod app {
     let symbols = symbols_from(schema_src);
 
     let (values, values_diags) = parse_values_with_diagnostics("app::enabled = false;");
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let resolved = resolve_values(&values, &symbols);
     let exports = generate_exports(&symbols, &resolved, &ExportOptions::default());
@@ -1884,7 +2029,10 @@ mod app {
     let symbols = symbols_from(schema_src);
 
     let (values, values_diags) = parse_values_with_diagnostics("");
-    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
 
     let resolved = resolve_values(&values, &symbols);
     let exports = generate_exports(
