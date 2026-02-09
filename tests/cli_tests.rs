@@ -193,6 +193,63 @@ mod app {
 }
 
 #[test]
+fn rcfg_schema_ir_generates_i18n_keys_with_manifest_package() {
+    let root = fixture_path("cli_schema_ir_i18n");
+    let schema = root.join("src/schema.rcfg");
+    let manifest = root.join("Config.toml");
+    let values = root.join("values.rcfgv");
+    let dump = root.join("resolved.json");
+    let schema_ir = root.join("schema_ir.json");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option baud: u32 = 115200;
+}
+"#,
+    );
+    write_file(
+        &manifest,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+    );
+    write_file(&values, "");
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "dump",
+            "--manifest",
+            manifest.to_str().expect("manifest path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--out",
+            dump.to_str().expect("dump path"),
+            "--out-schema-ir",
+            schema_ir.to_str().expect("schema_ir path"),
+        ])
+        .status()
+        .expect("run rcfg dump");
+    assert!(status.success(), "rcfg dump should succeed");
+
+    let schema_ir_text = fs::read_to_string(&schema_ir).expect("read schema_ir");
+    assert!(
+        schema_ir_text.contains("\"label_key\": \"demo.app.baud.label\""),
+        "{schema_ir_text}"
+    );
+    assert!(
+        schema_ir_text.contains("\"help_key\": \"demo.app.baud.help\""),
+        "{schema_ir_text}"
+    );
+}
+
+#[test]
 fn rcfg_check_supports_manifest_entry_schema() {
     let root = fixture_path("cli_manifest");
     let schema = root.join("src/schema.rcfg");

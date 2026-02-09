@@ -207,7 +207,13 @@ fn run(cli: Cli) -> Result<(), String> {
                 .map_err(|err| format!("failed to write {}: {err}", out.display()))?;
 
                 if let Some(schema_ir_path) = out_schema_ir.as_deref() {
-                    let schema_ir = render_schema_ir_json(&schema_report.symbols, &schema_file);
+                    let schema_ir = render_schema_ir_json(
+                        &schema_report.symbols,
+                        &schema_file,
+                        manifest
+                            .as_ref()
+                            .and_then(|model| model.package_name.as_deref()),
+                    );
                     fs::write(
                         schema_ir_path,
                         serde_json::to_string_pretty(&schema_ir)
@@ -287,6 +293,7 @@ fn load_context(path: Option<&Path>) -> Result<HashMap<String, ResolvedValue>, S
 #[derive(Debug)]
 struct ManifestModel {
     schema: PathBuf,
+    package_name: Option<String>,
 }
 
 fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, String> {
@@ -300,6 +307,13 @@ fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, String> {
         .parse::<toml::Value>()
         .map_err(|err| format!("failed to parse manifest {}: {err}", path.display()))?;
 
+    let package_name = value
+        .get("package")
+        .and_then(toml::Value::as_table)
+        .and_then(|package| package.get("name"))
+        .and_then(toml::Value::as_str)
+        .map(str::to_string);
+
     let entry = value
         .get("entry")
         .and_then(toml::Value::as_table)
@@ -312,6 +326,7 @@ fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, String> {
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     Ok(Some(ManifestModel {
         schema: base.join(schema),
+        package_name,
     }))
 }
 
@@ -419,11 +434,13 @@ fn write_diagnostics_json(path: Option<&Path>, diagnostics: &[Diagnostic]) -> Re
 fn render_schema_ir_json(
     symbols: &rcfg_lang::SymbolTable,
     schema: &rcfg_lang::File,
+    package_name: Option<&str>,
 ) -> serde_json::Value {
     let mut options = Vec::new();
     let mut enums = Vec::new();
     let mut mods = Vec::new();
     let doc_sections = collect_doc_sections_index(schema);
+    let package = package_name.unwrap_or("main");
 
     let mut symbols_list = symbols.iter().collect::<Vec<_>>();
     symbols_list.sort_by(|(left, _), (right, _)| left.cmp(right));
@@ -437,6 +454,8 @@ fn render_schema_ir_json(
             "path": path,
             "summary": summary,
             "help": help,
+            "label_key": i18n_symbol_key(package, path, "label"),
+            "help_key": i18n_symbol_key(package, path, "help"),
         });
         match info.kind {
             SymbolKind::Option => options.push(entry),
@@ -453,6 +472,10 @@ fn render_schema_ir_json(
             "options": options,
         }
     })
+}
+
+fn i18n_symbol_key(package: &str, path: &str, suffix: &str) -> String {
+    format!("{}.{}.{}", package, path.replace("::", "."), suffix)
 }
 
 fn collect_doc_sections_index(
