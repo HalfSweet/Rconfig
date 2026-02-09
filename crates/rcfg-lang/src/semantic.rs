@@ -322,6 +322,7 @@ struct ValuesChecker<'a> {
     symbols: &'a SymbolTable,
     diagnostics: Vec<Diagnostic>,
     aliases: HashMap<String, String>,
+    assigned: HashMap<String, Span>,
 }
 
 impl<'a> ValuesChecker<'a> {
@@ -330,6 +331,7 @@ impl<'a> ValuesChecker<'a> {
             symbols,
             diagnostics: Vec::new(),
             aliases: HashMap::new(),
+            assigned: HashMap::new(),
         }
     }
 
@@ -342,9 +344,22 @@ impl<'a> ValuesChecker<'a> {
                 }
                 ValuesStmt::Assign(assign) => {
                     let lhs = self.resolve_assignment_target(&assign.path);
+                    if let Some(resolved) = &lhs {
+                        self.record_duplicate_assignment(resolved, assign.path.span);
+                    }
                     self.check_assignment_value(lhs.as_deref(), &assign.value);
                 }
             }
+        }
+    }
+
+    fn record_duplicate_assignment(&mut self, target: &str, span: Span) {
+        if let Some(previous) = self.assigned.insert(target.to_string(), span) {
+            self.diagnostics.push(Diagnostic::warning(
+                "W_DUPLICATE_ASSIGNMENT",
+                format!("option `{}` is assigned multiple times; last wins", target),
+                span.join(previous),
+            ));
         }
     }
 
@@ -1405,5 +1420,30 @@ mod app {
         unsafe {
             std::env::remove_var(key);
         }
+    }
+
+    #[test]
+    fn values_warn_duplicate_assignments() {
+        let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let values_src = r#"
+app::enabled = true;
+app::enabled = false;
+"#;
+        let (values, diags) = parse_values_with_diagnostics(values_src);
+        assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+        let semantic_diags = super::analyze_values(&values, &symbols);
+        assert!(
+            semantic_diags
+                .iter()
+                .any(|diag| diag.code == "W_DUPLICATE_ASSIGNMENT"),
+            "expected W_DUPLICATE_ASSIGNMENT, got: {semantic_diags:#?}"
+        );
     }
 }
