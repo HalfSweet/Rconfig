@@ -858,7 +858,23 @@ struct ValuesChecker<'a> {
     diagnostic_stmt_indexes: Vec<Option<usize>>,
     aliases: HashMap<String, String>,
     assigned: HashMap<String, Span>,
+    assignments: HashMap<String, ResolvedAssignment>,
     current_stmt_index: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedAssignment {
+    value: ResolvedValue,
+    source: ValueSource,
+    span: Span,
+    stmt_index: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedValue {
+    actual_type: ValueType,
+    resolved_value: Option<ResolvedValue>,
+    int_value: Option<i128>,
 }
 
 impl<'a> ValuesChecker<'a> {
@@ -869,6 +885,7 @@ impl<'a> ValuesChecker<'a> {
             diagnostic_stmt_indexes: Vec::new(),
             aliases: HashMap::new(),
             assigned: HashMap::new(),
+            assignments: HashMap::new(),
             current_stmt_index: None,
         }
     }
@@ -994,7 +1011,8 @@ impl<'a> ValuesChecker<'a> {
             return;
         };
 
-        let actual = self.value_expr_type(value, &expected);
+        let parsed = self.parse_value_expr(value, &expected);
+        let actual = parsed.actual_type;
         if !actual.is_unknown() && !expected.same_as(&actual) {
             self.push_diag(Diagnostic::error(
                 "E_TYPE_MISMATCH",
@@ -1008,11 +1026,20 @@ impl<'a> ValuesChecker<'a> {
             return;
         }
 
+        if let Some(resolved_value) = parsed.resolved_value {
+            self.assignments.insert(
+                target.to_string(),
+                ResolvedAssignment {
+                    value: resolved_value,
+                    source: ValueSource::User,
+                    span: value.span(),
+                    stmt_index: self.current_stmt_index,
+                },
+            );
+        }
+
         if matches!(expected, ValueType::Int) {
-            if let (Some(range), Some(actual)) = (
-                self.symbols.option_range(target),
-                extract_int_from_value_expr(value),
-            ) {
+            if let (Some(range), Some(actual)) = (self.symbols.option_range(target), parsed.int_value) {
                 let violates = if range.inclusive {
                     actual < range.start || actual > range.end
                 } else {
@@ -1038,6 +1065,47 @@ impl<'a> ValuesChecker<'a> {
                     );
                 }
             }
+        }
+    }
+
+    fn parse_value_expr(&mut self, value: &ValueExpr, expected: &ValueType) -> ParsedValue {
+        let actual_type = self.value_expr_type(value, expected);
+        let resolved_value = match value {
+            ValueExpr::Bool(raw, _) => Some(ResolvedValue::Bool(*raw)),
+            ValueExpr::Int(raw, _) => Some(ResolvedValue::Int(*raw)),
+            ValueExpr::String(raw, _) => Some(ResolvedValue::String(raw.clone())),
+            ValueExpr::Path(path) => {
+                let expanded = expand_with_aliases(path, &self.aliases);
+                let mut matches = self.symbols.resolve_enum_variant_paths(&expanded);
+                if matches.len() == 1 {
+                    Some(ResolvedValue::EnumVariant(matches.remove(0)))
+                } else {
+                    None
+                }
+            }
+            ValueExpr::Env { name, .. } => match expected {
+                ValueType::Bool => match std::env::var(name.value.as_str()) {
+                    Ok(raw) if raw == "true" => Some(ResolvedValue::Bool(true)),
+                    Ok(raw) if raw == "false" => Some(ResolvedValue::Bool(false)),
+                    _ => None,
+                },
+                ValueType::Int => std::env::var(name.value.as_str())
+                    .ok()
+                    .and_then(|raw| parse_env_int(&raw))
+                    .map(ResolvedValue::Int),
+                ValueType::String => std::env::var(name.value.as_str())
+                    .ok()
+                    .map(ResolvedValue::String),
+                ValueType::Enum(_) | ValueType::Unknown => None,
+            },
+        };
+
+        let int_value = resolved_value.as_ref().and_then(ResolvedValue::as_int);
+
+        ParsedValue {
+            actual_type,
+            resolved_value,
+            int_value,
         }
     }
 
