@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use rcfg_lang::{
-    analyze_schema, analyze_values, analyze_values_from_path, analyze_values_from_path_report,
-    expand_values_includes_from_path, expand_values_includes_with_origins, SymbolKind, SymbolTable,
+    analyze_schema, analyze_schema_strict, analyze_values, analyze_values_strict,
+    analyze_values_from_path, analyze_values_from_path_report, expand_values_includes_from_path,
+    expand_values_includes_with_origins, Severity, SymbolKind, SymbolTable,
 };
 use rcfg_lang::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 
@@ -1083,4 +1084,49 @@ mod ctx {
             .any(|diag| diag.code == "E_MISSING_CONTEXT_VALUE"),
         "expected E_MISSING_CONTEXT_VALUE, got: {diagnostics:#?}"
     );
+}
+
+#[test]
+fn strict_mode_upgrades_require_missing_msg_to_error() {
+    let src = r#"
+constraint {
+  require!(true);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema_strict(&file);
+    let diag = report
+        .diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_REQUIRE_MISSING_MSG")
+        .expect("expected E_REQUIRE_MISSING_MSG");
+    assert_eq!(diag.severity, Severity::Error);
+}
+
+#[test]
+fn strict_mode_upgrades_inactive_assignment_to_error() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+  when enabled {
+    option hidden: u32;
+  }
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::hidden = 42;
+"#;
+    let (values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values_strict(&values, &symbols);
+    let diag = diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_INACTIVE_ASSIGNMENT")
+        .expect("expected E_INACTIVE_ASSIGNMENT");
+    assert_eq!(diag.severity, Severity::Error);
 }

@@ -6,7 +6,7 @@ use crate::ast::{
     AttrKind, BinaryOp, ConstValue, ConstraintItem, Expr, File, InSetElem, IntRange, Item,
     MatchBlock, MatchPat, OptionDecl, Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
 };
-use crate::error::Diagnostic;
+use crate::error::{Diagnostic, Severity};
 use crate::parser::parse_values_with_diagnostics;
 use crate::span::Span;
 
@@ -285,8 +285,20 @@ pub fn analyze_schema(file: &File) -> SemanticReport {
     }
 }
 
+pub fn analyze_schema_strict(file: &File) -> SemanticReport {
+    let mut report = analyze_schema(file);
+    promote_strict_diagnostics(&mut report.diagnostics);
+    report
+}
+
 pub fn analyze_values(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnostic> {
     analyze_values_with_stmt_indexes(values, symbols).0
+}
+
+pub fn analyze_values_strict(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnostic> {
+    let mut diagnostics = analyze_values(values, symbols);
+    promote_strict_diagnostics(&mut diagnostics);
+    diagnostics
 }
 
 fn analyze_values_with_stmt_indexes(
@@ -324,8 +336,25 @@ pub fn analyze_values_from_path_report(
     }
 }
 
+pub fn analyze_values_from_path_report_strict(
+    entry: &FsPath,
+    symbols: &SymbolTable,
+) -> ValuesAnalysisReport {
+    let mut report = analyze_values_from_path_report(entry, symbols);
+    promote_strict_diagnostics(&mut report.diagnostics);
+    report
+}
+
 pub fn analyze_values_from_path(entry: &FsPath, symbols: &SymbolTable) -> (ValuesFile, Vec<Diagnostic>) {
     let report = analyze_values_from_path_report(entry, symbols);
+    (report.values, report.diagnostics)
+}
+
+pub fn analyze_values_from_path_strict(
+    entry: &FsPath,
+    symbols: &SymbolTable,
+) -> (ValuesFile, Vec<Diagnostic>) {
+    let report = analyze_values_from_path_report_strict(entry, symbols);
     (report.values, report.diagnostics)
 }
 
@@ -1710,6 +1739,18 @@ impl<'a> TypeChecker<'a> {
                 }
                 ValueType::Bool
             }
+        }
+    }
+}
+
+fn promote_strict_diagnostics(diagnostics: &mut [Diagnostic]) {
+    for diagnostic in diagnostics {
+        if diagnostic.code == "W_INACTIVE_ASSIGNMENT" {
+            diagnostic.code = "E_INACTIVE_ASSIGNMENT";
+            diagnostic.severity = Severity::Error;
+        } else if diagnostic.code == "L_REQUIRE_MISSING_MSG" {
+            diagnostic.code = "E_REQUIRE_MISSING_MSG";
+            diagnostic.severity = Severity::Error;
         }
     }
 }
