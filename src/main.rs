@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use rcfg_lang::parser::parse_schema_with_diagnostics;
 use rcfg_lang::{
-    analyze_schema, analyze_schema_strict, analyze_values_from_path_report_with_context,
+    AttrKind, Diagnostic, ExportOptions, ResolvedConfig, ResolvedValue, Severity, SymbolKind,
+    ValuesAnalysisReport, analyze_schema, analyze_schema_strict,
+    analyze_values_from_path_report_with_context,
     analyze_values_from_path_report_with_context_strict, generate_exports, resolve_values,
-    resolve_values_with_context, Diagnostic, ExportOptions, ResolvedConfig, ResolvedValue, Severity,
-    SymbolKind, ValuesAnalysisReport,
+    resolve_values_with_context,
 };
 
 #[derive(Debug, Parser)]
@@ -77,6 +78,21 @@ enum Commands {
         #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
         include_secrets: bool,
     },
+    I18n {
+        #[command(subcommand)]
+        command: I18nCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum I18nCommand {
+    Extract {
+        #[arg(long)]
+        out: PathBuf,
+
+        #[arg(long, default_value = "en")]
+        locale: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -115,12 +131,8 @@ fn run(cli: Cli) -> Result<(), String> {
         let context = load_context(cli.context.as_deref())?;
         match cli.command {
             Commands::Check { values, format } => {
-                let values_report = analyze_values_report(
-                    &values,
-                    &schema_report.symbols,
-                    &context,
-                    cli.strict,
-                );
+                let values_report =
+                    analyze_values_report(&values, &schema_report.symbols, &context, cli.strict);
                 let mut all = parse_diags;
                 all.extend(values_report.diagnostics);
                 print_diagnostics(&all, format);
@@ -137,20 +149,13 @@ fn run(cli: Cli) -> Result<(), String> {
                 cmake_prefix,
                 format,
             } => {
-                let values_report = analyze_values_report(
-                    &values,
-                    &schema_report.symbols,
-                    &context,
-                    cli.strict,
-                );
+                let values_report =
+                    analyze_values_report(&values, &schema_report.symbols, &context, cli.strict);
                 let mut all = parse_diags;
                 all.extend(values_report.diagnostics.clone());
 
-                let resolved = resolve_with_context(
-                    &values_report.values,
-                    &schema_report.symbols,
-                    &context,
-                );
+                let resolved =
+                    resolve_with_context(&values_report.values, &schema_report.symbols, &context);
                 let exports = generate_exports(
                     &schema_report.symbols,
                     &resolved,
@@ -179,12 +184,8 @@ fn run(cli: Cli) -> Result<(), String> {
                 out_diagnostics,
                 include_secrets,
             } => {
-                let values_report = analyze_values_report(
-                    &values,
-                    &schema_report.symbols,
-                    &context,
-                    cli.strict,
-                );
+                let values_report =
+                    analyze_values_report(&values, &schema_report.symbols, &context, cli.strict);
                 let mut all = parse_diags;
                 all.extend(values_report.diagnostics.clone());
                 write_diagnostics_json(out_diagnostics.as_deref(), &all)?;
@@ -193,12 +194,10 @@ fn run(cli: Cli) -> Result<(), String> {
                     return Err("dump blocked by diagnostics".to_string());
                 }
 
-                let resolved = resolve_with_context(
-                    &values_report.values,
-                    &schema_report.symbols,
-                    &context,
-                );
-                let rendered = render_resolved_json(&resolved, include_secrets, &schema_report.symbols);
+                let resolved =
+                    resolve_with_context(&values_report.values, &schema_report.symbols, &context);
+                let rendered =
+                    render_resolved_json(&resolved, include_secrets, &schema_report.symbols);
                 fs::write(
                     &out,
                     serde_json::to_string_pretty(&rendered)
@@ -222,6 +221,33 @@ fn run(cli: Cli) -> Result<(), String> {
                     .map_err(|err| {
                         format!("failed to write {}: {err}", schema_ir_path.display())
                     })?;
+                }
+            }
+            Commands::I18n { command } => {
+                let all = parse_diags;
+                if !all.is_empty() {
+                    print_diagnostics(&all, OutputFormat::Human);
+                }
+                if all.iter().any(|diag| diag.severity == Severity::Error) {
+                    return Err("i18n extract blocked by diagnostics".to_string());
+                }
+
+                match command {
+                    I18nCommand::Extract { out, locale } => {
+                        let package = manifest
+                            .as_ref()
+                            .and_then(|model| model.package_name.as_deref())
+                            .unwrap_or("main");
+                        let strings = collect_i18n_template_strings(&schema_file, package);
+                        let rendered = render_i18n_template_toml(&locale, &strings)?;
+                        if let Some(parent) = out.parent() {
+                            fs::create_dir_all(parent).map_err(|err| {
+                                format!("failed to create output dir {}: {err}", parent.display())
+                            })?;
+                        }
+                        fs::write(&out, rendered)
+                            .map_err(|err| format!("failed to write {}: {err}", out.display()))?;
+                    }
                 }
             }
         }
@@ -330,7 +356,10 @@ fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, String> {
     }))
 }
 
-fn resolve_schema_path(schema: Option<&Path>, manifest: Option<&ManifestModel>) -> Result<PathBuf, String> {
+fn resolve_schema_path(
+    schema: Option<&Path>,
+    manifest: Option<&ManifestModel>,
+) -> Result<PathBuf, String> {
     if let Some(schema) = schema {
         return Ok(schema.to_path_buf());
     }
@@ -446,10 +475,7 @@ fn render_schema_ir_json(
     symbols_list.sort_by(|(left, _), (right, _)| left.cmp(right));
 
     for (path, info) in symbols_list {
-        let (summary, help) = doc_sections
-            .get(path)
-            .cloned()
-            .unwrap_or((None, None));
+        let (summary, help) = doc_sections.get(path).cloned().unwrap_or((None, None));
         let entry = serde_json::json!({
             "path": path,
             "summary": summary,
@@ -476,6 +502,178 @@ fn render_schema_ir_json(
 
 fn i18n_symbol_key(package: &str, path: &str, suffix: &str) -> String {
     format!("{}.{}.{}", package, path.replace("::", "."), suffix)
+}
+
+fn collect_i18n_template_strings(
+    schema: &rcfg_lang::File,
+    package: &str,
+) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let mut scope = Vec::new();
+    let mut require_counters = HashMap::new();
+    collect_item_i18n_strings(
+        &schema.items,
+        &mut scope,
+        package,
+        &mut require_counters,
+        &mut out,
+    );
+    out
+}
+
+fn collect_item_i18n_strings(
+    items: &[rcfg_lang::Item],
+    scope: &mut Vec<String>,
+    package: &str,
+    require_counters: &mut HashMap<String, usize>,
+    out: &mut BTreeMap<String, String>,
+) {
+    for item in items {
+        match item {
+            rcfg_lang::Item::Use(_) => {}
+            rcfg_lang::Item::Mod(module) => {
+                let path = scoped_path(scope, &module.name.value);
+                push_doc_i18n_strings(&path, &module.meta.doc, package, out);
+
+                scope.push(module.name.value.clone());
+                collect_item_i18n_strings(&module.items, scope, package, require_counters, out);
+                scope.pop();
+            }
+            rcfg_lang::Item::Enum(enum_decl) => {
+                let enum_path = scoped_path(scope, &enum_decl.name.value);
+                push_doc_i18n_strings(&enum_path, &enum_decl.meta.doc, package, out);
+
+                for variant in &enum_decl.variants {
+                    let variant_path = format!("{}::{}", enum_path, variant.name.value);
+                    push_doc_i18n_strings(&variant_path, &variant.meta.doc, package, out);
+                }
+            }
+            rcfg_lang::Item::Option(option) => {
+                let path = scoped_path(scope, &option.name.value);
+                push_doc_i18n_strings(&path, &option.meta.doc, package, out);
+
+                if let Some(attached) = &option.attached_constraints {
+                    for require in &attached.requires {
+                        push_require_i18n_string(require, scope, package, require_counters, out);
+                    }
+                }
+            }
+            rcfg_lang::Item::Require(require) => {
+                push_require_i18n_string(require, scope, package, require_counters, out);
+            }
+            rcfg_lang::Item::Constraint(constraint) => {
+                for item in &constraint.items {
+                    if let rcfg_lang::ast::ConstraintItem::Require(require) = item {
+                        push_require_i18n_string(require, scope, package, require_counters, out);
+                    }
+                }
+            }
+            rcfg_lang::Item::When(when_block) => {
+                collect_item_i18n_strings(&when_block.items, scope, package, require_counters, out);
+            }
+            rcfg_lang::Item::Match(match_block) => {
+                for case in &match_block.cases {
+                    collect_item_i18n_strings(&case.items, scope, package, require_counters, out);
+                }
+            }
+        }
+    }
+}
+
+fn push_doc_i18n_strings(
+    path: &str,
+    doc: &[rcfg_lang::Spanned<String>],
+    package: &str,
+    out: &mut BTreeMap<String, String>,
+) {
+    let (summary, help) = split_doc_summary_help(doc);
+    let label_key = i18n_symbol_key(package, path, "label");
+    let help_key = i18n_symbol_key(package, path, "help");
+
+    insert_i18n_string(out, label_key, summary.unwrap_or_default());
+    insert_i18n_string(out, help_key, help.unwrap_or_default());
+}
+
+fn push_require_i18n_string(
+    require: &rcfg_lang::ast::RequireStmt,
+    scope: &[String],
+    package: &str,
+    require_counters: &mut HashMap<String, usize>,
+    out: &mut BTreeMap<String, String>,
+) {
+    let ordinal = next_require_ordinal(require_counters, scope);
+    let key = require_i18n_message_key(require, scope, ordinal, package);
+    insert_i18n_string(out, key, "require condition failed".to_string());
+}
+
+fn insert_i18n_string(out: &mut BTreeMap<String, String>, key: String, fallback: String) {
+    let entry = out.entry(key).or_default();
+    if entry.is_empty() && !fallback.is_empty() {
+        *entry = fallback;
+    }
+}
+
+fn require_scope_key(scope: &[String]) -> String {
+    if scope.is_empty() {
+        "root".to_string()
+    } else {
+        scope.join(".")
+    }
+}
+
+fn next_require_ordinal(counters: &mut HashMap<String, usize>, scope: &[String]) -> usize {
+    let key = require_scope_key(scope);
+    let entry = counters.entry(key).or_insert(0);
+    *entry += 1;
+    *entry
+}
+
+fn require_i18n_message_key(
+    require: &rcfg_lang::ast::RequireStmt,
+    scope: &[String],
+    ordinal: usize,
+    package: &str,
+) -> String {
+    if let Some(message) = require.meta.attrs.iter().find_map(|attr| match &attr.kind {
+        AttrKind::Msg(value) => Some(value.clone()),
+        _ => None,
+    }) {
+        return message;
+    }
+
+    format!(
+        "{}.{}.require.{}",
+        package,
+        require_scope_key(scope),
+        ordinal
+    )
+}
+
+fn render_i18n_template_toml(
+    locale: &str,
+    strings: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    let locale = locale.trim();
+    if locale.is_empty() {
+        return Err("locale cannot be empty".to_string());
+    }
+
+    let mut string_map = toml::map::Map::new();
+    for (key, value) in strings {
+        string_map.insert(key.clone(), toml::Value::String(value.clone()));
+    }
+
+    let mut root = toml::map::Map::new();
+    root.insert(
+        "locale".to_string(),
+        toml::Value::String(locale.to_string()),
+    );
+    root.insert("strings".to_string(), toml::Value::Table(string_map));
+
+    let body = toml::to_string_pretty(&toml::Value::Table(root))
+        .map_err(|err| format!("failed to serialize i18n template: {err}"))?;
+
+    Ok(format!("# generated by rcfg i18n extract\n{body}"))
 }
 
 fn collect_doc_sections_index(
@@ -576,14 +774,12 @@ fn split_doc_summary_help(doc: &[rcfg_lang::Spanned<String>]) -> (Option<String>
     let summary = if summary_lines.is_empty() {
         None
     } else {
-        Some(summary_lines.join("
-"))
+        Some(summary_lines.join("\n"))
     };
     let help = if help_lines.is_empty() {
         None
     } else {
-        Some(help_lines.join("
-"))
+        Some(help_lines.join("\n"))
     };
 
     (summary, help)
@@ -604,12 +800,10 @@ fn render_resolved_json(
 ) -> serde_json::Value {
     let mut map = BTreeMap::new();
     for option in &resolved.options {
-        let is_secret = symbols
-            .get(&option.path)
-            .is_some_and(|_| {
-                let (planned, _diags) = rcfg_lang::plan_c_header_exports(symbols, false);
-                !planned.iter().any(|entry| entry.path == option.path)
-            });
+        let is_secret = symbols.get(&option.path).is_some_and(|_| {
+            let (planned, _diags) = rcfg_lang::plan_c_header_exports(symbols, false);
+            !planned.iter().any(|entry| entry.path == option.path)
+        });
         let value = if is_secret && !include_secrets {
             serde_json::json!({"redacted": true, "value": null})
         } else {
