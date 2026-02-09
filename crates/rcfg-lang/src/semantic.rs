@@ -497,13 +497,13 @@ fn analyze_values_with_stmt_indexes(
 ) -> (Vec<Diagnostic>, Vec<Option<usize>>) {
     let mut checker = ValuesChecker::new(symbols);
     checker.check(values);
+    let post_diags = checker.post_check_diagnostics();
 
-    let missing_diags = checker.missing_value_diagnostics();
     let mut diagnostics = checker.diagnostics;
     let mut stmt_indexes = checker.diagnostic_stmt_indexes;
-    for diagnostic in missing_diags {
+    for (diagnostic, stmt_index) in post_diags {
         diagnostics.push(diagnostic);
-        stmt_indexes.push(None);
+        stmt_indexes.push(stmt_index);
     }
 
     (diagnostics, stmt_indexes)
@@ -859,6 +859,7 @@ struct ValuesChecker<'a> {
     aliases: HashMap<String, String>,
     assigned: HashMap<String, Span>,
     assignments: HashMap<String, ResolvedAssignment>,
+    resolved: Option<ResolvedConfig>,
     current_stmt_index: Option<usize>,
 }
 
@@ -886,6 +887,7 @@ impl<'a> ValuesChecker<'a> {
             aliases: HashMap::new(),
             assigned: HashMap::new(),
             assignments: HashMap::new(),
+            resolved: None,
             current_stmt_index: None,
         }
     }
@@ -1208,6 +1210,14 @@ impl<'a> ValuesChecker<'a> {
             ),
             span,
         ));
+    }
+
+    fn post_check_diagnostics(&mut self) -> Vec<(Diagnostic, Option<usize>)> {
+        let diagnostics = self.missing_value_diagnostics();
+        diagnostics
+            .into_iter()
+            .map(|diagnostic| (diagnostic, None))
+            .collect::<Vec<_>>()
     }
 
     fn missing_value_diagnostics(&self) -> Vec<Diagnostic> {
