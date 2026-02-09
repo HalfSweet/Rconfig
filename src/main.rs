@@ -15,7 +15,7 @@ use rcfg_lang::{
 #[command(name = "rcfg", version, about = "Rconfig DSL CLI")]
 struct Cli {
     #[arg(long, global = true)]
-    schema: PathBuf,
+    schema: Option<PathBuf>,
 
     #[arg(long, global = true, default_value_t = false, action = ArgAction::SetTrue)]
     strict: bool,
@@ -89,8 +89,13 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<(), String> {
-    let schema_text = fs::read_to_string(&cli.schema)
-        .map_err(|err| format!("failed to read schema {}: {err}", cli.schema.display()))?;
+    let schema_path = cli
+        .schema
+        .clone()
+        .ok_or_else(|| "--schema is required".to_string())?;
+
+    let schema_text = fs::read_to_string(&schema_path)
+        .map_err(|err| format!("failed to read schema {}: {err}", schema_path.display()))?;
     let (schema_file, mut parse_diags) = parse_schema_with_diagnostics(&schema_text);
     if parse_diags.is_empty() {
         let schema_report = if cli.strict {
