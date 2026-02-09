@@ -937,3 +937,46 @@ constraint {
         report.diagnostics
     );
 }
+
+#[test]
+fn warns_option_missing_doc_comment() {
+    let src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "L_MISSING_DOC"),
+        "expected L_MISSING_DOC, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn documented_option_suppresses_missing_doc_lint() {
+    let src = r#"
+mod app {
+  /// whether app is enabled
+  option enabled: bool = false;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diag| diag.code != "L_MISSING_DOC"),
+        "unexpected L_MISSING_DOC diagnostics: {:#?}",
+        report.diagnostics
+    );
+}

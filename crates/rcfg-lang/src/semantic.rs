@@ -944,6 +944,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_option(&mut self, option: &OptionDecl, scope: &[String]) {
+        self.lint_option_doc(option, scope);
         self.check_option_default(option, scope);
 
         if let Some(attached) = &option.attached_constraints {
@@ -1023,6 +1024,22 @@ impl<'a> TypeChecker<'a> {
                 ResolvePathResult::NotFound | ResolvePathResult::Ambiguous(_) => ValueType::Unknown,
             },
         }
+    }
+
+    fn lint_option_doc(&mut self, option: &OptionDecl, scope: &[String]) {
+        if !option.meta.doc.is_empty() {
+            return;
+        }
+
+        let option_path = build_full_path(scope, &option.name.value);
+        self.diagnostics.push(
+            Diagnostic::warning(
+                "L_MISSING_DOC",
+                format!("option `{}` is missing documentation comment", option_path),
+                option.name.span,
+            )
+            .with_path(option_path),
+        );
     }
 
     fn lint_require_msg(&mut self, require: &crate::ast::RequireStmt) {
