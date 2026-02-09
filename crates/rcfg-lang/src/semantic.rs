@@ -102,6 +102,16 @@ struct RuntimeState {
     ctx_references: HashSet<String>,
 }
 
+impl RuntimeState {
+    fn is_active(&self, path: &str) -> bool {
+        self.active.contains(path)
+    }
+
+    fn value_of(&self, path: &str) -> Option<&ResolvedValue> {
+        self.values.get(path)
+    }
+}
+
 impl ValueType {
     fn is_bool(&self) -> bool {
         matches!(self, ValueType::Bool)
@@ -196,10 +206,6 @@ impl SymbolTable {
 
     fn insert_option_always_active(&mut self, path: String, is_always_active: bool) {
         self.option_always_active.insert(path, is_always_active);
-    }
-
-    fn option_default(&self, path: &str) -> Option<&ConstValue> {
-        self.option_defaults.get(path)
     }
 
     fn set_schema_items(&mut self, items: Vec<Item>) {
@@ -1213,14 +1219,51 @@ impl<'a> ValuesChecker<'a> {
     }
 
     fn post_check_diagnostics(&mut self) -> Vec<(Diagnostic, Option<usize>)> {
-        let diagnostics = self.missing_value_diagnostics();
+        let runtime = self.runtime_state();
+        self.resolved = Some(build_resolved_config(self.symbols, &runtime));
+
+        let mut diagnostics = Vec::new();
+        diagnostics.extend(self.runtime_inactive_assignment_diagnostics(&runtime));
+        diagnostics.extend(self.missing_value_diagnostics(&runtime));
+        diagnostics.extend(self.missing_context_diagnostics(&runtime));
+        diagnostics.extend(self.runtime_require_diagnostics(&runtime));
         diagnostics
-            .into_iter()
-            .map(|diagnostic| (diagnostic, None))
-            .collect::<Vec<_>>()
     }
 
-    fn missing_value_diagnostics(&self) -> Vec<Diagnostic> {
+    fn runtime_state(&self) -> RuntimeState {
+        evaluate_runtime_state(self.symbols, &self.assignments)
+    }
+
+    fn runtime_inactive_assignment_diagnostics(
+        &self,
+        runtime: &RuntimeState,
+    ) -> Vec<(Diagnostic, Option<usize>)> {
+        let mut diagnostics = Vec::new();
+        for (path, assignment) in &self.assignments {
+            if assignment.source != ValueSource::User {
+                continue;
+            }
+            if runtime.is_active(path) {
+                continue;
+            }
+
+            diagnostics.push((
+                Diagnostic::warning(
+                    "W_INACTIVE_ASSIGNMENT",
+                    format!(
+                        "assignment to inactive option `{}` is ignored by final activation",
+                        path
+                    ),
+                    assignment.span,
+                )
+                .with_path(path.clone()),
+                assignment.stmt_index,
+            ));
+        }
+        diagnostics
+    }
+
+    fn missing_value_diagnostics(&self, runtime: &RuntimeState) -> Vec<(Diagnostic, Option<usize>)> {
         let mut option_paths = self
             .symbols
             .option_types
@@ -1232,32 +1275,16 @@ impl<'a> ValuesChecker<'a> {
         let mut diagnostics = Vec::new();
         for option_path in option_paths {
             if option_path == "ctx" || option_path.starts_with("ctx::") {
-                if self.symbols.option_default(&option_path).is_none() {
-                    diagnostics.push(
-                        Diagnostic::error(
-                            "E_MISSING_CONTEXT_VALUE",
-                            format!(
-                                "context option `{}` requires an injected context value",
-                                option_path
-                            ),
-                            self.symbols.option_span(&option_path).unwrap_or_default(),
-                        )
-                        .with_path(option_path),
-                    );
-                }
                 continue;
             }
-            if !self.symbols.option_is_always_active(&option_path) {
+            if !runtime.is_active(&option_path) {
                 continue;
             }
-            if self.symbols.option_default(&option_path).is_some() {
-                continue;
-            }
-            if self.assigned.contains_key(&option_path) {
+            if runtime.value_of(&option_path).is_some() {
                 continue;
             }
 
-            diagnostics.push(
+            diagnostics.push((
                 Diagnostic::error(
                     "E_MISSING_VALUE",
                     format!(
@@ -1267,9 +1294,46 @@ impl<'a> ValuesChecker<'a> {
                     self.symbols.option_span(&option_path).unwrap_or_default(),
                 )
                 .with_path(option_path),
-            );
+                None,
+            ));
         }
 
+        diagnostics
+    }
+
+    fn missing_context_diagnostics(&self, runtime: &RuntimeState) -> Vec<(Diagnostic, Option<usize>)> {
+        let mut diagnostics = Vec::new();
+        for ctx_path in &runtime.ctx_references {
+            if runtime.value_of(ctx_path).is_some() {
+                continue;
+            }
+
+            diagnostics.push((
+                Diagnostic::error(
+                    "E_MISSING_CONTEXT_VALUE",
+                    format!(
+                        "context option `{}` requires an injected context value",
+                        ctx_path
+                    ),
+                    self.symbols.option_span(ctx_path).unwrap_or_default(),
+                )
+                .with_path(ctx_path.clone()),
+                None,
+            ));
+        }
+        diagnostics
+    }
+
+    fn runtime_require_diagnostics(&self, runtime: &RuntimeState) -> Vec<(Diagnostic, Option<usize>)> {
+        let mut diagnostics = Vec::new();
+        let mut scope = Vec::new();
+        collect_runtime_require_diagnostics(
+            self.symbols,
+            self.symbols.schema_items(),
+            &mut scope,
+            runtime,
+            &mut diagnostics,
+        );
         diagnostics
     }
 
@@ -2277,14 +2341,6 @@ fn extract_range_attr(option: &OptionDecl) -> Option<IntRange> {
     })
 }
 
-fn extract_int_from_value_expr(value: &ValueExpr) -> Option<i128> {
-    if let ValueExpr::Int(value, _) = value {
-        Some(*value)
-    } else {
-        None
-    }
-}
-
 fn option_type_to_value_type(ty: &Type) -> ValueType {
     match ty {
         Type::Bool(_) => ValueType::Bool,
@@ -2386,4 +2442,547 @@ fn enum_name_matches(expected: &str, candidate: &str) -> bool {
     let expected_base = expected.rsplit("::").next().unwrap_or(expected);
     let candidate_base = candidate.rsplit("::").next().unwrap_or(candidate);
     expected_base == candidate_base
+}
+
+fn evaluate_runtime_state(
+    symbols: &SymbolTable,
+    assignments: &HashMap<String, ResolvedAssignment>,
+) -> RuntimeState {
+    let mut values = assignments
+        .iter()
+        .map(|(path, assignment)| (path.clone(), assignment.value.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut sources = assignments
+        .iter()
+        .map(|(path, assignment)| (path.clone(), assignment.source))
+        .collect::<HashMap<_, _>>();
+
+    for (path, default) in &symbols.option_defaults {
+        if values.contains_key(path) {
+            continue;
+        }
+        if let Some(value) = resolve_const_value(default, symbols) {
+            values.insert(path.clone(), value);
+            sources.insert(path.clone(), ValueSource::Default);
+        }
+    }
+
+    let mut active = symbols
+        .option_types
+        .keys()
+        .filter(|path| symbols.option_is_always_active(path))
+        .cloned()
+        .collect::<HashSet<_>>();
+    let mut ctx_references = HashSet::new();
+
+    let mut changed = true;
+    let mut guard = 0usize;
+    while changed && guard < 64 {
+        guard += 1;
+        let snapshot = RuntimeState {
+            active: active.clone(),
+            values: values.clone(),
+            sources: sources.clone(),
+            ctx_references: HashSet::new(),
+        };
+        let eval = evaluate_activation_once(symbols, &snapshot);
+        changed = eval.active != active;
+        active = eval.active;
+        ctx_references.extend(eval.ctx_references);
+    }
+
+    RuntimeState {
+        active,
+        values,
+        sources,
+        ctx_references,
+    }
+}
+
+fn evaluate_activation_once(symbols: &SymbolTable, runtime: &RuntimeState) -> RuntimeState {
+    let mut active = symbols
+        .option_types
+        .keys()
+        .filter(|path| symbols.option_is_always_active(path))
+        .cloned()
+        .collect::<HashSet<_>>();
+    let mut scope = Vec::new();
+    let mut ctx_references = HashSet::new();
+    collect_active_options(
+        symbols,
+        symbols.schema_items(),
+        &mut scope,
+        runtime,
+        true,
+        &mut active,
+        &mut ctx_references,
+    );
+
+    RuntimeState {
+        active,
+        values: runtime.values.clone(),
+        sources: runtime.sources.clone(),
+        ctx_references,
+    }
+}
+
+fn collect_active_options(
+    symbols: &SymbolTable,
+    items: &[Item],
+    scope: &mut Vec<String>,
+    runtime: &RuntimeState,
+    guard_active: bool,
+    active: &mut HashSet<String>,
+    ctx_references: &mut HashSet<String>,
+) {
+    for item in items {
+        match item {
+            Item::Use(_) | Item::Require(_) | Item::Constraint(_) | Item::Enum(_) => {}
+            Item::Option(option) => {
+                let option_path = build_full_path(scope, &option.name.value);
+                if guard_active {
+                    active.insert(option_path);
+                }
+            }
+            Item::Mod(module) => {
+                scope.push(module.name.value.clone());
+                collect_active_options(
+                    symbols,
+                    &module.items,
+                    scope,
+                    runtime,
+                    guard_active,
+                    active,
+                    ctx_references,
+                );
+                scope.pop();
+            }
+            Item::When(when_block) => {
+                let cond = eval_expr_as_bool(
+                    &when_block.condition,
+                    symbols,
+                    scope,
+                    runtime,
+                    ctx_references,
+                )
+                .unwrap_or(false);
+                collect_active_options(
+                    symbols,
+                    &when_block.items,
+                    scope,
+                    runtime,
+                    guard_active && cond,
+                    active,
+                    ctx_references,
+                );
+            }
+            Item::Match(match_block) => {
+                let selected = select_match_case_index(
+                    &match_block,
+                    symbols,
+                    scope,
+                    runtime,
+                    ctx_references,
+                );
+                for (index, case) in match_block.cases.iter().enumerate() {
+                    let case_active = selected.is_some_and(|selected_index| selected_index == index);
+                    collect_active_options(
+                        symbols,
+                        &case.items,
+                        scope,
+                        runtime,
+                        guard_active && case_active,
+                        active,
+                        ctx_references,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn select_match_case_index(
+    block: &MatchBlock,
+    symbols: &SymbolTable,
+    scope: &[String],
+    runtime: &RuntimeState,
+    ctx_references: &mut HashSet<String>,
+) -> Option<usize> {
+    let scrutinee = eval_expr(
+        &block.expr,
+        symbols,
+        scope,
+        runtime,
+        ctx_references,
+        true,
+    )?;
+
+    for (index, case) in block.cases.iter().enumerate() {
+        if !match_pattern_matches(&case.pattern, &scrutinee, symbols, scope, runtime, ctx_references) {
+            continue;
+        }
+
+        if let Some(guard) = &case.guard {
+            if !eval_expr_as_bool(guard, symbols, scope, runtime, ctx_references).unwrap_or(false) {
+                continue;
+            }
+        }
+
+        return Some(index);
+    }
+    None
+}
+
+fn match_pattern_matches(
+    pattern: &MatchPat,
+    scrutinee: &ResolvedValue,
+    symbols: &SymbolTable,
+    scope: &[String],
+    runtime: &RuntimeState,
+    ctx_references: &mut HashSet<String>,
+) -> bool {
+    match pattern {
+        MatchPat::Wildcard(_) => true,
+        MatchPat::Paths(paths, _) => paths.iter().any(|path| {
+            eval_path_as_enum_variant(path, symbols, scope, runtime, ctx_references)
+                .is_some_and(|variant| scrutinee.as_enum_variant().is_some_and(|current| current == variant))
+        }),
+    }
+}
+
+fn build_resolved_config(symbols: &SymbolTable, runtime: &RuntimeState) -> ResolvedConfig {
+    let mut paths = symbols.option_types.keys().cloned().collect::<Vec<_>>();
+    paths.sort();
+
+    let options = paths
+        .into_iter()
+        .map(|path| ResolvedOption {
+            active: runtime.active.contains(&path),
+            value: runtime.values.get(&path).cloned(),
+            source: runtime.sources.get(&path).copied(),
+            path,
+        })
+        .collect::<Vec<_>>();
+
+    ResolvedConfig { options }
+}
+
+fn resolve_const_value(value: &ConstValue, symbols: &SymbolTable) -> Option<ResolvedValue> {
+    match value {
+        ConstValue::Bool(raw, _) => Some(ResolvedValue::Bool(*raw)),
+        ConstValue::Int(raw, _) => Some(ResolvedValue::Int(*raw)),
+        ConstValue::String(raw, _) => Some(ResolvedValue::String(raw.clone())),
+        ConstValue::EnumPath(path) => {
+            let resolved = symbols.resolve_enum_variant_paths(&path.to_string());
+            if resolved.len() == 1 {
+                Some(ResolvedValue::EnumVariant(resolved[0].clone()))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn collect_runtime_require_diagnostics(
+    symbols: &SymbolTable,
+    items: &[Item],
+    scope: &mut Vec<String>,
+    runtime: &RuntimeState,
+    diagnostics: &mut Vec<(Diagnostic, Option<usize>)>,
+) {
+    for item in items {
+        match item {
+            Item::Use(_) | Item::Enum(_) | Item::Option(_) => {}
+            Item::Require(require) => {
+                if !eval_expr_as_bool(&require.expr, symbols, scope, runtime, &mut HashSet::new())
+                    .unwrap_or(false)
+                {
+                    diagnostics.push((
+                        Diagnostic::error(
+                            "E_REQUIRE_FAILED",
+                            "require condition failed at runtime",
+                            require.span,
+                        ),
+                        None,
+                    ));
+                }
+            }
+            Item::Constraint(constraint) => {
+                for child in &constraint.items {
+                    if let ConstraintItem::Require(require) = child {
+                        if !eval_expr_as_bool(
+                            &require.expr,
+                            symbols,
+                            scope,
+                            runtime,
+                            &mut HashSet::new(),
+                        )
+                        .unwrap_or(false)
+                        {
+                            diagnostics.push((
+                                Diagnostic::error(
+                                    "E_REQUIRE_FAILED",
+                                    "require condition failed at runtime",
+                                    require.span,
+                                ),
+                                None,
+                            ));
+                        }
+                    }
+                }
+            }
+            Item::Mod(module) => {
+                scope.push(module.name.value.clone());
+                collect_runtime_require_diagnostics(
+                    symbols,
+                    &module.items,
+                    scope,
+                    runtime,
+                    diagnostics,
+                );
+                scope.pop();
+            }
+            Item::When(when_block) => {
+                if eval_expr_as_bool(
+                    &when_block.condition,
+                    symbols,
+                    scope,
+                    runtime,
+                    &mut HashSet::new(),
+                )
+                .unwrap_or(false)
+                {
+                    collect_runtime_require_diagnostics(
+                        symbols,
+                        &when_block.items,
+                        scope,
+                        runtime,
+                        diagnostics,
+                    );
+                }
+            }
+            Item::Match(match_block) => {
+                if let Some(index) = select_match_case_index(
+                    match_block,
+                    symbols,
+                    scope,
+                    runtime,
+                    &mut HashSet::new(),
+                ) {
+                    collect_runtime_require_diagnostics(
+                        symbols,
+                        &match_block.cases[index].items,
+                        scope,
+                        runtime,
+                        diagnostics,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn eval_expr_as_bool(
+    expr: &Expr,
+    symbols: &SymbolTable,
+    scope: &[String],
+    runtime: &RuntimeState,
+    ctx_references: &mut HashSet<String>,
+) -> Option<bool> {
+    eval_expr(expr, symbols, scope, runtime, ctx_references, true).and_then(|value| value.as_bool())
+}
+
+fn eval_expr(
+    expr: &Expr,
+    symbols: &SymbolTable,
+    scope: &[String],
+    runtime: &RuntimeState,
+    ctx_references: &mut HashSet<String>,
+    inactive_bool_as_false: bool,
+) -> Option<ResolvedValue> {
+    match expr {
+        Expr::Bool(value, _) => Some(ResolvedValue::Bool(*value)),
+        Expr::Int(value, _) => Some(ResolvedValue::Int(*value)),
+        Expr::String(value, _) => Some(ResolvedValue::String(value.clone())),
+        Expr::SelfValue(_) => None,
+        Expr::Path(path) => eval_path_value(
+            path,
+            symbols,
+            scope,
+            runtime,
+            ctx_references,
+            inactive_bool_as_false,
+        ),
+        Expr::Call { name, args, .. } => eval_call(name.value.as_str(), args, symbols, scope, runtime, ctx_references),
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+            ..
+        } => eval_expr_as_bool(expr, symbols, scope, runtime, ctx_references).map(|value| ResolvedValue::Bool(!value)),
+        Expr::Binary {
+            op,
+            left,
+            right,
+            ..
+        } => eval_binary_expr(*op, left, right, symbols, scope, runtime, ctx_references),
+        Expr::InRange { expr, range, .. } => {
+            let value = eval_expr(expr, symbols, scope, runtime, ctx_references, inactive_bool_as_false)?;
+            let int_value = value.as_int()?;
+            let result = if range.inclusive {
+                int_value >= range.start && int_value <= range.end
+            } else {
+                int_value >= range.start && int_value < range.end
+            };
+            Some(ResolvedValue::Bool(result))
+        }
+        Expr::InSet { expr, elems, .. } => {
+            let left = eval_expr(expr, symbols, scope, runtime, ctx_references, inactive_bool_as_false)?;
+            let result = elems.iter().any(|elem| {
+                let right = match elem {
+                    InSetElem::Int(value, _) => Some(ResolvedValue::Int(*value)),
+                    InSetElem::Path(path) => eval_path_value(
+                        path,
+                        symbols,
+                        scope,
+                        runtime,
+                        ctx_references,
+                        inactive_bool_as_false,
+                    ),
+                };
+                right.is_some_and(|right_value| values_equal(&left, &right_value))
+            });
+            Some(ResolvedValue::Bool(result))
+        }
+        Expr::Group { expr, .. } => eval_expr(expr, symbols, scope, runtime, ctx_references, inactive_bool_as_false),
+    }
+}
+
+fn eval_binary_expr(
+    op: BinaryOp,
+    left: &Expr,
+    right: &Expr,
+    symbols: &SymbolTable,
+    scope: &[String],
+    runtime: &RuntimeState,
+    ctx_references: &mut HashSet<String>,
+) -> Option<ResolvedValue> {
+    match op {
+        BinaryOp::Or => Some(ResolvedValue::Bool(
+            eval_expr_as_bool(left, symbols, scope, runtime, ctx_references)?
+                || eval_expr_as_bool(right, symbols, scope, runtime, ctx_references)?,
+        )),
+        BinaryOp::And => Some(ResolvedValue::Bool(
+            eval_expr_as_bool(left, symbols, scope, runtime, ctx_references)?
+                && eval_expr_as_bool(right, symbols, scope, runtime, ctx_references)?,
+        )),
+        BinaryOp::Eq => {
+            let lhs = eval_expr(left, symbols, scope, runtime, ctx_references, true)?;
+            let rhs = eval_expr(right, symbols, scope, runtime, ctx_references, true)?;
+            Some(ResolvedValue::Bool(values_equal(&lhs, &rhs)))
+        }
+        BinaryOp::Ne => {
+            let lhs = eval_expr(left, symbols, scope, runtime, ctx_references, true)?;
+            let rhs = eval_expr(right, symbols, scope, runtime, ctx_references, true)?;
+            Some(ResolvedValue::Bool(!values_equal(&lhs, &rhs)))
+        }
+        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+            let lhs = eval_expr(left, symbols, scope, runtime, ctx_references, true)?.as_int()?;
+            let rhs = eval_expr(right, symbols, scope, runtime, ctx_references, true)?.as_int()?;
+            let result = match op {
+                BinaryOp::Lt => lhs < rhs,
+                BinaryOp::Le => lhs <= rhs,
+                BinaryOp::Gt => lhs > rhs,
+                BinaryOp::Ge => lhs >= rhs,
+                _ => unreachable!(),
+            };
+            Some(ResolvedValue::Bool(result))
+        }
+    }
+}
+
+fn values_equal(left: &ResolvedValue, right: &ResolvedValue) -> bool {
+    match (left, right) {
+        (ResolvedValue::Bool(lhs), ResolvedValue::Bool(rhs)) => lhs == rhs,
+        (ResolvedValue::Int(lhs), ResolvedValue::Int(rhs)) => lhs == rhs,
+        (ResolvedValue::String(lhs), ResolvedValue::String(rhs)) => lhs == rhs,
+        (ResolvedValue::EnumVariant(lhs), ResolvedValue::EnumVariant(rhs)) => lhs == rhs,
+        _ => false,
+    }
+}
+
+fn eval_call(
+    name: &str,
+    args: &[Expr],
+    symbols: &SymbolTable,
+    scope: &[String],
+    runtime: &RuntimeState,
+    ctx_references: &mut HashSet<String>,
+) -> Option<ResolvedValue> {
+    match name {
+        "len" => {
+            if args.len() != 1 {
+                return None;
+            }
+            let value = eval_expr(&args[0], symbols, scope, runtime, ctx_references, true)?;
+            Some(ResolvedValue::Int(value.as_string()?.chars().count() as i128))
+        }
+        "matches" => {
+            if args.len() != 2 {
+                return None;
+            }
+            let input = eval_expr(&args[0], symbols, scope, runtime, ctx_references, true)?;
+            let pattern = eval_expr(&args[1], symbols, scope, runtime, ctx_references, true)?;
+            let input = input.as_string()?;
+            let pattern = pattern.as_string()?;
+            Some(ResolvedValue::Bool(input.contains(pattern)))
+        }
+        _ => None,
+    }
+}
+
+fn eval_path_value(
+    path: &Path,
+    symbols: &SymbolTable,
+    scope: &[String],
+    runtime: &RuntimeState,
+    ctx_references: &mut HashSet<String>,
+    inactive_bool_as_false: bool,
+) -> Option<ResolvedValue> {
+    match symbols.resolve_option_path_in_scope(scope, path) {
+        ResolveOptionPathResult::Resolved(option_path, ty) => {
+            if option_path == "ctx" || option_path.starts_with("ctx::") {
+                ctx_references.insert(option_path.clone());
+            }
+
+            if !runtime.active.contains(&option_path) {
+                if inactive_bool_as_false && ty.is_bool() {
+                    return Some(ResolvedValue::Bool(false));
+                }
+                return None;
+            }
+
+            runtime.values.get(&option_path).cloned()
+        }
+        ResolveOptionPathResult::NotFound | ResolveOptionPathResult::Ambiguous(_) => {
+            eval_path_as_enum_variant(path, symbols, scope, runtime, ctx_references)
+                .map(|variant| ResolvedValue::EnumVariant(variant.to_string()))
+        }
+    }
+}
+
+fn eval_path_as_enum_variant(
+    path: &Path,
+    symbols: &SymbolTable,
+    scope: &[String],
+    runtime: &RuntimeState,
+    ctx_references: &mut HashSet<String>,
+) -> Option<String> {
+    let _ = runtime;
+    let _ = ctx_references;
+    match symbols.resolve_enum_variant_path_in_scope(scope, path) {
+        ResolveEnumVariantPathResult::Resolved(variant, _) => {
+            symbols.enum_variants.get(&variant).map(|_| variant)
+        }
+        ResolveEnumVariantPathResult::NotFound | ResolveEnumVariantPathResult::Ambiguous(_) => None,
+    }
 }

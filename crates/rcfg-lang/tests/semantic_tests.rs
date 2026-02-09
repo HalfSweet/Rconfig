@@ -1066,10 +1066,37 @@ mod app {
 }
 
 #[test]
-fn reports_missing_context_value_without_injection() {
+fn does_not_report_missing_context_value_when_not_referenced() {
     let schema_src = r#"
 mod ctx {
   option arch: string;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_MISSING_CONTEXT_VALUE"),
+        "unexpected E_MISSING_CONTEXT_VALUE diagnostics: {diagnostics:#?}"
+    );
+}
+
+#[test]
+fn reports_missing_context_value_when_referenced() {
+    let schema_src = r#"
+mod ctx {
+  option arch: string;
+}
+
+mod app {
+  when ctx::arch == "arm" {
+    option enabled: bool = false;
+  }
 }
 "#;
     let symbols = symbols_from(schema_src);
