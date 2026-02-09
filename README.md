@@ -76,34 +76,22 @@ cargo test --workspace
 
 > 暂不定义 v1.0，先按能力版本迭代。
 
-### v0.2：包模型与 Manifest 强化
 
-- `dependencies`/path 依赖最小闭环
-- 多包加载与命名空间基础
+```mermaid
+flowchart LR
+  v02["v0.2 包模型与 Manifest 强化"] --> v03["v0.3 C/CMake 导出增强（非 wrapper）"]
+  v03 --> v04["v0.4 多语言 Wrapper"]
+  v04 --> v05["v0.5 LSP 基础能力"]
+  v05 --> v06["v0.6 VSCode 插件"]
+  v06 --> v07["v0.7 TUI（menuconfig）"]
+```
 
-### v0.3：C/CMake 导出增强（非 wrapper）
-
-- 导出器可配置性、稳定性、可集成性增强
-- 导出规范文档与示例完善
-
-### v0.4：多语言 wrapper（首个版本）
-
-- 统一接口抽象
-- 首批语言绑定与调用样例
-
-### v0.5：LSP 基础能力
-
-- 实时诊断、补全、跳转、Hover 最小可用链路
-
-### v0.6：VSCode 插件
-
-- 基于 LSP 的编辑器集成与调试体验闭环
-
-### v0.7：TUI（menuconfig）
-
-- 交互式配置浏览/编辑
-- 约束即时反馈与保存流程
-
+- v0.2：`dependencies`/path 依赖最小闭环，多包命名空间基础
+- v0.3：导出器可配置性、稳定性、可集成性增强
+- v0.4：统一 wrapper 接口抽象与首批语言绑定样例
+- v0.5：实时诊断、补全、跳转、Hover 最小可用链路
+- v0.6：基于 LSP 的 VSCode 集成与调试体验闭环
+- v0.7：交互式配置浏览/编辑与约束即时反馈
 ## 许可证
 
 本项目使用 Apache-2.0 许可证。
