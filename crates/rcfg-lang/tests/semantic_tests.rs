@@ -1063,3 +1063,24 @@ mod app {
         report.diagnostics
     );
 }
+
+#[test]
+fn reports_missing_context_value_without_injection() {
+    let schema_src = r#"
+mod ctx {
+  option arch: string;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_MISSING_CONTEXT_VALUE"),
+        "expected E_MISSING_CONTEXT_VALUE, got: {diagnostics:#?}"
+    );
+}

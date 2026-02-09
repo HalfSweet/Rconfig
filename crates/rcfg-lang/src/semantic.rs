@@ -912,6 +912,19 @@ impl<'a> ValuesChecker<'a> {
         let mut diagnostics = Vec::new();
         for option_path in option_paths {
             if option_path == "ctx" || option_path.starts_with("ctx::") {
+                if self.symbols.option_default(&option_path).is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E_MISSING_CONTEXT_VALUE",
+                            format!(
+                                "context option `{}` requires an injected context value",
+                                option_path
+                            ),
+                            self.symbols.option_span(&option_path).unwrap_or_default(),
+                        )
+                        .with_path(option_path),
+                    );
+                }
                 continue;
             }
             if !self.symbols.option_is_always_active(&option_path) {
