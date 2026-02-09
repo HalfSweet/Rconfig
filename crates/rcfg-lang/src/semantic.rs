@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::ast::{BinaryOp, ConstraintItem, Expr, File, InSetElem, Item, OptionDecl, Path, Type, UnaryOp};
+use crate::ast::{
+    BinaryOp, ConstraintItem, Expr, File, InSetElem, Item, MatchBlock, MatchPat, OptionDecl,
+    Path, Type, UnaryOp,
+};
 use crate::error::Diagnostic;
 use crate::span::Span;
 
@@ -131,6 +134,23 @@ impl SymbolTable {
 
         let (_, ty) = matches.pop().expect("matches length was checked");
         ResolvePathResult::Resolved(ty)
+    }
+
+    fn enum_variant_names(&self, enum_name: &str) -> Option<Vec<String>> {
+        let mut variants = self
+            .enum_variants
+            .iter()
+            .filter(|(_, owner)| enum_name_matches(enum_name, owner))
+            .filter_map(|(variant_path, _)| variant_path.rsplit("::").next().map(str::to_string))
+            .collect::<Vec<_>>();
+
+        if variants.is_empty() {
+            return None;
+        }
+
+        variants.sort();
+        variants.dedup();
+        Some(variants)
     }
 }
 
@@ -307,7 +327,7 @@ impl<'a> TypeChecker<'a> {
                     self.check_items(&when_block.items, scope);
                 }
                 Item::Match(match_block) => {
-                    self.infer_expr_type(&match_block.expr, scope, None);
+                    self.check_match_block(match_block, scope);
                     for case in &match_block.cases {
                         if let Some(guard) = &case.guard {
                             self.expect_bool_expr(guard, scope, None);
@@ -324,6 +344,139 @@ impl<'a> TypeChecker<'a> {
             let self_ty = option_type_to_value_type(&option.ty);
             for require in &attached.requires {
                 self.expect_bool_expr(&require.expr, scope, Some(&self_ty));
+            }
+        }
+    }
+
+    fn check_match_block(&mut self, block: &MatchBlock, scope: &[String]) {
+        let scrutinee_ty = self.infer_expr_type(&block.expr, scope, None);
+        let ValueType::Enum(enum_name) = scrutinee_ty else {
+            self.diagnostics.push(Diagnostic::error(
+                "E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE",
+                "match scrutinee must resolve to enum option",
+                block.expr.span(),
+            ));
+            return;
+        };
+
+        let variants = self
+            .symbols
+            .enum_variant_names(&enum_name)
+            .unwrap_or_default();
+
+        if variants.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE",
+                format!("match enum `{}` has no declared variants", enum_name),
+                block.expr.span(),
+            ));
+            return;
+        }
+
+        let universe: HashSet<String> = variants.into_iter().collect();
+        let mut covered = HashSet::new();
+
+        for case in &block.cases {
+            let case_set = self.resolve_case_variants(&enum_name, &case.pattern, scope);
+            let Some(case_set) = case_set else {
+                continue;
+            };
+
+            let unreachable = case_set.iter().all(|v| covered.contains(v));
+            if unreachable {
+                self.diagnostics.push(Diagnostic::warning(
+                    "W_UNREACHABLE_CASE",
+                    "case is unreachable because variants are already covered",
+                    case.pattern.span(),
+                ));
+            }
+
+            let overlap: Vec<String> = case_set
+                .iter()
+                .filter(|variant| covered.contains(*variant))
+                .cloned()
+                .collect();
+            if !overlap.is_empty() {
+                self.diagnostics.push(Diagnostic::error(
+                    "E_MATCH_OVERLAP",
+                    format!("case overlaps with previous variants: {}", overlap.join(", ")),
+                    case.pattern.span(),
+                ));
+            }
+
+            covered.extend(case_set);
+        }
+
+        if covered != universe {
+            self.diagnostics.push(Diagnostic::warning(
+                "W_NON_EXHAUSTIVE_MATCH",
+                "match does not cover all enum variants",
+                block.span,
+            ));
+        }
+    }
+
+    fn resolve_case_variants(
+        &mut self,
+        enum_name: &str,
+        pattern: &MatchPat,
+        scope: &[String],
+    ) -> Option<HashSet<String>> {
+        let all = self
+            .symbols
+            .enum_variant_names(enum_name)
+            .unwrap_or_default();
+        let all_set: HashSet<String> = all.iter().cloned().collect();
+
+        match pattern {
+            MatchPat::Wildcard(_) => Some(all_set),
+            MatchPat::Paths(paths, span) => {
+                let mut result = HashSet::new();
+                for path in paths {
+                    let ty = self.resolve_path_type(path, scope);
+                    let ValueType::Enum(found_enum) = ty else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E_ENUM_VARIANT_NOT_FOUND",
+                            format!("`{}` is not an enum variant path", path.to_string()),
+                            path.span,
+                        ));
+                        continue;
+                    };
+
+                    if !enum_name_matches(enum_name, &found_enum) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E_ENUM_VARIANT_NOT_FOUND",
+                            format!(
+                                "variant `{}` does not belong to enum `{}`",
+                                path.to_string(),
+                                enum_name
+                            ),
+                            path.span,
+                        ));
+                        continue;
+                    }
+
+                    let Some(variant_name) = path.segments.last().map(|seg| seg.value.clone()) else {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E_ENUM_VARIANT_NOT_FOUND",
+                            "empty variant path",
+                            *span,
+                        ));
+                        continue;
+                    };
+
+                    if !all_set.contains(&variant_name) {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E_ENUM_VARIANT_NOT_FOUND",
+                            format!("variant `{}` is not declared in enum `{}`", variant_name, enum_name),
+                            path.span,
+                        ));
+                        continue;
+                    }
+
+                    result.insert(variant_name);
+                }
+                Some(result)
             }
         }
     }
@@ -538,7 +691,14 @@ fn option_type_to_value_type(ty: &Type) -> ValueType {
         Type::Bool(_) => ValueType::Bool,
         Type::U8(_) | Type::U16(_) | Type::U32(_) | Type::I32(_) => ValueType::Int,
         Type::String(_) => ValueType::String,
-        Type::Named(path) => ValueType::Enum(path.to_string()),
+        Type::Named(path) => {
+            let enum_name = path
+                .segments
+                .last()
+                .map(|segment| segment.value.clone())
+                .unwrap_or_else(|| path.to_string());
+            ValueType::Enum(enum_name)
+        }
     }
 }
 
@@ -561,6 +721,16 @@ fn build_candidate_paths(scope: &[String], raw_path: &str) -> Vec<String> {
         }
     }
     candidates
+}
+
+fn enum_name_matches(expected: &str, candidate: &str) -> bool {
+    if expected == candidate {
+        return true;
+    }
+
+    let expected_base = expected.rsplit("::").next().unwrap_or(expected);
+    let candidate_base = candidate.rsplit("::").next().unwrap_or(candidate);
+    expected_base == candidate_base
 }
 
 #[cfg(test)]
@@ -715,6 +885,86 @@ mod app {
                 .iter()
                 .any(|diag| diag.code == "E_SELF_OUTSIDE_ATTACHED_BLOCK"),
             "expected E_SELF_OUTSIDE_ATTACHED_BLOCK, got: {:#?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn reports_non_exhaustive_match() {
+        let src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+
+  match mode {
+    case Mode::on => { }
+  }
+}
+"#;
+        let (file, parse_diags) = parse_schema_with_diagnostics(src);
+        assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+        let report = analyze_schema(&file);
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diag| diag.code == "W_NON_EXHAUSTIVE_MATCH"),
+            "expected W_NON_EXHAUSTIVE_MATCH, got: {:#?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn reports_match_overlap() {
+        let src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+
+  match mode {
+    case Mode::off => { }
+    case Mode::off | Mode::on => { }
+  }
+}
+"#;
+        let (file, parse_diags) = parse_schema_with_diagnostics(src);
+        assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+        let report = analyze_schema(&file);
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diag| diag.code == "E_MATCH_OVERLAP"),
+            "expected E_MATCH_OVERLAP, got: {:#?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn reports_unreachable_case_after_wildcard() {
+        let src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+
+  match mode {
+    case _ => { }
+    case Mode::on => { }
+  }
+}
+"#;
+        let (file, parse_diags) = parse_schema_with_diagnostics(src);
+        assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+        let report = analyze_schema(&file);
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|diag| diag.code == "W_UNREACHABLE_CASE"),
+            "expected W_UNREACHABLE_CASE, got: {:#?}",
             report.diagnostics
         );
     }
