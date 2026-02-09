@@ -68,6 +68,7 @@ pub struct SymbolTable {
     option_defaults: HashMap<String, ConstValue>,
     option_ranges: HashMap<String, IntRange>,
     option_spans: HashMap<String, Span>,
+    option_secrets: HashMap<String, bool>,
     option_always_active: HashMap<String, bool>,
     enum_variants: HashMap<String, String>,
     enum_variant_spans: HashMap<String, Span>,
@@ -114,6 +115,10 @@ impl SymbolTable {
         self.option_spans.insert(path, span);
     }
 
+    fn insert_option_secret(&mut self, path: String, secret: bool) {
+        self.option_secrets.insert(path, secret);
+    }
+
     fn insert_option_always_active(&mut self, path: String, is_always_active: bool) {
         self.option_always_active.insert(path, is_always_active);
     }
@@ -128,6 +133,10 @@ impl SymbolTable {
 
     fn option_span(&self, path: &str) -> Option<Span> {
         self.option_spans.get(path).copied()
+    }
+
+    fn option_is_secret(&self, path: &str) -> bool {
+        self.option_secrets.get(path).copied().unwrap_or(false)
     }
 
     fn option_is_always_active(&self, path: &str) -> bool {
@@ -306,6 +315,67 @@ pub struct ValuesAnalysisReport {
     pub diagnostic_stmt_indexes: Vec<Option<usize>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedExport {
+    pub path: String,
+    pub name: String,
+}
+
+pub fn plan_c_header_exports(
+    symbols: &SymbolTable,
+    include_secrets: bool,
+) -> (Vec<PlannedExport>, Vec<Diagnostic>) {
+    let mut diagnostics = Vec::new();
+    let mut planned = Vec::new();
+    let mut used_names: HashMap<String, String> = HashMap::new();
+
+    let mut option_paths = symbols.option_types.keys().cloned().collect::<Vec<_>>();
+    option_paths.sort();
+
+    for option_path in option_paths {
+        if symbols.option_is_secret(&option_path) && !include_secrets {
+            diagnostics.push(
+                Diagnostic::warning(
+                    "W_SECRET_NOT_EXPORTED",
+                    format!(
+                        "secret option `{}` is not exported unless `--export-secrets` is enabled",
+                        option_path
+                    ),
+                    symbols.option_span(&option_path).unwrap_or_default(),
+                )
+                .with_path(option_path),
+            );
+            continue;
+        }
+
+        let export_name = normalize_export_name(&option_path);
+        if let Some(existing) = used_names.get(&export_name) {
+            if existing != &option_path {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E_EXPORT_NAME_COLLISION",
+                        format!(
+                            "export name `{}` collides between `{}` and `{}`",
+                            export_name, existing, option_path
+                        ),
+                        symbols.option_span(&option_path).unwrap_or_default(),
+                    )
+                    .with_path(option_path),
+                );
+                continue;
+            }
+        }
+
+        used_names.insert(export_name.clone(), option_path.clone());
+        planned.push(PlannedExport {
+            path: option_path,
+            name: export_name,
+        });
+    }
+
+    (planned, diagnostics)
+}
+
 pub fn analyze_schema(file: &File) -> SemanticReport {
     let mut collector = SymbolCollector::default();
     let mut root_scope = Vec::new();
@@ -453,6 +523,10 @@ impl SymbolCollector {
                             .insert_option_type(full_path.clone(), option_type_to_value_type(&option.ty));
                         self.symbols
                             .insert_option_span(full_path.clone(), option.name.span);
+                        self.symbols.insert_option_secret(
+                            full_path.clone(),
+                            option_has_secret_attr(option),
+                        );
                         self.symbols
                             .insert_option_always_active(full_path.clone(), !in_conditional);
                         if let Some(default) = option.default.clone() {
@@ -1990,6 +2064,45 @@ fn canonical_cycle_signature(cycle: &[String]) -> String {
     }
 
     best.unwrap_or_default()
+}
+
+fn option_has_secret_attr(option: &OptionDecl) -> bool {
+    option
+        .meta
+        .attrs
+        .iter()
+        .any(|attr| matches!(attr.kind, AttrKind::Secret))
+}
+
+fn normalize_export_name(path: &str) -> String {
+    let mut normalized = String::new();
+    let mut prev_underscore = false;
+
+    for ch in path.chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_uppercase());
+            prev_underscore = false;
+        } else if !prev_underscore {
+            normalized.push('_');
+            prev_underscore = true;
+        }
+    }
+
+    let normalized = normalized.trim_matches('_').to_string();
+    let normalized = if normalized
+        .chars()
+        .next()
+        .map(|ch| ch.is_ascii_alphabetic())
+        .unwrap_or(false)
+    {
+        normalized
+    } else if normalized.is_empty() {
+        "X".to_string()
+    } else {
+        format!("X_{}", normalized)
+    };
+
+    format!("CONFIG_{}", normalized)
 }
 
 fn module_has_metadata(module: &crate::ast::ModDecl) -> bool {

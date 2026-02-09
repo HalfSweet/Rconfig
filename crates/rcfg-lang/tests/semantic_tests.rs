@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use rcfg_lang::{
     analyze_schema, analyze_schema_strict, analyze_values, analyze_values_strict,
     analyze_values_from_path, analyze_values_from_path_report, expand_values_includes_from_path,
-    expand_values_includes_with_origins, Severity, SymbolKind, SymbolTable,
+    expand_values_includes_with_origins, plan_c_header_exports, Severity, SymbolKind, SymbolTable,
 };
 use rcfg_lang::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 
@@ -1219,5 +1219,73 @@ constraint {
             .all(|diag| diag.code != "E_REQUIRE_FAILED"),
         "unexpected E_REQUIRE_FAILED diagnostics: {:#?}",
         report.diagnostics
+    );
+}
+
+#[test]
+fn warns_secret_not_exported_without_flag() {
+    let schema_src = r#"
+mod app {
+  #[secret]
+  option token: string = "abc";
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (planned, diagnostics) = plan_c_header_exports(&symbols, false);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diag| diag.code == "W_SECRET_NOT_EXPORTED"),
+        "expected W_SECRET_NOT_EXPORTED, got: {diagnostics:#?}"
+    );
+    assert!(
+        planned.iter().all(|entry| entry.path != "app::token"),
+        "secret option should not be exported by default: {planned:#?}"
+    );
+}
+
+#[test]
+fn includes_secret_export_when_flag_enabled() {
+    let schema_src = r#"
+mod app {
+  #[secret]
+  option token: string = "abc";
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (planned, diagnostics) = plan_c_header_exports(&symbols, true);
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diag| diag.code != "W_SECRET_NOT_EXPORTED"),
+        "unexpected W_SECRET_NOT_EXPORTED diagnostics: {diagnostics:#?}"
+    );
+    assert!(
+        planned.iter().any(|entry| entry.path == "app::token"),
+        "secret option should be exported when enabled: {planned:#?}"
+    );
+}
+
+#[test]
+fn reports_export_name_collision() {
+    let schema_src = r#"
+mod a_b {
+  option c: bool = false;
+}
+
+mod a {
+  option b_c: bool = false;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (_planned, diagnostics) = plan_c_header_exports(&symbols, true);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_EXPORT_NAME_COLLISION"),
+        "expected E_EXPORT_NAME_COLLISION, got: {diagnostics:#?}"
     );
 }
