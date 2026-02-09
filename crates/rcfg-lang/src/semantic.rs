@@ -2467,6 +2467,12 @@ fn promote_strict_diagnostics(diagnostics: &mut [Diagnostic]) {
         if diagnostic.code == "W_INACTIVE_ASSIGNMENT" {
             diagnostic.code = "E_INACTIVE_ASSIGNMENT";
             diagnostic.severity = Severity::Error;
+        } else if diagnostic.code == "W_DUPLICATE_ASSIGNMENT" {
+            diagnostic.code = "E_DUPLICATE_ASSIGNMENT";
+            diagnostic.severity = Severity::Error;
+        } else if diagnostic.code == "W_NON_EXHAUSTIVE_MATCH" {
+            diagnostic.code = "E_NON_EXHAUSTIVE_MATCH";
+            diagnostic.severity = Severity::Error;
         } else if diagnostic.code == "L_REQUIRE_MISSING_MSG" {
             diagnostic.code = "E_REQUIRE_MISSING_MSG";
             diagnostic.severity = Severity::Error;

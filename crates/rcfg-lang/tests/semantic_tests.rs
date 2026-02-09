@@ -1160,6 +1160,54 @@ app::hidden = 42;
 }
 
 #[test]
+fn strict_mode_upgrades_duplicate_assignment_to_error() {
+    let schema_src = r#"
+mod app {
+  option retries: u32 = 1;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::retries = 2;
+app::retries = 3;
+"#;
+    let (values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values_strict(&values, &symbols);
+    let diag = diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_DUPLICATE_ASSIGNMENT")
+        .expect("expected E_DUPLICATE_ASSIGNMENT");
+    assert_eq!(diag.severity, Severity::Error);
+}
+
+#[test]
+fn strict_mode_upgrades_non_exhaustive_match_to_error() {
+    let src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+
+  match mode {
+    case Mode::on => { }
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema_strict(&file);
+    let diag = report
+        .diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_NON_EXHAUSTIVE_MATCH")
+        .expect("expected E_NON_EXHAUSTIVE_MATCH");
+    assert_eq!(diag.severity, Severity::Error);
+}
+
+#[test]
 fn warns_unused_enum_variant() {
     let src = r#"
 mod app {
