@@ -397,6 +397,14 @@ impl IncludeExpander {
         };
 
         let (values, mut parse_diags) = parse_values_with_diagnostics(&text);
+        for diag in &mut parse_diags {
+            if diag.source.is_none() {
+                diag.source = Some(canonical.display().to_string());
+            }
+            if diag.include_chain.is_empty() {
+                diag.include_chain = self.current_chain(&canonical);
+            }
+        }
         self.diagnostics.append(&mut parse_diags);
 
         self.stack.push(canonical.clone());
@@ -1631,6 +1639,35 @@ mod app {
 
         let _ = std::fs::remove_file(&base);
         let _ = std::fs::remove_file(&root);
+        let _ = std::fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn include_expander_attaches_source_to_parse_diagnostics() {
+        let tmp = std::env::temp_dir().join(format!(
+            "rcfg_parse_diag_source_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        let bad = tmp.join("bad.rcfgv");
+        std::fs::write(&bad, "include ;\n").expect("write bad");
+
+        let (_values, diags) = super::expand_values_includes_from_path(&bad);
+        let diag = diags
+            .iter()
+            .find(|diag| diag.code == "E_PARSE_EXPECTED_TOKEN")
+            .expect("expected parse diagnostic");
+        assert!(
+            diag.source.as_deref().is_some_and(|source| source.ends_with("bad.rcfgv")),
+            "expected source to include bad.rcfgv, got: {diag:#?}"
+        );
+        assert!(
+            !diag.include_chain.is_empty(),
+            "expected include_chain in parse diagnostic"
+        );
+
+        let _ = std::fs::remove_file(&bad);
         let _ = std::fs::remove_dir(&tmp);
     }
 }
