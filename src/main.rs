@@ -8,7 +8,7 @@ use rcfg_lang::{
     analyze_schema, analyze_schema_strict, analyze_values_from_path_report_with_context,
     analyze_values_from_path_report_with_context_strict, generate_exports, resolve_values,
     resolve_values_with_context, Diagnostic, ExportOptions, ResolvedConfig, ResolvedValue, Severity,
-    ValuesAnalysisReport,
+    SymbolKind, ValuesAnalysisReport,
 };
 
 #[derive(Debug, Parser)]
@@ -16,6 +16,9 @@ use rcfg_lang::{
 struct Cli {
     #[arg(long, global = true)]
     schema: Option<PathBuf>,
+
+    #[arg(long, global = true)]
+    manifest: Option<PathBuf>,
 
     #[arg(long, global = true, default_value_t = false, action = ArgAction::SetTrue)]
     strict: bool,
@@ -65,6 +68,12 @@ enum Commands {
         #[arg(long)]
         out: PathBuf,
 
+        #[arg(long)]
+        out_schema_ir: Option<PathBuf>,
+
+        #[arg(long)]
+        out_diagnostics: Option<PathBuf>,
+
         #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
         include_secrets: bool,
     },
@@ -89,10 +98,8 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<(), String> {
-    let schema_path = cli
-        .schema
-        .clone()
-        .ok_or_else(|| "--schema is required".to_string())?;
+    let manifest = load_manifest(cli.manifest.as_deref())?;
+    let schema_path = resolve_schema_path(cli.schema.as_deref(), manifest.as_ref())?;
 
     let schema_text = fs::read_to_string(&schema_path)
         .map_err(|err| format!("failed to read schema {}: {err}", schema_path.display()))?;
@@ -168,6 +175,8 @@ fn run(cli: Cli) -> Result<(), String> {
             Commands::Dump {
                 values,
                 out,
+                out_schema_ir,
+                out_diagnostics,
                 include_secrets,
             } => {
                 let values_report = analyze_values_report(
@@ -178,6 +187,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 );
                 let mut all = parse_diags;
                 all.extend(values_report.diagnostics.clone());
+                write_diagnostics_json(out_diagnostics.as_deref(), &all)?;
                 if all.iter().any(|diag| diag.severity == Severity::Error) {
                     print_diagnostics(&all, OutputFormat::Human);
                     return Err("dump blocked by diagnostics".to_string());
@@ -195,6 +205,18 @@ fn run(cli: Cli) -> Result<(), String> {
                         .map_err(|err| format!("failed to serialize dump json: {err}"))?,
                 )
                 .map_err(|err| format!("failed to write {}: {err}", out.display()))?;
+
+                if let Some(schema_ir_path) = out_schema_ir.as_deref() {
+                    let schema_ir = render_schema_ir_json(&schema_report.symbols);
+                    fs::write(
+                        schema_ir_path,
+                        serde_json::to_string_pretty(&schema_ir)
+                            .map_err(|err| format!("failed to serialize schema_ir json: {err}"))?,
+                    )
+                    .map_err(|err| {
+                        format!("failed to write {}: {err}", schema_ir_path.display())
+                    })?;
+                }
             }
         }
     } else {
@@ -262,6 +284,49 @@ fn load_context(path: Option<&Path>) -> Result<HashMap<String, ResolvedValue>, S
     Ok(out)
 }
 
+#[derive(Debug)]
+struct ManifestModel {
+    schema: PathBuf,
+}
+
+fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read manifest {}: {err}", path.display()))?;
+    let value = text
+        .parse::<toml::Value>()
+        .map_err(|err| format!("failed to parse manifest {}: {err}", path.display()))?;
+
+    let entry = value
+        .get("entry")
+        .and_then(toml::Value::as_table)
+        .ok_or_else(|| "manifest missing [entry] table".to_string())?;
+    let schema = entry
+        .get("schema")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| "manifest missing entry.schema".to_string())?;
+
+    let base = path.parent().unwrap_or_else(|| Path::new("."));
+    Ok(Some(ManifestModel {
+        schema: base.join(schema),
+    }))
+}
+
+fn resolve_schema_path(schema: Option<&Path>, manifest: Option<&ManifestModel>) -> Result<PathBuf, String> {
+    if let Some(schema) = schema {
+        return Ok(schema.to_path_buf());
+    }
+
+    if let Some(manifest) = manifest {
+        return Ok(manifest.schema.clone());
+    }
+
+    Err("--schema is required (or provide --manifest with entry.schema)".to_string())
+}
+
 fn print_diagnostics(diags: &[Diagnostic], format: OutputFormat) {
     match format {
         OutputFormat::Human => {
@@ -301,6 +366,62 @@ fn print_diagnostics(diags: &[Diagnostic], format: OutputFormat) {
             }
         }
     }
+}
+
+fn write_diagnostics_json(path: Option<&Path>, diagnostics: &[Diagnostic]) -> Result<(), String> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let payload = diagnostics
+        .iter()
+        .map(|diag| {
+            serde_json::json!({
+                "severity": match diag.severity { Severity::Error => "error", Severity::Warning => "warning" },
+                "code": diag.code,
+                "message": diag.message,
+                "path": diag.path,
+                "source": diag.source,
+                "include_chain": diag.include_chain,
+                "span": {
+                    "start": diag.span.start,
+                    "end": diag.span.end,
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&payload)
+            .map_err(|err| format!("failed to serialize diagnostics json: {err}"))?,
+    )
+    .map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+fn render_schema_ir_json(symbols: &rcfg_lang::SymbolTable) -> serde_json::Value {
+    let mut options = Vec::new();
+    let mut enums = Vec::new();
+    let mut mods = Vec::new();
+
+    let mut symbols_list = symbols.iter().collect::<Vec<_>>();
+    symbols_list.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+    for (path, info) in symbols_list {
+        match info.kind {
+            SymbolKind::Option => options.push(serde_json::json!({ "path": path })),
+            SymbolKind::Enum => enums.push(serde_json::json!({ "path": path })),
+            SymbolKind::Mod => mods.push(serde_json::json!({ "path": path })),
+        }
+    }
+
+    serde_json::json!({
+        "tool_version": env!("CARGO_PKG_VERSION"),
+        "symbols": {
+            "mods": mods,
+            "enums": enums,
+            "options": options,
+        }
+    })
 }
 
 fn render_resolved_json(
