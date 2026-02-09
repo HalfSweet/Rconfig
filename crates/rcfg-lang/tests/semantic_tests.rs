@@ -772,3 +772,30 @@ mod app {
         "unexpected E_MISSING_VALUE diagnostics: {diagnostics:#?}"
     );
 }
+
+#[test]
+fn warns_duplicate_mod_metadata() {
+    let src = r#"
+/// uart module metadata A
+mod uart {
+  option enable: bool = false;
+}
+
+/// uart module metadata B
+mod uart {
+  option baud: u32 = 115200;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "W_DUPLICATE_MOD_METADATA"),
+        "expected W_DUPLICATE_MOD_METADATA, got: {:#?}",
+        report.diagnostics
+    );
+}

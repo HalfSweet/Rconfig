@@ -318,6 +318,7 @@ struct SymbolCollector {
     symbols: SymbolTable,
     diagnostics: Vec<Diagnostic>,
     scope_members: HashMap<String, HashMap<String, DeclInfo>>,
+    mod_metadata_spans: HashMap<String, Span>,
 }
 
 impl SymbolCollector {
@@ -368,6 +369,22 @@ impl SymbolCollector {
                     }
                 }
                 Item::Mod(module) => {
+                    let module_path = build_full_path(scope, &module.name.value);
+                    if module_has_metadata(module) {
+                        if let Some(previous_span) = self.mod_metadata_spans.get(&module_path) {
+                            self.diagnostics.push(Diagnostic::warning(
+                                "W_DUPLICATE_MOD_METADATA",
+                                format!(
+                                    "module `{}` metadata is repeated; first metadata wins",
+                                    module_path
+                                ),
+                                module.span.join(*previous_span),
+                            ));
+                        } else {
+                            self.mod_metadata_spans.insert(module_path.clone(), module.span);
+                        }
+                    }
+
                     self.declare(scope, &module.name.value, SymbolKind::Mod, module.name.span);
                     scope.push(module.name.value.clone());
                     self.collect_items_in_context(&module.items, scope, in_conditional);
@@ -1288,6 +1305,10 @@ impl<'a> TypeChecker<'a> {
             }
         }
     }
+}
+
+fn module_has_metadata(module: &crate::ast::ModDecl) -> bool {
+    !module.meta.attrs.is_empty() || !module.meta.doc.is_empty()
 }
 
 fn option_type_to_value_type(ty: &Type) -> ValueType {
