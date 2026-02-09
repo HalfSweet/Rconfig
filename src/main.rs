@@ -27,6 +27,9 @@ struct Cli {
     #[arg(long, global = true)]
     context: Option<PathBuf>,
 
+    #[arg(long, global = true)]
+    i18n: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -114,6 +117,7 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<(), String> {
+    let i18n = load_i18n_catalog(cli.i18n.as_deref())?;
     let manifest = load_manifest(cli.manifest.as_deref())?;
     let schema_path = resolve_schema_path(cli.schema.as_deref(), manifest.as_ref())?;
 
@@ -135,7 +139,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     analyze_values_report(&values, &schema_report.symbols, &context, cli.strict);
                 let mut all = parse_diags;
                 all.extend(values_report.diagnostics);
-                print_diagnostics(&all, format);
+                print_diagnostics(&all, format, i18n.as_ref());
                 if all.iter().any(|diag| diag.severity == Severity::Error) {
                     return Err("check failed with diagnostics".to_string());
                 }
@@ -167,7 +171,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 );
                 all.extend(exports.diagnostics.clone());
 
-                print_diagnostics(&all, format);
+                print_diagnostics(&all, format, i18n.as_ref());
                 if all.iter().any(|diag| diag.severity == Severity::Error) {
                     return Err("export blocked by diagnostics".to_string());
                 }
@@ -190,7 +194,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 all.extend(values_report.diagnostics.clone());
                 write_diagnostics_json(out_diagnostics.as_deref(), &all)?;
                 if all.iter().any(|diag| diag.severity == Severity::Error) {
-                    print_diagnostics(&all, OutputFormat::Human);
+                    print_diagnostics(&all, OutputFormat::Human, i18n.as_ref());
                     return Err("dump blocked by diagnostics".to_string());
                 }
 
@@ -226,7 +230,7 @@ fn run(cli: Cli) -> Result<(), String> {
             Commands::I18n { command } => {
                 let all = parse_diags;
                 if !all.is_empty() {
-                    print_diagnostics(&all, OutputFormat::Human);
+                    print_diagnostics(&all, OutputFormat::Human, i18n.as_ref());
                 }
                 if all.iter().any(|diag| diag.severity == Severity::Error) {
                     return Err("i18n extract blocked by diagnostics".to_string());
@@ -252,7 +256,7 @@ fn run(cli: Cli) -> Result<(), String> {
             }
         }
     } else {
-        print_diagnostics(&parse_diags, OutputFormat::Human);
+        print_diagnostics(&parse_diags, OutputFormat::Human, i18n.as_ref());
         return Err("schema parse failed".to_string());
     }
 
@@ -314,6 +318,38 @@ fn load_context(path: Option<&Path>) -> Result<HashMap<String, ResolvedValue>, S
         out.insert(key.clone(), resolved);
     }
     Ok(out)
+}
+
+#[derive(Debug)]
+struct I18nCatalog {
+    strings: HashMap<String, String>,
+}
+
+fn load_i18n_catalog(path: Option<&Path>) -> Result<Option<I18nCatalog>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read i18n {}: {err}", path.display()))?;
+    let value = text
+        .parse::<toml::Value>()
+        .map_err(|err| format!("failed to parse i18n {}: {err}", path.display()))?;
+    let Some(strings) = value.get("strings").and_then(toml::Value::as_table) else {
+        return Ok(Some(I18nCatalog {
+            strings: HashMap::new(),
+        }));
+    };
+
+    let mut out = HashMap::new();
+    for (key, value) in strings {
+        let text = value
+            .as_str()
+            .ok_or_else(|| format!("invalid i18n value for key `{}`: expected string", key))?;
+        out.insert(key.clone(), text.to_string());
+    }
+
+    Ok(Some(I18nCatalog { strings: out }))
 }
 
 #[derive(Debug)]
@@ -418,7 +454,7 @@ fn diagnostic_to_json(diag: &Diagnostic) -> serde_json::Value {
     })
 }
 
-fn print_diagnostics(diags: &[Diagnostic], format: OutputFormat) {
+fn print_diagnostics(diags: &[Diagnostic], format: OutputFormat, i18n: Option<&I18nCatalog>) {
     match format {
         OutputFormat::Human => {
             for diag in diags {
@@ -427,10 +463,11 @@ fn print_diagnostics(diags: &[Diagnostic], format: OutputFormat) {
                     Severity::Warning => "warning",
                 };
                 let path = diag.path.clone().unwrap_or_default();
+                let message = localize_diagnostic_message(diag, i18n);
                 if path.is_empty() {
-                    println!("{} {}: {}", level, diag.code, diag.message);
+                    println!("{} {}: {}", level, diag.code, message);
                 } else {
-                    println!("{} {} [{}]: {}", level, diag.code, path, diag.message);
+                    println!("{} {} [{}]: {}", level, diag.code, path, message);
                 }
             }
         }
@@ -441,6 +478,31 @@ fn print_diagnostics(diags: &[Diagnostic], format: OutputFormat) {
             }
         }
     }
+}
+
+fn localize_diagnostic_message(diag: &Diagnostic, i18n: Option<&I18nCatalog>) -> String {
+    let Some(i18n) = i18n else {
+        return diag.message.clone();
+    };
+
+    if let Some(message) = diag
+        .message_key
+        .as_ref()
+        .and_then(|key| i18n.strings.get(key))
+        .filter(|text| !text.is_empty())
+    {
+        return message.clone();
+    }
+
+    if let Some(message) = i18n
+        .strings
+        .get(&diag.code)
+        .filter(|text| !text.is_empty())
+    {
+        return message.clone();
+    }
+
+    diag.message.clone()
 }
 
 fn write_diagnostics_json(path: Option<&Path>, diagnostics: &[Diagnostic]) -> Result<(), String> {
