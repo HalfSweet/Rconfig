@@ -50,6 +50,7 @@ for diag in values_report.diagnostics {
 - `Diagnostic.source`：诊断对应的文件来源（若可确定）
 - `Diagnostic.include_chain`：include 链（根文件 -> 当前文件）
 - `ValuesAnalysisReport.stmt_origins`：展开后每条 values 语句的来源映射
+- `ValuesAnalysisReport.diagnostic_stmt_indexes`：诊断到展开语句索引的映射（与 `diagnostics` 同长度）
 
 ## 模块结构
 
