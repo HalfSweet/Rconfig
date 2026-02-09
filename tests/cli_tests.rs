@@ -138,7 +138,10 @@ mod app {
     let schema_ir_text = fs::read_to_string(&schema_ir).expect("read schema_ir");
     let diagnostics_text = fs::read_to_string(&diagnostics).expect("read diagnostics");
     assert!(schema_ir_text.contains("\"symbols\""), "{schema_ir_text}");
-    assert!(diagnostics_text.contains("L_MISSING_DOC"), "{diagnostics_text}");
+    assert!(
+        diagnostics_text.contains("L_MISSING_DOC"),
+        "{diagnostics_text}"
+    );
 }
 
 #[test]
@@ -181,7 +184,10 @@ mod app {
     assert!(status.success(), "rcfg dump should succeed");
 
     let schema_ir_text = fs::read_to_string(&schema_ir).expect("read schema_ir");
-    assert!(schema_ir_text.contains("\"path\": \"app::baud\""), "{schema_ir_text}");
+    assert!(
+        schema_ir_text.contains("\"path\": \"app::baud\""),
+        "{schema_ir_text}"
+    );
     assert!(
         schema_ir_text.contains("\"summary\": \"UART baud rate.\""),
         "{schema_ir_text}"
@@ -292,4 +298,87 @@ schema = "src/schema.rcfg"
     assert!(output.status.success(), "rcfg check should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("L_MISSING_DOC"), "{stdout}");
+}
+
+#[test]
+fn rcfg_i18n_extract_generates_template_toml() {
+    let root = fixture_path("cli_i18n_extract");
+    let schema = root.join("src/schema.rcfg");
+    let manifest = root.join("Config.toml");
+    let out = root.join("i18n/zh-CN.toml");
+
+    write_file(
+        &schema,
+        r#"
+/// App settings.
+///
+/// Long module help.
+mod app {
+  /// Enable feature.
+  option enabled: bool = false;
+
+  /// Baud mode.
+  enum mode {
+    /// Fast mode.
+    Fast,
+  }
+
+  #[msg("demo.app.require.custom")]
+  require!(enabled == false);
+}
+"#,
+    );
+    write_file(
+        &manifest,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+    );
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "i18n",
+            "extract",
+            "--manifest",
+            manifest.to_str().expect("manifest path"),
+            "--out",
+            out.to_str().expect("out path"),
+            "--locale",
+            "zh-CN",
+        ])
+        .status()
+        .expect("run rcfg i18n extract");
+    assert!(status.success(), "rcfg i18n extract should succeed");
+
+    let text = fs::read_to_string(&out).expect("read i18n template");
+    assert!(text.contains("locale = \"zh-CN\""), "{text}");
+    assert!(
+        text.contains("\"demo.app.label\" = \"App settings.\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("\"demo.app.help\" = \"Long module help.\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("\"demo.app.enabled.label\" = \"Enable feature.\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("\"demo.app.mode.label\" = \"Baud mode.\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("\"demo.app.mode.Fast.label\" = \"Fast mode.\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("\"demo.app.require.custom\" = \"require condition failed\""),
+        "{text}"
+    );
 }
