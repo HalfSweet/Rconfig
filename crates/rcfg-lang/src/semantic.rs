@@ -202,6 +202,14 @@ impl SymbolTable {
             .cloned()
             .collect::<Vec<_>>()
     }
+
+    fn path_resolves_to_option_in_scope(&self, scope: &[String], path: &Path) -> bool {
+        let raw = path.to_string();
+        let candidates = build_candidate_paths(scope, &raw);
+        candidates
+            .iter()
+            .any(|candidate| self.option_types.contains_key(candidate))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1182,6 +1190,16 @@ impl<'a> TypeChecker<'a> {
             Expr::InSet { expr, elems, span } => {
                 let left_ty = self.infer_expr_type(expr, scope, self_ty);
                 for elem in elems {
+                    if let InSetElem::Path(path) = elem {
+                        if self.symbols.path_resolves_to_option_in_scope(scope, path) {
+                            self.diagnostics.push(Diagnostic::error(
+                                "E_IN_NOT_CONSTANT",
+                                "`in { ... }` elements must be constants, option paths are not allowed",
+                                path.span,
+                            ));
+                        }
+                    }
+
                     let elem_ty = self.infer_set_elem_type(elem, scope);
                     if !left_ty.is_unknown() && !elem_ty.is_unknown() && !left_ty.same_as(&elem_ty) {
                         self.diagnostics.push(Diagnostic::error(

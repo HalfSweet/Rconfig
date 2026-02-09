@@ -799,3 +799,27 @@ mod uart {
         report.diagnostics
     );
 }
+
+#[test]
+fn reports_in_set_option_path_not_constant() {
+    let src = r#"
+mod app {
+  option low: u32 = 1;
+  option value: u32 = 3;
+
+  require!(value in { low, 2, 3 });
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_IN_NOT_CONSTANT"),
+        "expected E_IN_NOT_CONSTANT, got: {:#?}",
+        report.diagnostics
+    );
+}
