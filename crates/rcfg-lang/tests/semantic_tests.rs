@@ -144,6 +144,73 @@ mod app {
 }
 
 #[test]
+fn reports_relational_integer_type_mismatch() {
+    let src = r#"
+mod app {
+  option small: u8 = 1;
+  option wide: u32 = 2;
+  require!(small < wide);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_EXPECT_SAME_TYPE"),
+        "expected E_EXPECT_SAME_TYPE, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn allows_relational_with_typed_literal_context() {
+    let src = r#"
+mod app {
+  option small: u8 = 1;
+  require!(small < 2);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_EXPECT_SAME_TYPE" && diag.code != "E_TYPE_MISMATCH"),
+        "unexpected integer type diagnostics: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn reports_relational_typed_literal_out_of_range() {
+    let src = r#"
+mod app {
+  option small: u8 = 1;
+  require!(small < 300);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_TYPE_MISMATCH"),
+        "expected E_TYPE_MISMATCH, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn reports_self_outside_attached_constraints() {
     let src = r#"
 mod app {
@@ -255,6 +322,30 @@ mod app {
 
     let values_src = r#"
 app::enabled = 1;
+"#;
+    let (values, diags) = parse_values_with_diagnostics(values_src);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+    let semantic_diags = analyze_values(&values, &symbols);
+    assert!(
+        semantic_diags
+            .iter()
+            .any(|diag| diag.code == "E_TYPE_MISMATCH"),
+        "expected E_TYPE_MISMATCH, got: {semantic_diags:#?}"
+    );
+}
+
+#[test]
+fn values_reports_type_mismatch_for_out_of_type_bounds_assignment() {
+    let schema_src = r#"
+mod app {
+  option channel: u8 = 1;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::channel = 300;
 "#;
     let (values, diags) = parse_values_with_diagnostics(values_src);
     assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");

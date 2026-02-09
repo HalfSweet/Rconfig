@@ -1254,18 +1254,6 @@ impl<'a> ValuesChecker<'a> {
             return;
         }
 
-        if let Some(resolved_value) = parsed.resolved_value {
-            self.assignments.insert(
-                target.to_string(),
-                ResolvedAssignment {
-                    value: resolved_value,
-                    source: ValueSource::User,
-                    span: value.span(),
-                    stmt_index: self.current_stmt_index,
-                },
-            );
-        }
-
         if expected.is_int() {
             if let Some(actual) = parsed.int_value {
                 if let Some((min, max)) = int_value_type_bounds(&expected) {
@@ -1310,8 +1298,21 @@ impl<'a> ValuesChecker<'a> {
                         )
                         .with_path(target),
                     );
+                    return;
                 }
             }
+        }
+
+        if let Some(resolved_value) = parsed.resolved_value {
+            self.assignments.insert(
+                target.to_string(),
+                ResolvedAssignment {
+                    value: resolved_value,
+                    source: ValueSource::User,
+                    span: value.span(),
+                    stmt_index: self.current_stmt_index,
+                },
+            );
         }
     }
 
@@ -2392,8 +2393,8 @@ impl<'a> TypeChecker<'a> {
                 right,
                 span,
             } => {
-                let left_ty = self.infer_expr_type(left, scope, self_ty);
-                let right_ty = self.infer_expr_type(right, scope, self_ty);
+                let mut left_ty = self.infer_expr_type(left, scope, self_ty);
+                let mut right_ty = self.infer_expr_type(right, scope, self_ty);
 
                 if matches!(
                     op,
@@ -2411,6 +2412,22 @@ impl<'a> TypeChecker<'a> {
                         "integer literal expression requires a typed context",
                         *span,
                     ));
+                }
+
+                if matches!(
+                    op,
+                    BinaryOp::Eq
+                        | BinaryOp::Ne
+                        | BinaryOp::Lt
+                        | BinaryOp::Le
+                        | BinaryOp::Gt
+                        | BinaryOp::Ge
+                ) {
+                    let right_int = right_ty.concrete_int();
+                    self.coerce_untyped_int_expr(left, &mut left_ty, right_int);
+
+                    let left_int = left_ty.concrete_int();
+                    self.coerce_untyped_int_expr(right, &mut right_ty, left_int);
                 }
 
                 self.check_binary(*op, &left_ty, &right_ty, *span)
@@ -2459,6 +2476,43 @@ impl<'a> TypeChecker<'a> {
             InSetElem::Int(_, _) => ValueType::UntypedInt,
             InSetElem::Path(path) => self.resolve_path_type(path, scope),
         }
+    }
+
+    fn coerce_untyped_int_expr(
+        &mut self,
+        expr: &Expr,
+        inferred: &mut ValueType,
+        expected_int: Option<IntType>,
+    ) {
+        if !matches!(inferred, ValueType::UntypedInt) {
+            return;
+        }
+
+        let Some(int_ty) = expected_int else {
+            return;
+        };
+
+        let Some(value) = untyped_int_literal_value(expr) else {
+            return;
+        };
+
+        let (min, max) = int_bounds_for_int_type(int_ty);
+        if value < min || value > max {
+            self.diagnostics.push(Diagnostic::error(
+                "E_TYPE_MISMATCH",
+                format!(
+                    "integer literal `{}` is out of range for {} [{}..={}]",
+                    value,
+                    int_type_name(int_ty),
+                    min,
+                    max
+                ),
+                expr.span(),
+            ));
+            return;
+        }
+
+        *inferred = ValueType::Int(int_ty);
     }
 
     fn resolve_path_type(&mut self, path: &Path, scope: &[String]) -> ValueType {
@@ -2786,6 +2840,14 @@ fn is_untyped_int_literal_expr(expr: &Expr) -> bool {
         Expr::Int(_, _) => true,
         Expr::Group { expr, .. } => is_untyped_int_literal_expr(expr),
         _ => false,
+    }
+}
+
+fn untyped_int_literal_value(expr: &Expr) -> Option<i128> {
+    match expr {
+        Expr::Int(value, _) => Some(*value),
+        Expr::Group { expr, .. } => untyped_int_literal_value(expr),
+        _ => None,
     }
 }
 
