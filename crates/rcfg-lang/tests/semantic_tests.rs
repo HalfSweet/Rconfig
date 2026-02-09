@@ -1182,6 +1182,36 @@ app::channel = 9;
 }
 
 #[test]
+fn range_violation_redacts_secret_actual_arg() {
+    let schema_src = r#"
+mod app {
+  #[secret]
+  #[range(1..=8)]
+  option token: u32 = 1;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let values_src = r#"
+app::token = 9;
+"#;
+    let (values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(values_diags.is_empty(), "values parse diagnostics: {values_diags:#?}");
+
+    let diagnostics = analyze_values(&values, &symbols);
+    let diag = diagnostics
+        .iter()
+        .find(|diag| diag.code == "E_RANGE_VIOLATION")
+        .expect("expected E_RANGE_VIOLATION");
+    assert_eq!(
+        diag.args.get("actual"),
+        Some(&DiagnosticArgValue::String("[redacted]".to_string()))
+    );
+    assert_eq!(diag.args.get("min"), Some(&DiagnosticArgValue::Int(1)));
+    assert_eq!(diag.args.get("max"), Some(&DiagnosticArgValue::Int(8)));
+}
+
+#[test]
 fn accepts_assignment_within_range() {
     let schema_src = r#"
 mod app {

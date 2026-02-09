@@ -1305,6 +1305,7 @@ impl<'a> ValuesChecker<'a> {
                     } else {
                         format!("{} (exclusive)", range.end)
                     };
+                    let is_secret = self.symbols.option_is_secret(target);
                     self.push_diag(
                         Diagnostic::error(
                             "E_RANGE_VIOLATION",
@@ -1315,7 +1316,7 @@ impl<'a> ValuesChecker<'a> {
                             value.span(),
                         )
                         .with_path(target)
-                        .with_arg("actual", DiagnosticArgValue::Int(actual))
+                        .with_arg("actual", redacted_int_arg(actual, is_secret))
                         .with_arg("min", DiagnosticArgValue::Int(range.start))
                         .with_arg("max", DiagnosticArgValue::Int(range.end))
                         .with_arg("inclusive", DiagnosticArgValue::Bool(range.inclusive)),
@@ -1854,6 +1855,7 @@ impl<'a> TypeChecker<'a> {
         if let ConstValue::Int(value, span) = default {
             if let Some((min, max)) = int_type_bounds(&option.ty) {
                 if *value < min || *value > max {
+                    let is_secret = self.symbols.option_is_secret(&option_path);
                     self.diagnostics.push(
                         Diagnostic::error(
                             "E_DEFAULT_OUT_OF_RANGE",
@@ -1864,7 +1866,7 @@ impl<'a> TypeChecker<'a> {
                             *span,
                         )
                         .with_path(option_path)
-                        .with_arg("actual", DiagnosticArgValue::Int(*value))
+                        .with_arg("actual", redacted_int_arg(*value, is_secret))
                         .with_arg("min", DiagnosticArgValue::Int(min))
                         .with_arg("max", DiagnosticArgValue::Int(max)),
                     );
@@ -2890,6 +2892,14 @@ fn parse_env_int(raw: &str) -> Option<i128> {
         i128::from_str_radix(hex, 16).ok()
     } else {
         cleaned.parse::<i128>().ok()
+    }
+}
+
+fn redacted_int_arg(value: i128, secret: bool) -> DiagnosticArgValue {
+    if secret {
+        DiagnosticArgValue::String("[redacted]".to_string())
+    } else {
+        DiagnosticArgValue::Int(value)
     }
 }
 
