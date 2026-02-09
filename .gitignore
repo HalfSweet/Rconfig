@@ -1,0 +1,8 @@
+/target
+.DS_Store
+
+.codex/
+.claude/
+.gemini/
+
+_*/
