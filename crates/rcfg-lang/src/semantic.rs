@@ -26,10 +26,19 @@ pub struct SymbolInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueType {
     Bool,
-    Int,
+    Int(IntType),
+    UntypedInt,
     String,
     Enum(String),
     Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntType {
+    U8,
+    U16,
+    U32,
+    I32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,7 +127,15 @@ impl ValueType {
     }
 
     fn is_int(&self) -> bool {
-        matches!(self, ValueType::Int)
+        matches!(self, ValueType::Int(_) | ValueType::UntypedInt)
+    }
+
+    fn concrete_int(&self) -> Option<IntType> {
+        if let ValueType::Int(ty) = self {
+            Some(*ty)
+        } else {
+            None
+        }
     }
 
     fn is_string(&self) -> bool {
@@ -132,9 +149,12 @@ impl ValueType {
     fn same_as(&self, other: &ValueType) -> bool {
         match (self, other) {
             (ValueType::Bool, ValueType::Bool)
-            | (ValueType::Int, ValueType::Int)
             | (ValueType::String, ValueType::String)
             | (ValueType::Unknown, ValueType::Unknown) => true,
+            (ValueType::UntypedInt, ValueType::UntypedInt) => true,
+            (ValueType::UntypedInt, ValueType::Int(_))
+            | (ValueType::Int(_), ValueType::UntypedInt) => true,
+            (ValueType::Int(left), ValueType::Int(right)) => left == right,
             (ValueType::Enum(left), ValueType::Enum(right)) => left == right,
             _ => false,
         }
@@ -1246,7 +1266,26 @@ impl<'a> ValuesChecker<'a> {
             );
         }
 
-        if matches!(expected, ValueType::Int) {
+        if expected.is_int() {
+            if let Some(actual) = parsed.int_value {
+                if let Some((min, max)) = int_value_type_bounds(&expected) {
+                    if actual < min || actual > max {
+                        self.push_diag(
+                            Diagnostic::error(
+                                "E_TYPE_MISMATCH",
+                                format!(
+                                    "value `{}` for `{}` is out of type bounds [{}..={}]",
+                                    actual, target, min, max
+                                ),
+                                value.span(),
+                            )
+                            .with_path(target),
+                        );
+                        return;
+                    }
+                }
+            }
+
             if let (Some(range), Some(actual)) = (self.symbols.option_range(target), parsed.int_value) {
                 let violates = if range.inclusive {
                     actual < range.start || actual > range.end
@@ -1284,7 +1323,7 @@ impl<'a> ValuesChecker<'a> {
                 int_value: None,
             },
             ValueExpr::Int(raw, _) => ParsedValue {
-                actual_type: ValueType::Int,
+                actual_type: ValueType::UntypedInt,
                 resolved_value: Some(ResolvedValue::Int(*raw)),
                 int_value: Some(*raw),
             },
@@ -1342,8 +1381,28 @@ impl<'a> ValuesChecker<'a> {
                     (ValueType::Unknown, None)
                 }
             }
-            ValueType::Int => match parse_env_int(&raw) {
-                Some(value) => (ValueType::Int, Some(ResolvedValue::Int(value))),
+            ValueType::Int(int_ty) => match parse_env_int(&raw) {
+                Some(value) => {
+                    let (min, max) = int_bounds_for_int_type(*int_ty);
+                    if value < min || value > max {
+                        self.push_env_parse_failed(
+                            name,
+                            &raw,
+                            &format!("{} in range [{}..={}]", int_type_name(*int_ty), min, max),
+                            span,
+                        );
+                        (ValueType::Unknown, None)
+                    } else {
+                        (ValueType::Int(*int_ty), Some(ResolvedValue::Int(value)))
+                    }
+                }
+                None => {
+                    self.push_env_parse_failed(name, &raw, "int", span);
+                    (ValueType::Unknown, None)
+                }
+            },
+            ValueType::UntypedInt => match parse_env_int(&raw) {
+                Some(value) => (ValueType::UntypedInt, Some(ResolvedValue::Int(value))),
                 None => {
                     self.push_env_parse_failed(name, &raw, "int", span);
                     (ValueType::Unknown, None)
@@ -1414,7 +1473,7 @@ impl<'a> ValuesChecker<'a> {
     fn value_expr_type(&mut self, value: &ValueExpr, expected: &ValueType) -> ValueType {
         match value {
             ValueExpr::Bool(_, _) => ValueType::Bool,
-            ValueExpr::Int(_, _) => ValueType::Int,
+            ValueExpr::Int(_, _) => ValueType::UntypedInt,
             ValueExpr::String(_, _) => ValueType::String,
             ValueExpr::Env { name, .. } => self.env_value_type(name.value.as_str(), expected, value.span()),
             ValueExpr::Path(path) => {
@@ -1774,7 +1833,7 @@ impl<'a> TypeChecker<'a> {
     fn infer_const_type(&self, value: &ConstValue, scope: &[String]) -> ValueType {
         match value {
             ConstValue::Bool(_, _) => ValueType::Bool,
-            ConstValue::Int(_, _) => ValueType::Int,
+            ConstValue::Int(_, _) => ValueType::UntypedInt,
             ConstValue::String(_, _) => ValueType::String,
             ConstValue::EnumPath(path) => match self.symbols.resolve_path_type(scope, path) {
                 ResolvePathResult::Resolved(ty) => ty,
@@ -2290,7 +2349,7 @@ impl<'a> TypeChecker<'a> {
     ) -> ValueType {
         match expr {
             Expr::Bool(_, _) => ValueType::Bool,
-            Expr::Int(_, _) => ValueType::Int,
+            Expr::Int(_, _) => ValueType::UntypedInt,
             Expr::String(_, _) => ValueType::String,
             Expr::SelfValue(span) => {
                 if let Some(ty) = self_ty {
@@ -2397,7 +2456,7 @@ impl<'a> TypeChecker<'a> {
 
     fn infer_set_elem_type(&mut self, elem: &InSetElem, scope: &[String]) -> ValueType {
         match elem {
-            InSetElem::Int(_, _) => ValueType::Int,
+            InSetElem::Int(_, _) => ValueType::UntypedInt,
             InSetElem::Path(path) => self.resolve_path_type(path, scope),
         }
     }
@@ -2439,7 +2498,7 @@ impl<'a> TypeChecker<'a> {
                     ));
                     return ValueType::Unknown;
                 }
-                ValueType::Int
+                ValueType::Int(IntType::I32)
             }
             "matches" => {
                 if args.len() != 2 || !args[0].is_string() || !args[1].is_string() {
@@ -2498,6 +2557,15 @@ impl<'a> TypeChecker<'a> {
                         "relational operators expect integer operands",
                         span,
                     ));
+                }
+                if let (Some(left_int), Some(right_int)) = (left.concrete_int(), right.concrete_int()) {
+                    if left_int != right_int {
+                        self.diagnostics.push(Diagnostic::error(
+                            "E_EXPECT_SAME_TYPE",
+                            "relational operators require operands of the same integer type",
+                            span,
+                        ));
+                    }
                 }
                 ValueType::Bool
             }
@@ -2612,7 +2680,10 @@ fn extract_range_attr(option: &OptionDecl) -> Option<IntRange> {
 fn option_type_to_value_type(ty: &Type) -> ValueType {
     match ty {
         Type::Bool(_) => ValueType::Bool,
-        Type::U8(_) | Type::U16(_) | Type::U32(_) | Type::I32(_) => ValueType::Int,
+        Type::U8(_) => ValueType::Int(IntType::U8),
+        Type::U16(_) => ValueType::Int(IntType::U16),
+        Type::U32(_) => ValueType::Int(IntType::U32),
+        Type::I32(_) => ValueType::Int(IntType::I32),
         Type::String(_) => ValueType::String,
         Type::Named(path) => {
             let enum_name = path
@@ -2681,6 +2752,32 @@ fn parse_env_int(raw: &str) -> Option<i128> {
         i128::from_str_radix(hex, 16).ok()
     } else {
         cleaned.parse::<i128>().ok()
+    }
+}
+
+fn int_type_name(int_type: IntType) -> &'static str {
+    match int_type {
+        IntType::U8 => "u8",
+        IntType::U16 => "u16",
+        IntType::U32 => "u32",
+        IntType::I32 => "i32",
+    }
+}
+
+fn int_bounds_for_int_type(int_type: IntType) -> (i128, i128) {
+    match int_type {
+        IntType::U8 => (u8::MIN as i128, u8::MAX as i128),
+        IntType::U16 => (u16::MIN as i128, u16::MAX as i128),
+        IntType::U32 => (u32::MIN as i128, u32::MAX as i128),
+        IntType::I32 => (i32::MIN as i128, i32::MAX as i128),
+    }
+}
+
+fn int_value_type_bounds(value_type: &ValueType) -> Option<(i128, i128)> {
+    if let ValueType::Int(int_type) = value_type {
+        Some(int_bounds_for_int_type(*int_type))
+    } else {
+        None
     }
 }
 
