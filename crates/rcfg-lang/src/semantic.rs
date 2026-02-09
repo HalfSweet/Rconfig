@@ -40,6 +40,40 @@ pub enum ResolvedValue {
     EnumVariant(String),
 }
 
+impl ResolvedValue {
+    fn as_bool(&self) -> Option<bool> {
+        if let Self::Bool(value) = self {
+            Some(*value)
+        } else {
+            None
+        }
+    }
+
+    fn as_int(&self) -> Option<i128> {
+        if let Self::Int(value) = self {
+            Some(*value)
+        } else {
+            None
+        }
+    }
+
+    fn as_string(&self) -> Option<&str> {
+        if let Self::String(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    fn as_enum_variant(&self) -> Option<&str> {
+        if let Self::EnumVariant(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueSource {
     User,
@@ -58,6 +92,14 @@ pub struct ResolvedOption {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ResolvedConfig {
     pub options: Vec<ResolvedOption>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeState {
+    active: HashSet<String>,
+    values: HashMap<String, ResolvedValue>,
+    sources: HashMap<String, ValueSource>,
+    ctx_references: HashSet<String>,
 }
 
 impl ValueType {
