@@ -395,6 +395,7 @@ pub struct ValuesStmtOrigin {
 #[derive(Debug, Clone)]
 pub struct ValuesAnalysisReport {
     pub values: ValuesFile,
+    pub resolved: ResolvedConfig,
     pub stmt_origins: Vec<ValuesStmtOrigin>,
     pub diagnostics: Vec<Diagnostic>,
     pub diagnostic_stmt_indexes: Vec<Option<usize>>,
@@ -488,20 +489,40 @@ pub fn analyze_schema_strict(file: &File) -> SemanticReport {
 }
 
 pub fn analyze_values(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnostic> {
-    analyze_values_with_stmt_indexes(values, symbols).0
+    analyze_values_with_context(values, symbols, &HashMap::new())
 }
 
 pub fn analyze_values_strict(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnostic> {
-    let mut diagnostics = analyze_values(values, symbols);
+    let mut diagnostics = analyze_values_with_context(values, symbols, &HashMap::new());
     promote_strict_diagnostics(&mut diagnostics);
     diagnostics
 }
 
-fn analyze_values_with_stmt_indexes(
+pub fn analyze_values_with_context(
     values: &ValuesFile,
     symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
+) -> Vec<Diagnostic> {
+    analyze_values_with_context_and_stmt_indexes(values, symbols, context).0
+}
+
+pub fn analyze_values_with_context_strict(
+    values: &ValuesFile,
+    symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = analyze_values_with_context(values, symbols, context);
+    promote_strict_diagnostics(&mut diagnostics);
+    diagnostics
+}
+
+fn analyze_values_with_context_and_stmt_indexes(
+    values: &ValuesFile,
+    symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
 ) -> (Vec<Diagnostic>, Vec<Option<usize>>) {
     let mut checker = ValuesChecker::new(symbols);
+    checker.ingest_context(context);
     checker.check(values);
     let post_diags = checker.post_check_diagnostics();
 
@@ -519,13 +540,24 @@ pub fn analyze_values_from_path_report(
     entry: &FsPath,
     symbols: &SymbolTable,
 ) -> ValuesAnalysisReport {
+    analyze_values_from_path_report_with_context(entry, symbols, &HashMap::new())
+}
+
+pub fn analyze_values_from_path_report_with_context(
+    entry: &FsPath,
+    symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
+) -> ValuesAnalysisReport {
     let (values, stmt_origins, mut diagnostics) = expand_values_includes_with_origins(entry);
     let mut diagnostic_stmt_indexes = vec![None; diagnostics.len()];
-    let (mut semantic, mut semantic_stmt_indexes) = analyze_values_with_stmt_indexes(&values, symbols);
+    let (mut semantic, mut semantic_stmt_indexes) =
+        analyze_values_with_context_and_stmt_indexes(&values, symbols, context);
     diagnostics.append(&mut semantic);
     diagnostic_stmt_indexes.append(&mut semantic_stmt_indexes);
+    let resolved = resolve_values_with_context(&values, symbols, context);
     ValuesAnalysisReport {
         values,
+        resolved,
         stmt_origins,
         diagnostics,
         diagnostic_stmt_indexes,
@@ -536,7 +568,17 @@ pub fn analyze_values_from_path_report_strict(
     entry: &FsPath,
     symbols: &SymbolTable,
 ) -> ValuesAnalysisReport {
-    let mut report = analyze_values_from_path_report(entry, symbols);
+    let mut report = analyze_values_from_path_report_with_context(entry, symbols, &HashMap::new());
+    promote_strict_diagnostics(&mut report.diagnostics);
+    report
+}
+
+pub fn analyze_values_from_path_report_with_context_strict(
+    entry: &FsPath,
+    symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
+) -> ValuesAnalysisReport {
+    let mut report = analyze_values_from_path_report_with_context(entry, symbols, context);
     promote_strict_diagnostics(&mut report.diagnostics);
     report
 }
@@ -552,6 +594,29 @@ pub fn analyze_values_from_path_strict(
 ) -> (ValuesFile, Vec<Diagnostic>) {
     let report = analyze_values_from_path_report_strict(entry, symbols);
     (report.values, report.diagnostics)
+}
+
+pub fn resolve_values(values: &ValuesFile, symbols: &SymbolTable) -> ResolvedConfig {
+    resolve_values_with_context(values, symbols, &HashMap::new())
+}
+
+pub fn resolve_values_with_context(
+    values: &ValuesFile,
+    symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
+) -> ResolvedConfig {
+    let mut checker = ValuesChecker::new(symbols);
+    checker.ingest_context(context);
+    checker.check(values);
+    let _ = checker.post_check_diagnostics();
+    checker
+        .resolved_config()
+        .unwrap_or_else(|| build_resolved_config(symbols, &RuntimeState {
+            active: HashSet::new(),
+            values: HashMap::new(),
+            sources: HashMap::new(),
+            ctx_references: HashSet::new(),
+        }))
 }
 
 pub fn expand_values_includes_from_path(entry: &FsPath) -> (ValuesFile, Vec<Diagnostic>) {
@@ -896,6 +961,24 @@ impl<'a> ValuesChecker<'a> {
             resolved: None,
             current_stmt_index: None,
         }
+    }
+
+    fn ingest_context(&mut self, context: &HashMap<String, ResolvedValue>) {
+        for (path, value) in context {
+            self.assignments.insert(
+                path.clone(),
+                ResolvedAssignment {
+                    value: value.clone(),
+                    source: ValueSource::Context,
+                    span: self.symbols.option_span(path).unwrap_or_default(),
+                    stmt_index: None,
+                },
+            );
+        }
+    }
+
+    fn resolved_config(&self) -> Option<ResolvedConfig> {
+        self.resolved.clone()
     }
 
     fn check(&mut self, values: &ValuesFile) {
