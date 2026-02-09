@@ -1,4 +1,6 @@
-fn evaluate_runtime_state(
+use super::*;
+
+pub(super) fn evaluate_runtime_state(
     symbols: &SymbolTable,
     assignments: &HashMap<String, ResolvedAssignment>,
 ) -> RuntimeState {
@@ -53,7 +55,10 @@ fn evaluate_runtime_state(
     }
 }
 
-fn evaluate_activation_once(symbols: &SymbolTable, runtime: &RuntimeState) -> RuntimeState {
+pub(super) fn evaluate_activation_once(
+    symbols: &SymbolTable,
+    runtime: &RuntimeState,
+) -> RuntimeState {
     let mut active = symbols
         .option_types
         .keys()
@@ -80,7 +85,7 @@ fn evaluate_activation_once(symbols: &SymbolTable, runtime: &RuntimeState) -> Ru
     }
 }
 
-fn collect_active_options(
+pub(super) fn collect_active_options(
     symbols: &SymbolTable,
     items: &[Item],
     scope: &mut Vec<String>,
@@ -131,15 +136,11 @@ fn collect_active_options(
                 );
             }
             Item::Match(match_block) => {
-                let selected = select_match_case_index(
-                    &match_block,
-                    symbols,
-                    scope,
-                    runtime,
-                    ctx_references,
-                );
+                let selected =
+                    select_match_case_index(&match_block, symbols, scope, runtime, ctx_references);
                 for (index, case) in match_block.cases.iter().enumerate() {
-                    let case_active = selected.is_some_and(|selected_index| selected_index == index);
+                    let case_active =
+                        selected.is_some_and(|selected_index| selected_index == index);
                     collect_active_options(
                         symbols,
                         &case.items,
@@ -155,24 +156,24 @@ fn collect_active_options(
     }
 }
 
-fn select_match_case_index(
+pub(super) fn select_match_case_index(
     block: &MatchBlock,
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
     ctx_references: &mut HashSet<String>,
 ) -> Option<usize> {
-    let scrutinee = eval_expr(
-        &block.expr,
-        symbols,
-        scope,
-        runtime,
-        ctx_references,
-        true,
-    )?;
+    let scrutinee = eval_expr(&block.expr, symbols, scope, runtime, ctx_references, true)?;
 
     for (index, case) in block.cases.iter().enumerate() {
-        if !match_pattern_matches(&case.pattern, &scrutinee, symbols, scope, runtime, ctx_references) {
+        if !match_pattern_matches(
+            &case.pattern,
+            &scrutinee,
+            symbols,
+            scope,
+            runtime,
+            ctx_references,
+        ) {
             continue;
         }
 
@@ -187,7 +188,7 @@ fn select_match_case_index(
     None
 }
 
-fn match_pattern_matches(
+pub(super) fn match_pattern_matches(
     pattern: &MatchPat,
     scrutinee: &ResolvedValue,
     symbols: &SymbolTable,
@@ -198,13 +199,21 @@ fn match_pattern_matches(
     match pattern {
         MatchPat::Wildcard(_) => true,
         MatchPat::Paths(paths, _) => paths.iter().any(|path| {
-            eval_path_as_enum_variant(path, symbols, scope, runtime, ctx_references)
-                .is_some_and(|variant| scrutinee.as_enum_variant().is_some_and(|current| current == variant))
+            eval_path_as_enum_variant(path, symbols, scope, runtime, ctx_references).is_some_and(
+                |variant| {
+                    scrutinee
+                        .as_enum_variant()
+                        .is_some_and(|current| current == variant)
+                },
+            )
         }),
     }
 }
 
-fn build_resolved_config(symbols: &SymbolTable, runtime: &RuntimeState) -> ResolvedConfig {
+pub(super) fn build_resolved_config(
+    symbols: &SymbolTable,
+    runtime: &RuntimeState,
+) -> ResolvedConfig {
     let mut paths = symbols.option_types.keys().cloned().collect::<Vec<_>>();
     paths.sort();
 
@@ -221,7 +230,10 @@ fn build_resolved_config(symbols: &SymbolTable, runtime: &RuntimeState) -> Resol
     ResolvedConfig { options }
 }
 
-fn resolve_const_value(value: &ConstValue, symbols: &SymbolTable) -> Option<ResolvedValue> {
+pub(super) fn resolve_const_value(
+    value: &ConstValue,
+    symbols: &SymbolTable,
+) -> Option<ResolvedValue> {
     match value {
         ConstValue::Bool(raw, _) => Some(ResolvedValue::Bool(*raw)),
         ConstValue::Int(raw, _) => Some(ResolvedValue::Int(*raw)),
@@ -237,7 +249,7 @@ fn resolve_const_value(value: &ConstValue, symbols: &SymbolTable) -> Option<Reso
     }
 }
 
-fn collect_runtime_require_diagnostics(
+pub(super) fn collect_runtime_require_diagnostics(
     symbols: &SymbolTable,
     items: &[Item],
     scope: &mut Vec<String>,
@@ -345,4 +357,3 @@ fn collect_runtime_require_diagnostics(
         }
     }
 }
-

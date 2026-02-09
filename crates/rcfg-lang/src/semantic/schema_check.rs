@@ -1,3 +1,5 @@
+use super::*;
+
 fn analyze_schema_items(items: &[Item]) -> SemanticReport {
     let mut collector = SymbolCollector::default();
     let mut root_scope = Vec::new();
@@ -137,7 +139,10 @@ pub fn analyze_values_from_path_report_with_context_strict(
     report
 }
 
-pub fn analyze_values_from_path(entry: &FsPath, symbols: &SymbolTable) -> (ValuesFile, Vec<Diagnostic>) {
+pub fn analyze_values_from_path(
+    entry: &FsPath,
+    symbols: &SymbolTable,
+) -> (ValuesFile, Vec<Diagnostic>) {
     let report = analyze_values_from_path_report(entry, symbols);
     (report.values, report.diagnostics)
 }
@@ -163,14 +168,17 @@ pub fn resolve_values_with_context(
     checker.ingest_context(context);
     checker.check(values);
     let _ = checker.post_check_diagnostics();
-    checker
-        .resolved_config()
-        .unwrap_or_else(|| build_resolved_config(symbols, &RuntimeState {
-            active: HashSet::new(),
-            values: HashMap::new(),
-            sources: HashMap::new(),
-            ctx_references: HashSet::new(),
-        }))
+    checker.resolved_config().unwrap_or_else(|| {
+        build_resolved_config(
+            symbols,
+            &RuntimeState {
+                active: HashSet::new(),
+                values: HashMap::new(),
+                sources: HashMap::new(),
+                ctx_references: HashSet::new(),
+            },
+        )
+    })
 }
 
 pub fn expand_values_includes_from_path(entry: &FsPath) -> (ValuesFile, Vec<Diagnostic>) {
@@ -190,7 +198,13 @@ pub fn expand_values_includes_with_origins(
         values_stmts.push(expanded.stmt);
         origins.push(expanded.origin);
     }
-    (ValuesFile { stmts: values_stmts }, origins, expander.diagnostics)
+    (
+        ValuesFile {
+            stmts: values_stmts,
+        },
+        origins,
+        expander.diagnostics,
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -223,9 +237,16 @@ impl SymbolCollector {
                 Item::Use(_) | Item::Require(_) | Item::Constraint(_) => {}
                 Item::Option(option) => {
                     let full_path = build_full_path(scope, &option.name.value);
-                    if self.declare(scope, &option.name.value, SymbolKind::Option, option.name.span) {
-                        self.symbols
-                            .insert_option_type(full_path.clone(), option_type_to_value_type(&option.ty));
+                    if self.declare(
+                        scope,
+                        &option.name.value,
+                        SymbolKind::Option,
+                        option.name.span,
+                    ) {
+                        self.symbols.insert_option_type(
+                            full_path.clone(),
+                            option_type_to_value_type(&option.ty),
+                        );
                         self.symbols
                             .insert_option_span(full_path.clone(), option.name.span);
                         self.symbols.insert_option_secret(
@@ -235,7 +256,8 @@ impl SymbolCollector {
                         self.symbols
                             .insert_option_always_active(full_path.clone(), !in_conditional);
                         if let Some(default) = option.default.clone() {
-                            self.symbols.insert_option_default(full_path.clone(), default);
+                            self.symbols
+                                .insert_option_default(full_path.clone(), default);
                         }
                         if let Some(range) = extract_range_attr(option) {
                             self.symbols.insert_option_range(full_path, range);
@@ -244,7 +266,12 @@ impl SymbolCollector {
                 }
                 Item::Enum(enum_decl) => {
                     let enum_path = build_full_path(scope, &enum_decl.name.value);
-                    if self.declare(scope, &enum_decl.name.value, SymbolKind::Enum, enum_decl.name.span) {
+                    if self.declare(
+                        scope,
+                        &enum_decl.name.value,
+                        SymbolKind::Enum,
+                        enum_decl.name.span,
+                    ) {
                         for variant in &enum_decl.variants {
                             let variant_path = format!("{}::{}", enum_path, variant.name.value);
                             if self
@@ -278,7 +305,8 @@ impl SymbolCollector {
                                 module.span.join(*previous_span),
                             ));
                         } else {
-                            self.mod_metadata_spans.insert(module_path.clone(), module.span);
+                            self.mod_metadata_spans
+                                .insert(module_path.clone(), module.span);
                         }
                     }
 
@@ -323,7 +351,10 @@ impl SymbolCollector {
 
             self.diagnostics.push(Diagnostic::error(
                 "E_SYMBOL_KIND_CONFLICT",
-                format!("symbol `{}` conflicts with previously declared kind", full_path),
+                format!(
+                    "symbol `{}` conflicts with previously declared kind",
+                    full_path
+                ),
                 span.join(existing.span),
             ));
             return false;
@@ -339,21 +370,21 @@ impl SymbolCollector {
 }
 
 #[derive(Debug)]
-enum ResolvePathResult {
+pub(super) enum ResolvePathResult {
     Resolved(ValueType),
     NotFound,
     Ambiguous(Vec<String>),
 }
 
 #[derive(Debug)]
-enum ResolveOptionPathResult {
+pub(super) enum ResolveOptionPathResult {
     Resolved(String, ValueType),
     NotFound,
     Ambiguous(Vec<String>),
 }
 
 #[derive(Debug)]
-enum ResolveEnumVariantPathResult {
+pub(super) enum ResolveEnumVariantPathResult {
     Resolved(String, String),
     NotFound,
     Ambiguous(Vec<String>),
@@ -467,7 +498,6 @@ impl<'a> TypeChecker<'a> {
             entry.insert(dep.clone());
         }
     }
-
 
     fn check_option(&mut self, option: &OptionDecl, scope: &[String]) {
         self.lint_option_doc(option, scope);
@@ -586,7 +616,10 @@ impl<'a> TypeChecker<'a> {
         self.lint_require_msg(require, &require_key);
         self.expect_bool_expr(&require.expr, scope, self_ty);
 
-        if self.evaluate_const_bool_expr(&require.expr).is_some_and(|result| !result) {
+        if self
+            .evaluate_const_bool_expr(&require.expr)
+            .is_some_and(|result| !result)
+        {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E_REQUIRE_FAILED",
@@ -607,10 +640,7 @@ impl<'a> TypeChecker<'a> {
                 ..
             } => self.evaluate_const_bool_expr(expr).map(|value| !value),
             Expr::Binary {
-                op,
-                left,
-                right,
-                ..
+                op, left, right, ..
             } => {
                 let left = self.evaluate_const_scalar(left)?;
                 let right = self.evaluate_const_scalar(right)?;
@@ -808,11 +838,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_activation_cycles(&mut self) {
-        let mut nodes = self
-            .activation_edges
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut nodes = self.activation_edges.keys().cloned().collect::<Vec<_>>();
         for deps in self.activation_edges.values() {
             nodes.extend(deps.iter().cloned());
         }
@@ -872,11 +898,7 @@ impl<'a> TypeChecker<'a> {
         visiting.insert(node.to_string());
         stack.push(node.to_string());
 
-        let deps = self
-            .activation_edges
-            .get(node)
-            .cloned()
-            .unwrap_or_default();
+        let deps = self.activation_edges.get(node).cloned().unwrap_or_default();
         for dep in deps {
             self.check_activation_cycle_from(&dep, visiting, visited, stack, reported);
         }
@@ -944,7 +966,8 @@ impl<'a> TypeChecker<'a> {
             return;
         };
 
-        let Some(scrutinee_option_path) = self.match_scrutinee_option_path(&block.expr, scope) else {
+        let Some(scrutinee_option_path) = self.match_scrutinee_option_path(&block.expr, scope)
+        else {
             self.diagnostics.push(Diagnostic::error(
                 "E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE",
                 "match scrutinee must resolve to always-active enum option",
@@ -1008,7 +1031,10 @@ impl<'a> TypeChecker<'a> {
             if !overlap.is_empty() {
                 self.diagnostics.push(Diagnostic::error(
                     "E_MATCH_OVERLAP",
-                    format!("case overlaps with previous variants: {}", overlap.join(", ")),
+                    format!(
+                        "case overlaps with previous variants: {}",
+                        overlap.join(", ")
+                    ),
                     case.pattern.span(),
                 ));
             }
@@ -1081,7 +1107,8 @@ impl<'a> TypeChecker<'a> {
                         continue;
                     }
 
-                    let Some(variant_name) = path.segments.last().map(|seg| seg.value.clone()) else {
+                    let Some(variant_name) = path.segments.last().map(|seg| seg.value.clone())
+                    else {
                         self.diagnostics.push(Diagnostic::error(
                             "E_ENUM_VARIANT_NOT_FOUND",
                             "empty variant path",
@@ -1093,7 +1120,10 @@ impl<'a> TypeChecker<'a> {
                     if !all_set.contains(&variant_name) {
                         self.diagnostics.push(Diagnostic::error(
                             "E_ENUM_VARIANT_NOT_FOUND",
-                            format!("variant `{}` is not declared in enum `{}`", variant_name, enum_name),
+                            format!(
+                                "variant `{}` is not declared in enum `{}`",
+                                variant_name, enum_name
+                            ),
                             path.span,
                         ));
                         continue;
@@ -1240,7 +1270,8 @@ impl<'a> TypeChecker<'a> {
                     }
 
                     let elem_ty = self.infer_set_elem_type(elem, scope);
-                    if !left_ty.is_unknown() && !elem_ty.is_unknown() && !left_ty.same_as(&elem_ty) {
+                    if !left_ty.is_unknown() && !elem_ty.is_unknown() && !left_ty.same_as(&elem_ty)
+                    {
                         self.diagnostics.push(Diagnostic::error(
                             "E_EXPECT_SAME_TYPE",
                             "`in { ... }` element type does not match expression type",
@@ -1368,7 +1399,9 @@ impl<'a> TypeChecker<'a> {
     ) -> ValueType {
         match op {
             BinaryOp::Or | BinaryOp::And => {
-                if (!left.is_unknown() && !left.is_bool()) || (!right.is_unknown() && !right.is_bool()) {
+                if (!left.is_unknown() && !left.is_bool())
+                    || (!right.is_unknown() && !right.is_bool())
+                {
                     self.diagnostics.push(Diagnostic::error(
                         "E_EXPECT_BOOL",
                         "logical operators expect bool operands",
@@ -1388,14 +1421,18 @@ impl<'a> TypeChecker<'a> {
                 ValueType::Bool
             }
             BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                if (!left.is_unknown() && !left.is_int()) || (!right.is_unknown() && !right.is_int()) {
+                if (!left.is_unknown() && !left.is_int())
+                    || (!right.is_unknown() && !right.is_int())
+                {
                     self.diagnostics.push(Diagnostic::error(
                         "E_EXPECT_INT",
                         "relational operators expect integer operands",
                         span,
                     ));
                 }
-                if let (Some(left_int), Some(right_int)) = (left.concrete_int(), right.concrete_int()) {
+                if let (Some(left_int), Some(right_int)) =
+                    (left.concrete_int(), right.concrete_int())
+                {
                     if left_int != right_int {
                         self.diagnostics.push(Diagnostic::error(
                             "E_EXPECT_SAME_TYPE",
@@ -1409,4 +1446,3 @@ impl<'a> TypeChecker<'a> {
         }
     }
 }
-

@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolKind {
     Mod,
@@ -38,7 +40,7 @@ pub enum ResolvedValue {
 }
 
 impl ResolvedValue {
-    fn as_bool(&self) -> Option<bool> {
+    pub(super) fn as_bool(&self) -> Option<bool> {
         if let Self::Bool(value) = self {
             Some(*value)
         } else {
@@ -46,7 +48,7 @@ impl ResolvedValue {
         }
     }
 
-    fn as_int(&self) -> Option<i128> {
+    pub(super) fn as_int(&self) -> Option<i128> {
         if let Self::Int(value) = self {
             Some(*value)
         } else {
@@ -54,7 +56,7 @@ impl ResolvedValue {
         }
     }
 
-    fn as_string(&self) -> Option<&str> {
+    pub(super) fn as_string(&self) -> Option<&str> {
         if let Self::String(value) = self {
             Some(value)
         } else {
@@ -62,7 +64,7 @@ impl ResolvedValue {
         }
     }
 
-    fn as_enum_variant(&self) -> Option<&str> {
+    pub(super) fn as_enum_variant(&self) -> Option<&str> {
         if let Self::EnumVariant(value) = self {
             Some(value)
         } else {
@@ -92,33 +94,33 @@ pub struct ResolvedConfig {
 }
 
 #[derive(Debug, Clone)]
-struct RuntimeState {
-    active: HashSet<String>,
-    values: HashMap<String, ResolvedValue>,
-    sources: HashMap<String, ValueSource>,
-    ctx_references: HashSet<String>,
+pub(super) struct RuntimeState {
+    pub(super) active: HashSet<String>,
+    pub(super) values: HashMap<String, ResolvedValue>,
+    pub(super) sources: HashMap<String, ValueSource>,
+    pub(super) ctx_references: HashSet<String>,
 }
 
 impl RuntimeState {
-    fn is_active(&self, path: &str) -> bool {
+    pub(super) fn is_active(&self, path: &str) -> bool {
         self.active.contains(path)
     }
 
-    fn value_of(&self, path: &str) -> Option<&ResolvedValue> {
+    pub(super) fn value_of(&self, path: &str) -> Option<&ResolvedValue> {
         self.values.get(path)
     }
 }
 
 impl ValueType {
-    fn is_bool(&self) -> bool {
+    pub(super) fn is_bool(&self) -> bool {
         matches!(self, ValueType::Bool)
     }
 
-    fn is_int(&self) -> bool {
+    pub(super) fn is_int(&self) -> bool {
         matches!(self, ValueType::Int(_) | ValueType::UntypedInt)
     }
 
-    fn concrete_int(&self) -> Option<IntType> {
+    pub(super) fn concrete_int(&self) -> Option<IntType> {
         if let ValueType::Int(ty) = self {
             Some(*ty)
         } else {
@@ -126,15 +128,15 @@ impl ValueType {
         }
     }
 
-    fn is_string(&self) -> bool {
+    pub(super) fn is_string(&self) -> bool {
         matches!(self, ValueType::String)
     }
 
-    fn is_unknown(&self) -> bool {
+    pub(super) fn is_unknown(&self) -> bool {
         matches!(self, ValueType::Unknown)
     }
 
-    fn same_as(&self, other: &ValueType) -> bool {
+    pub(super) fn same_as(&self, other: &ValueType) -> bool {
         match (self, other) {
             (ValueType::Bool, ValueType::Bool)
             | (ValueType::String, ValueType::String)
@@ -151,16 +153,16 @@ impl ValueType {
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
-    symbols: HashMap<String, SymbolInfo>,
-    option_types: HashMap<String, ValueType>,
-    option_defaults: HashMap<String, ConstValue>,
-    option_ranges: HashMap<String, IntRange>,
-    option_spans: HashMap<String, Span>,
-    option_secrets: HashMap<String, bool>,
-    option_always_active: HashMap<String, bool>,
-    enum_variants: HashMap<String, String>,
-    enum_variant_spans: HashMap<String, Span>,
-    schema_items: Vec<Item>,
+    pub(super) symbols: HashMap<String, SymbolInfo>,
+    pub(super) option_types: HashMap<String, ValueType>,
+    pub(super) option_defaults: HashMap<String, ConstValue>,
+    pub(super) option_ranges: HashMap<String, IntRange>,
+    pub(super) option_spans: HashMap<String, Span>,
+    pub(super) option_secrets: HashMap<String, bool>,
+    pub(super) option_always_active: HashMap<String, bool>,
+    pub(super) enum_variants: HashMap<String, String>,
+    pub(super) enum_variant_spans: HashMap<String, Span>,
+    pub(super) schema_items: Vec<Item>,
 }
 
 impl SymbolTable {
@@ -188,55 +190,55 @@ impl SymbolTable {
         &self.schema_items
     }
 
-    fn insert_symbol(&mut self, symbol: SymbolInfo) {
+    pub(super) fn insert_symbol(&mut self, symbol: SymbolInfo) {
         self.symbols.insert(symbol.path.clone(), symbol);
     }
 
-    fn insert_option_type(&mut self, path: String, ty: ValueType) {
+    pub(super) fn insert_option_type(&mut self, path: String, ty: ValueType) {
         self.option_types.insert(path, ty);
     }
 
-    fn insert_option_default(&mut self, path: String, value: ConstValue) {
+    pub(super) fn insert_option_default(&mut self, path: String, value: ConstValue) {
         self.option_defaults.insert(path, value);
     }
 
-    fn insert_option_range(&mut self, path: String, range: IntRange) {
+    pub(super) fn insert_option_range(&mut self, path: String, range: IntRange) {
         self.option_ranges.insert(path, range);
     }
 
-    fn insert_option_span(&mut self, path: String, span: Span) {
+    pub(super) fn insert_option_span(&mut self, path: String, span: Span) {
         self.option_spans.insert(path, span);
     }
 
-    fn insert_option_secret(&mut self, path: String, secret: bool) {
+    pub(super) fn insert_option_secret(&mut self, path: String, secret: bool) {
         self.option_secrets.insert(path, secret);
     }
 
-    fn insert_option_always_active(&mut self, path: String, is_always_active: bool) {
+    pub(super) fn insert_option_always_active(&mut self, path: String, is_always_active: bool) {
         self.option_always_active.insert(path, is_always_active);
     }
 
-    fn set_schema_items(&mut self, items: Vec<Item>) {
+    pub(super) fn set_schema_items(&mut self, items: Vec<Item>) {
         self.schema_items = items;
     }
 
-    fn option_range(&self, path: &str) -> Option<&IntRange> {
+    pub(super) fn option_range(&self, path: &str) -> Option<&IntRange> {
         self.option_ranges.get(path)
     }
 
-    fn option_span(&self, path: &str) -> Option<Span> {
+    pub(super) fn option_span(&self, path: &str) -> Option<Span> {
         self.option_spans.get(path).copied()
     }
 
-    fn option_is_secret(&self, path: &str) -> bool {
+    pub(super) fn option_is_secret(&self, path: &str) -> bool {
         self.option_secrets.get(path).copied().unwrap_or(false)
     }
 
-    fn option_is_always_active(&self, path: &str) -> bool {
+    pub(super) fn option_is_always_active(&self, path: &str) -> bool {
         self.option_always_active.get(path).copied().unwrap_or(true)
     }
 
-    fn insert_enum_variant(
+    pub(super) fn insert_enum_variant(
         &mut self,
         variant_path: String,
         enum_path: String,
@@ -246,11 +248,11 @@ impl SymbolTable {
         self.enum_variants.insert(variant_path, enum_path)
     }
 
-    fn enum_variant_span(&self, variant_path: &str) -> Option<Span> {
+    pub(super) fn enum_variant_span(&self, variant_path: &str) -> Option<Span> {
         self.enum_variant_spans.get(variant_path).copied()
     }
 
-    fn resolve_path_type(&self, scope: &[String], path: &Path) -> ResolvePathResult {
+    pub(super) fn resolve_path_type(&self, scope: &[String], path: &Path) -> ResolvePathResult {
         let raw = path.to_string();
         let candidates = build_candidate_paths(scope, &raw);
 
@@ -288,7 +290,7 @@ impl SymbolTable {
         ResolvePathResult::Resolved(ty)
     }
 
-    fn enum_variant_names(&self, enum_name: &str) -> Option<Vec<String>> {
+    pub(super) fn enum_variant_names(&self, enum_name: &str) -> Option<Vec<String>> {
         let mut variants = self
             .enum_variants
             .iter()
@@ -305,11 +307,11 @@ impl SymbolTable {
         Some(variants)
     }
 
-    fn enum_owner_of_variant(&self, variant_path: &str) -> Option<&str> {
+    pub(super) fn enum_owner_of_variant(&self, variant_path: &str) -> Option<&str> {
         self.enum_variants.get(variant_path).map(String::as_str)
     }
 
-    fn resolve_option_paths(&self, raw_path: &str) -> Vec<String> {
+    pub(super) fn resolve_option_paths(&self, raw_path: &str) -> Vec<String> {
         self.option_types
             .keys()
             .filter(|candidate| path_matches(candidate, raw_path))
@@ -317,7 +319,7 @@ impl SymbolTable {
             .collect::<Vec<_>>()
     }
 
-    fn resolve_enum_variant_paths(&self, raw_path: &str) -> Vec<String> {
+    pub(super) fn resolve_enum_variant_paths(&self, raw_path: &str) -> Vec<String> {
         self.enum_variants
             .keys()
             .filter(|candidate| path_matches(candidate, raw_path))
@@ -325,7 +327,11 @@ impl SymbolTable {
             .collect::<Vec<_>>()
     }
 
-    fn resolve_option_path_in_scope(&self, scope: &[String], path: &Path) -> ResolveOptionPathResult {
+    pub(super) fn resolve_option_path_in_scope(
+        &self,
+        scope: &[String],
+        path: &Path,
+    ) -> ResolveOptionPathResult {
         let raw = path.to_string();
         let candidates = build_candidate_paths(scope, &raw);
 
@@ -342,7 +348,10 @@ impl SymbolTable {
 
         if matches.len() > 1 {
             return ResolveOptionPathResult::Ambiguous(
-                matches.into_iter().map(|(path, _)| path).collect::<Vec<_>>(),
+                matches
+                    .into_iter()
+                    .map(|(path, _)| path)
+                    .collect::<Vec<_>>(),
             );
         }
 
@@ -350,7 +359,7 @@ impl SymbolTable {
         ResolveOptionPathResult::Resolved(path, ty)
     }
 
-    fn resolve_enum_variant_path_in_scope(
+    pub(super) fn resolve_enum_variant_path_in_scope(
         &self,
         scope: &[String],
         path: &Path,
@@ -371,7 +380,10 @@ impl SymbolTable {
 
         if matches.len() > 1 {
             return ResolveEnumVariantPathResult::Ambiguous(
-                matches.into_iter().map(|(path, _)| path).collect::<Vec<_>>(),
+                matches
+                    .into_iter()
+                    .map(|(path, _)| path)
+                    .collect::<Vec<_>>(),
             );
         }
 
@@ -379,7 +391,7 @@ impl SymbolTable {
         ResolveEnumVariantPathResult::Resolved(variant_path, enum_path)
     }
 
-    fn path_resolves_to_option_in_scope(&self, scope: &[String], path: &Path) -> bool {
+    pub(super) fn path_resolves_to_option_in_scope(&self, scope: &[String], path: &Path) -> bool {
         let raw = path.to_string();
         let candidates = build_candidate_paths(scope, &raw);
         candidates
@@ -438,4 +450,3 @@ pub struct GeneratedExports {
     pub cmake: String,
     pub diagnostics: Vec<Diagnostic>,
 }
-

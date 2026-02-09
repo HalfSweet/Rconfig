@@ -1,3 +1,5 @@
+use super::*;
+
 pub fn plan_c_header_exports(
     symbols: &SymbolTable,
     include_secrets: bool,
@@ -164,4 +166,3 @@ pub fn generate_exports(
         diagnostics,
     }
 }
-

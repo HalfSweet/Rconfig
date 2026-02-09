@@ -1,4 +1,6 @@
-fn eval_expr_as_bool(
+use super::*;
+
+pub(super) fn eval_expr_as_bool(
     expr: &Expr,
     symbols: &SymbolTable,
     scope: &[String],
@@ -8,7 +10,7 @@ fn eval_expr_as_bool(
     eval_expr(expr, symbols, scope, runtime, ctx_references, true).and_then(|value| value.as_bool())
 }
 
-fn eval_expr(
+pub(super) fn eval_expr(
     expr: &Expr,
     symbols: &SymbolTable,
     scope: &[String],
@@ -29,20 +31,32 @@ fn eval_expr(
             ctx_references,
             inactive_bool_as_false,
         ),
-        Expr::Call { name, args, .. } => eval_call(name.value.as_str(), args, symbols, scope, runtime, ctx_references),
+        Expr::Call { name, args, .. } => eval_call(
+            name.value.as_str(),
+            args,
+            symbols,
+            scope,
+            runtime,
+            ctx_references,
+        ),
         Expr::Unary {
             op: UnaryOp::Not,
             expr,
             ..
-        } => eval_expr_as_bool(expr, symbols, scope, runtime, ctx_references).map(|value| ResolvedValue::Bool(!value)),
+        } => eval_expr_as_bool(expr, symbols, scope, runtime, ctx_references)
+            .map(|value| ResolvedValue::Bool(!value)),
         Expr::Binary {
-            op,
-            left,
-            right,
-            ..
+            op, left, right, ..
         } => eval_binary_expr(*op, left, right, symbols, scope, runtime, ctx_references),
         Expr::InRange { expr, range, .. } => {
-            let value = eval_expr(expr, symbols, scope, runtime, ctx_references, inactive_bool_as_false)?;
+            let value = eval_expr(
+                expr,
+                symbols,
+                scope,
+                runtime,
+                ctx_references,
+                inactive_bool_as_false,
+            )?;
             let int_value = value.as_int()?;
             let result = if range.inclusive {
                 int_value >= range.start && int_value <= range.end
@@ -52,7 +66,14 @@ fn eval_expr(
             Some(ResolvedValue::Bool(result))
         }
         Expr::InSet { expr, elems, .. } => {
-            let left = eval_expr(expr, symbols, scope, runtime, ctx_references, inactive_bool_as_false)?;
+            let left = eval_expr(
+                expr,
+                symbols,
+                scope,
+                runtime,
+                ctx_references,
+                inactive_bool_as_false,
+            )?;
             let result = elems.iter().any(|elem| {
                 let right = match elem {
                     InSetElem::Int(value, _) => Some(ResolvedValue::Int(*value)),
@@ -69,11 +90,18 @@ fn eval_expr(
             });
             Some(ResolvedValue::Bool(result))
         }
-        Expr::Group { expr, .. } => eval_expr(expr, symbols, scope, runtime, ctx_references, inactive_bool_as_false),
+        Expr::Group { expr, .. } => eval_expr(
+            expr,
+            symbols,
+            scope,
+            runtime,
+            ctx_references,
+            inactive_bool_as_false,
+        ),
     }
 }
 
-fn eval_binary_expr(
+pub(super) fn eval_binary_expr(
     op: BinaryOp,
     left: &Expr,
     right: &Expr,
@@ -116,7 +144,7 @@ fn eval_binary_expr(
     }
 }
 
-fn values_equal(left: &ResolvedValue, right: &ResolvedValue) -> bool {
+pub(super) fn values_equal(left: &ResolvedValue, right: &ResolvedValue) -> bool {
     match (left, right) {
         (ResolvedValue::Bool(lhs), ResolvedValue::Bool(rhs)) => lhs == rhs,
         (ResolvedValue::Int(lhs), ResolvedValue::Int(rhs)) => lhs == rhs,
@@ -126,7 +154,7 @@ fn values_equal(left: &ResolvedValue, right: &ResolvedValue) -> bool {
     }
 }
 
-fn eval_call(
+pub(super) fn eval_call(
     name: &str,
     args: &[Expr],
     symbols: &SymbolTable,
@@ -140,7 +168,9 @@ fn eval_call(
                 return None;
             }
             let value = eval_expr(&args[0], symbols, scope, runtime, ctx_references, true)?;
-            Some(ResolvedValue::Int(value.as_string()?.chars().count() as i128))
+            Some(ResolvedValue::Int(
+                value.as_string()?.chars().count() as i128
+            ))
         }
         "matches" => {
             if args.len() != 2 {
@@ -156,7 +186,7 @@ fn eval_call(
     }
 }
 
-fn eval_path_value(
+pub(super) fn eval_path_value(
     path: &Path,
     symbols: &SymbolTable,
     scope: &[String],
@@ -186,7 +216,7 @@ fn eval_path_value(
     }
 }
 
-fn eval_path_as_enum_variant(
+pub(super) fn eval_path_as_enum_variant(
     path: &Path,
     symbols: &SymbolTable,
     scope: &[String],

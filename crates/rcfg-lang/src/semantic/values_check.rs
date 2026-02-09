@@ -1,17 +1,19 @@
+use super::*;
+
 #[derive(Default)]
-struct IncludeExpander {
-    diagnostics: Vec<Diagnostic>,
-    stack: Vec<PathBuf>,
+pub(super) struct IncludeExpander {
+    pub(super) diagnostics: Vec<Diagnostic>,
+    pub(super) stack: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
-struct ExpandedValuesStmt {
-    stmt: ValuesStmt,
-    origin: ValuesStmtOrigin,
+pub(super) struct ExpandedValuesStmt {
+    pub(super) stmt: ValuesStmt,
+    pub(super) origin: ValuesStmtOrigin,
 }
 
 impl IncludeExpander {
-    fn current_chain(&self, next: &PathBuf) -> Vec<String> {
+    pub(super) fn current_chain(&self, next: &PathBuf) -> Vec<String> {
         self.stack
             .iter()
             .chain(std::iter::once(next))
@@ -19,17 +21,19 @@ impl IncludeExpander {
             .collect::<Vec<_>>()
     }
 
-    fn expand_file(&mut self, file: &FsPath, output: &mut Vec<ExpandedValuesStmt>) {
+    pub(super) fn expand_file(&mut self, file: &FsPath, output: &mut Vec<ExpandedValuesStmt>) {
         let canonical = match fs::canonicalize(file) {
             Ok(path) => path,
             Err(_) => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E_INCLUDE_NOT_FOUND",
-                    format!("include file not found: {}", file.display()),
-                    Span::default(),
-                )
-                .with_source(file.display().to_string())
-                .with_include_chain(self.current_chain(&file.to_path_buf())));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E_INCLUDE_NOT_FOUND",
+                        format!("include file not found: {}", file.display()),
+                        Span::default(),
+                    )
+                    .with_source(file.display().to_string())
+                    .with_include_chain(self.current_chain(&file.to_path_buf())),
+                );
                 return;
             }
         };
@@ -41,26 +45,30 @@ impl IncludeExpander {
                 .map(|path| path.display().to_string())
                 .collect::<Vec<_>>()
                 .join(" -> ");
-            self.diagnostics.push(Diagnostic::error(
-                "E_INCLUDE_CYCLE",
-                format!("include cycle detected: {}", chain),
-                Span::default(),
-            )
-            .with_source(canonical.display().to_string())
-            .with_include_chain(self.current_chain(&canonical)));
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_INCLUDE_CYCLE",
+                    format!("include cycle detected: {}", chain),
+                    Span::default(),
+                )
+                .with_source(canonical.display().to_string())
+                .with_include_chain(self.current_chain(&canonical)),
+            );
             return;
         }
 
         let text = match fs::read_to_string(&canonical) {
             Ok(content) => content,
             Err(_) => {
-                self.diagnostics.push(Diagnostic::error(
-                    "E_INCLUDE_NOT_FOUND",
-                    format!("failed to read include file: {}", canonical.display()),
-                    Span::default(),
-                )
-                .with_source(canonical.display().to_string())
-                .with_include_chain(self.current_chain(&canonical)));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E_INCLUDE_NOT_FOUND",
+                        format!("failed to read include file: {}", canonical.display()),
+                        Span::default(),
+                    )
+                    .with_source(canonical.display().to_string())
+                    .with_include_chain(self.current_chain(&canonical)),
+                );
                 return;
             }
         };
@@ -102,10 +110,10 @@ impl IncludeExpander {
     }
 }
 
-struct ValuesChecker<'a> {
+pub(super) struct ValuesChecker<'a> {
     symbols: &'a SymbolTable,
-    diagnostics: Vec<Diagnostic>,
-    diagnostic_stmt_indexes: Vec<Option<usize>>,
+    pub(super) diagnostics: Vec<Diagnostic>,
+    pub(super) diagnostic_stmt_indexes: Vec<Option<usize>>,
     aliases: HashMap<String, String>,
     assigned: HashMap<String, Span>,
     assignments: HashMap<String, ResolvedAssignment>,
@@ -114,22 +122,22 @@ struct ValuesChecker<'a> {
 }
 
 #[derive(Debug, Clone)]
-struct ResolvedAssignment {
-    value: ResolvedValue,
-    source: ValueSource,
-    span: Span,
-    stmt_index: Option<usize>,
+pub(super) struct ResolvedAssignment {
+    pub(super) value: ResolvedValue,
+    pub(super) source: ValueSource,
+    pub(super) span: Span,
+    pub(super) stmt_index: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
-struct ParsedValue {
+pub(super) struct ParsedValue {
     actual_type: ValueType,
     resolved_value: Option<ResolvedValue>,
     int_value: Option<i128>,
 }
 
 impl<'a> ValuesChecker<'a> {
-    fn new(symbols: &'a SymbolTable) -> Self {
+    pub(super) fn new(symbols: &'a SymbolTable) -> Self {
         Self {
             symbols,
             diagnostics: Vec::new(),
@@ -142,7 +150,7 @@ impl<'a> ValuesChecker<'a> {
         }
     }
 
-    fn ingest_context(&mut self, context: &HashMap<String, ResolvedValue>) {
+    pub(super) fn ingest_context(&mut self, context: &HashMap<String, ResolvedValue>) {
         for (path, value) in context {
             self.assignments.insert(
                 path.clone(),
@@ -156,11 +164,11 @@ impl<'a> ValuesChecker<'a> {
         }
     }
 
-    fn resolved_config(&self) -> Option<ResolvedConfig> {
+    pub(super) fn resolved_config(&self) -> Option<ResolvedConfig> {
         self.resolved.clone()
     }
 
-    fn check(&mut self, values: &ValuesFile) {
+    pub(super) fn check(&mut self, values: &ValuesFile) {
         for (index, stmt) in values.stmts.iter().enumerate() {
             self.current_stmt_index = Some(index);
             match stmt {
@@ -180,7 +188,7 @@ impl<'a> ValuesChecker<'a> {
         self.current_stmt_index = None;
     }
 
-    fn record_duplicate_assignment(&mut self, target: &str, span: Span) {
+    pub(super) fn record_duplicate_assignment(&mut self, target: &str, span: Span) {
         if let Some(previous) = self.assigned.insert(target.to_string(), span) {
             self.push_diag(Diagnostic::warning(
                 "W_DUPLICATE_ASSIGNMENT",
@@ -190,7 +198,7 @@ impl<'a> ValuesChecker<'a> {
         }
     }
 
-    fn register_use_alias(&mut self, use_stmt: &crate::ast::UseStmt) {
+    pub(super) fn register_use_alias(&mut self, use_stmt: &crate::ast::UseStmt) {
         let Some(alias) = &use_stmt.alias else {
             return;
         };
@@ -208,14 +216,17 @@ impl<'a> ValuesChecker<'a> {
             .insert(alias.value.clone(), use_stmt.path.to_string());
     }
 
-    fn resolve_assignment_target(&mut self, path: &Path) -> Option<String> {
+    pub(super) fn resolve_assignment_target(&mut self, path: &Path) -> Option<String> {
         let expanded = expand_with_aliases(path, &self.aliases);
         let candidates = self.symbols.resolve_option_paths(&expanded);
 
         if candidates.is_empty() {
             self.push_diag(Diagnostic::error(
                 "E_SYMBOL_NOT_FOUND",
-                format!("assignment target `{}` cannot be resolved", path.to_string()),
+                format!(
+                    "assignment target `{}` cannot be resolved",
+                    path.to_string()
+                ),
                 path.span,
             ));
             return None;
@@ -247,33 +258,37 @@ impl<'a> ValuesChecker<'a> {
         Some(resolved)
     }
 
-    fn check_assignment_value(&mut self, target: Option<&str>, value: &ValueExpr) {
+    pub(super) fn check_assignment_value(&mut self, target: Option<&str>, value: &ValueExpr) {
         let Some(target) = target else {
             return;
         };
 
         let Some(expected) = self.symbols.option_type(target).cloned() else {
-            self.push_diag(Diagnostic::error(
-                "E_SYMBOL_NOT_FOUND",
-                format!("assignment target `{}` is not an option", target),
-                value.span(),
-            )
-            .with_path(target));
+            self.push_diag(
+                Diagnostic::error(
+                    "E_SYMBOL_NOT_FOUND",
+                    format!("assignment target `{}` is not an option", target),
+                    value.span(),
+                )
+                .with_path(target),
+            );
             return;
         };
 
         let parsed = self.parse_value_expr(value, &expected);
         let actual = parsed.actual_type;
         if !actual.is_unknown() && !expected.same_as(&actual) {
-            self.push_diag(Diagnostic::error(
-                "E_TYPE_MISMATCH",
-                format!(
-                    "value type mismatch for `{}`: expected {:?}, got {:?}",
-                    target, expected, actual
-                ),
-                value.span(),
-            )
-            .with_path(target));
+            self.push_diag(
+                Diagnostic::error(
+                    "E_TYPE_MISMATCH",
+                    format!(
+                        "value type mismatch for `{}`: expected {:?}, got {:?}",
+                        target, expected, actual
+                    ),
+                    value.span(),
+                )
+                .with_path(target),
+            );
             return;
         }
 
@@ -297,7 +312,9 @@ impl<'a> ValuesChecker<'a> {
                 }
             }
 
-            if let (Some(range), Some(actual)) = (self.symbols.option_range(target), parsed.int_value) {
+            if let (Some(range), Some(actual)) =
+                (self.symbols.option_range(target), parsed.int_value)
+            {
                 let violates = if range.inclusive {
                     actual < range.start || actual > range.end
                 } else {
@@ -344,7 +361,11 @@ impl<'a> ValuesChecker<'a> {
         }
     }
 
-    fn parse_value_expr(&mut self, value: &ValueExpr, expected: &ValueType) -> ParsedValue {
+    pub(super) fn parse_value_expr(
+        &mut self,
+        value: &ValueExpr,
+        expected: &ValueType,
+    ) -> ParsedValue {
         match value {
             ValueExpr::Bool(raw, _) => ParsedValue {
                 actual_type: ValueType::Bool,
@@ -378,11 +399,18 @@ impl<'a> ValuesChecker<'a> {
                     resolved_value,
                 }
             }
-            ValueExpr::Env { name, .. } => self.parse_env_value(name.value.as_str(), expected, value.span()),
+            ValueExpr::Env { name, .. } => {
+                self.parse_env_value(name.value.as_str(), expected, value.span())
+            }
         }
     }
 
-    fn parse_env_value(&mut self, name: &str, expected: &ValueType, span: Span) -> ParsedValue {
+    pub(super) fn parse_env_value(
+        &mut self,
+        name: &str,
+        expected: &ValueType,
+        span: Span,
+    ) -> ParsedValue {
         let raw = match std::env::var(name) {
             Ok(value) => value,
             Err(_) => {
@@ -441,7 +469,10 @@ impl<'a> ValuesChecker<'a> {
             ValueType::Enum(expected_enum) => {
                 let enum_variant = self.resolve_env_enum_variant(name, &raw, expected_enum, span);
                 if let Some(variant) = enum_variant {
-                    (ValueType::Enum(expected_enum.clone()), Some(ResolvedValue::EnumVariant(variant)))
+                    (
+                        ValueType::Enum(expected_enum.clone()),
+                        Some(ResolvedValue::EnumVariant(variant)),
+                    )
                 } else {
                     (ValueType::Unknown, None)
                 }
@@ -457,7 +488,7 @@ impl<'a> ValuesChecker<'a> {
         }
     }
 
-    fn resolve_env_enum_variant(
+    pub(super) fn resolve_env_enum_variant(
         &mut self,
         env_name: &str,
         raw: &str,
@@ -499,23 +530,27 @@ impl<'a> ValuesChecker<'a> {
         candidates.into_iter().next()
     }
 
-    fn value_expr_type(&mut self, value: &ValueExpr, expected: &ValueType) -> ValueType {
+    pub(super) fn value_expr_type(&mut self, value: &ValueExpr, expected: &ValueType) -> ValueType {
         match value {
             ValueExpr::Bool(_, _) => ValueType::Bool,
             ValueExpr::Int(_, _) => ValueType::UntypedInt,
             ValueExpr::String(_, _) => ValueType::String,
-            ValueExpr::Env { name, .. } => self.env_value_type(name.value.as_str(), expected, value.span()),
+            ValueExpr::Env { name, .. } => {
+                self.env_value_type(name.value.as_str(), expected, value.span())
+            }
             ValueExpr::Path(path) => {
                 let expanded = expand_with_aliases(path, &self.aliases);
                 let option_matches = self.symbols.resolve_option_paths(&expanded);
                 if !option_matches.is_empty() {
                     let resolved = option_matches[0].clone();
-                    self.push_diag(Diagnostic::error(
-                        "E_VALUE_PATH_RESOLVES_TO_OPTION",
-                        format!("value path `{}` resolves to option", path.to_string()),
-                        path.span,
-                    )
-                    .with_path(resolved));
+                    self.push_diag(
+                        Diagnostic::error(
+                            "E_VALUE_PATH_RESOLVES_TO_OPTION",
+                            format!("value path `{}` resolves to option", path.to_string()),
+                            path.span,
+                        )
+                        .with_path(resolved),
+                    );
                     return ValueType::Unknown;
                 }
 
@@ -553,11 +588,22 @@ impl<'a> ValuesChecker<'a> {
         }
     }
 
-    fn env_value_type(&mut self, name: &str, expected: &ValueType, span: Span) -> ValueType {
+    pub(super) fn env_value_type(
+        &mut self,
+        name: &str,
+        expected: &ValueType,
+        span: Span,
+    ) -> ValueType {
         self.parse_env_value(name, expected, span).actual_type
     }
 
-    fn push_env_parse_failed(&mut self, name: &str, value: &str, expected: &str, span: Span) {
+    pub(super) fn push_env_parse_failed(
+        &mut self,
+        name: &str,
+        value: &str,
+        expected: &str,
+        span: Span,
+    ) {
         self.push_diag(Diagnostic::error(
             "E_ENV_PARSE_FAILED",
             format!(
@@ -568,7 +614,7 @@ impl<'a> ValuesChecker<'a> {
         ));
     }
 
-    fn post_check_diagnostics(&mut self) -> Vec<(Diagnostic, Option<usize>)> {
+    pub(super) fn post_check_diagnostics(&mut self) -> Vec<(Diagnostic, Option<usize>)> {
         let runtime = self.runtime_state();
         self.resolved = Some(build_resolved_config(self.symbols, &runtime));
 
@@ -580,11 +626,11 @@ impl<'a> ValuesChecker<'a> {
         diagnostics
     }
 
-    fn runtime_state(&self) -> RuntimeState {
+    pub(super) fn runtime_state(&self) -> RuntimeState {
         evaluate_runtime_state(self.symbols, &self.assignments)
     }
 
-    fn runtime_inactive_assignment_diagnostics(
+    pub(super) fn runtime_inactive_assignment_diagnostics(
         &self,
         runtime: &RuntimeState,
     ) -> Vec<(Diagnostic, Option<usize>)> {
@@ -613,7 +659,10 @@ impl<'a> ValuesChecker<'a> {
         diagnostics
     }
 
-    fn missing_value_diagnostics(&self, runtime: &RuntimeState) -> Vec<(Diagnostic, Option<usize>)> {
+    pub(super) fn missing_value_diagnostics(
+        &self,
+        runtime: &RuntimeState,
+    ) -> Vec<(Diagnostic, Option<usize>)> {
         let mut option_paths = self
             .symbols
             .option_types
@@ -651,7 +700,10 @@ impl<'a> ValuesChecker<'a> {
         diagnostics
     }
 
-    fn missing_context_diagnostics(&self, runtime: &RuntimeState) -> Vec<(Diagnostic, Option<usize>)> {
+    pub(super) fn missing_context_diagnostics(
+        &self,
+        runtime: &RuntimeState,
+    ) -> Vec<(Diagnostic, Option<usize>)> {
         let mut diagnostics = Vec::new();
         for ctx_path in &runtime.ctx_references {
             if runtime.value_of(ctx_path).is_some() {
@@ -674,7 +726,10 @@ impl<'a> ValuesChecker<'a> {
         diagnostics
     }
 
-    fn runtime_require_diagnostics(&self, runtime: &RuntimeState) -> Vec<(Diagnostic, Option<usize>)> {
+    pub(super) fn runtime_require_diagnostics(
+        &self,
+        runtime: &RuntimeState,
+    ) -> Vec<(Diagnostic, Option<usize>)> {
         let mut diagnostics = Vec::new();
         let mut scope = Vec::new();
         let mut require_counters = HashMap::new();
@@ -689,9 +744,8 @@ impl<'a> ValuesChecker<'a> {
         diagnostics
     }
 
-    fn push_diag(&mut self, diagnostic: Diagnostic) {
+    pub(super) fn push_diag(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
         self.diagnostic_stmt_indexes.push(self.current_stmt_index);
     }
 }
-

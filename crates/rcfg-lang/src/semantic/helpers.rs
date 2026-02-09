@@ -1,4 +1,6 @@
-fn promote_strict_diagnostics(diagnostics: &mut [Diagnostic]) {
+use super::*;
+
+pub(super) fn promote_strict_diagnostics(diagnostics: &mut [Diagnostic]) {
     for diagnostic in diagnostics {
         if diagnostic.code == "W_INACTIVE_ASSIGNMENT" {
             diagnostic.code = "E_INACTIVE_ASSIGNMENT".to_string();
@@ -16,7 +18,7 @@ fn promote_strict_diagnostics(diagnostics: &mut [Diagnostic]) {
     }
 }
 
-fn merge_dependency_paths(base: &[String], extra: &[String]) -> Vec<String> {
+pub(super) fn merge_dependency_paths(base: &[String], extra: &[String]) -> Vec<String> {
     let mut merged = Vec::with_capacity(base.len() + extra.len());
     merged.extend(base.iter().cloned());
     merged.extend(extra.iter().cloned());
@@ -25,7 +27,7 @@ fn merge_dependency_paths(base: &[String], extra: &[String]) -> Vec<String> {
     merged
 }
 
-fn canonical_cycle_signature(cycle: &[String]) -> String {
+pub(super) fn canonical_cycle_signature(cycle: &[String]) -> String {
     if cycle.len() <= 1 {
         return cycle.join("->");
     }
@@ -49,7 +51,7 @@ fn canonical_cycle_signature(cycle: &[String]) -> String {
     best.unwrap_or_default()
 }
 
-fn option_has_secret_attr(option: &OptionDecl) -> bool {
+pub(super) fn option_has_secret_attr(option: &OptionDecl) -> bool {
     option
         .meta
         .attrs
@@ -57,7 +59,7 @@ fn option_has_secret_attr(option: &OptionDecl) -> bool {
         .any(|attr| matches!(attr.kind, AttrKind::Secret))
 }
 
-fn normalize_export_name_with_prefix(path: &str, prefix: &str) -> String {
+pub(super) fn normalize_export_name_with_prefix(path: &str, prefix: &str) -> String {
     let mut normalized = String::new();
     let mut prev_underscore = false;
 
@@ -88,11 +90,11 @@ fn normalize_export_name_with_prefix(path: &str, prefix: &str) -> String {
     format!("{}{}", prefix, normalized)
 }
 
-fn module_has_metadata(module: &crate::ast::ModDecl) -> bool {
+pub(super) fn module_has_metadata(module: &crate::ast::ModDecl) -> bool {
     !module.meta.attrs.is_empty() || !module.meta.doc.is_empty()
 }
 
-fn extract_range_attr(option: &OptionDecl) -> Option<IntRange> {
+pub(super) fn extract_range_attr(option: &OptionDecl) -> Option<IntRange> {
     option.meta.attrs.iter().find_map(|attr| {
         if let AttrKind::Range(range) = &attr.kind {
             Some(range.clone())
@@ -102,7 +104,7 @@ fn extract_range_attr(option: &OptionDecl) -> Option<IntRange> {
     })
 }
 
-fn option_type_to_value_type(ty: &Type) -> ValueType {
+pub(super) fn option_type_to_value_type(ty: &Type) -> ValueType {
     match ty {
         Type::Bool(_) => ValueType::Bool,
         Type::U8(_) => ValueType::Int(IntType::U8),
@@ -121,7 +123,7 @@ fn option_type_to_value_type(ty: &Type) -> ValueType {
     }
 }
 
-fn build_full_path(scope: &[String], name: &str) -> String {
+pub(super) fn build_full_path(scope: &[String], name: &str) -> String {
     if scope.is_empty() {
         name.to_string()
     } else {
@@ -129,7 +131,7 @@ fn build_full_path(scope: &[String], name: &str) -> String {
     }
 }
 
-fn build_candidate_paths(scope: &[String], raw_path: &str) -> Vec<String> {
+pub(super) fn build_candidate_paths(scope: &[String], raw_path: &str) -> Vec<String> {
     let mut candidates = Vec::new();
     for i in (0..=scope.len()).rev() {
         let prefix = &scope[..i];
@@ -142,7 +144,7 @@ fn build_candidate_paths(scope: &[String], raw_path: &str) -> Vec<String> {
     candidates
 }
 
-fn expand_with_aliases(path: &Path, aliases: &HashMap<String, String>) -> String {
+pub(super) fn expand_with_aliases(path: &Path, aliases: &HashMap<String, String>) -> String {
     if path.segments.is_empty() {
         return path.to_string();
     }
@@ -164,11 +166,11 @@ fn expand_with_aliases(path: &Path, aliases: &HashMap<String, String>) -> String
     path.to_string()
 }
 
-fn path_matches(candidate: &str, raw_path: &str) -> bool {
+pub(super) fn path_matches(candidate: &str, raw_path: &str) -> bool {
     candidate == raw_path || candidate.ends_with(&format!("::{}", raw_path))
 }
 
-fn parse_env_int(raw: &str) -> Option<i128> {
+pub(super) fn parse_env_int(raw: &str) -> Option<i128> {
     let cleaned = raw.replace('_', "");
     if let Some(hex) = cleaned
         .strip_prefix("0x")
@@ -180,7 +182,7 @@ fn parse_env_int(raw: &str) -> Option<i128> {
     }
 }
 
-fn require_scope_key(scope: &[String]) -> String {
+pub(super) fn require_scope_key(scope: &[String]) -> String {
     if scope.is_empty() {
         "root".to_string()
     } else {
@@ -188,30 +190,32 @@ fn require_scope_key(scope: &[String]) -> String {
     }
 }
 
-fn next_require_ordinal(counters: &mut HashMap<String, usize>, scope: &[String]) -> usize {
+pub(super) fn next_require_ordinal(
+    counters: &mut HashMap<String, usize>,
+    scope: &[String],
+) -> usize {
     let key = require_scope_key(scope);
     let entry = counters.entry(key).or_insert(0);
     *entry += 1;
     *entry
 }
 
-fn require_message_key(require: &crate::ast::RequireStmt, scope: &[String], ordinal: usize) -> String {
-    if let Some(message) = require
-        .meta
-        .attrs
-        .iter()
-        .find_map(|attr| match &attr.kind {
-            AttrKind::Msg(value) => Some(value.clone()),
-            _ => None,
-        })
-    {
+pub(super) fn require_message_key(
+    require: &crate::ast::RequireStmt,
+    scope: &[String],
+    ordinal: usize,
+) -> String {
+    if let Some(message) = require.meta.attrs.iter().find_map(|attr| match &attr.kind {
+        AttrKind::Msg(value) => Some(value.clone()),
+        _ => None,
+    }) {
         return message;
     }
 
     format!("main.{}.require.{}", require_scope_key(scope), ordinal)
 }
 
-fn redacted_int_arg(value: i128, secret: bool) -> DiagnosticArgValue {
+pub(super) fn redacted_int_arg(value: i128, secret: bool) -> DiagnosticArgValue {
     if secret {
         DiagnosticArgValue::String("[redacted]".to_string())
     } else {
@@ -219,7 +223,7 @@ fn redacted_int_arg(value: i128, secret: bool) -> DiagnosticArgValue {
     }
 }
 
-fn int_type_name(int_type: IntType) -> &'static str {
+pub(super) fn int_type_name(int_type: IntType) -> &'static str {
     match int_type {
         IntType::U8 => "u8",
         IntType::U16 => "u16",
@@ -228,7 +232,7 @@ fn int_type_name(int_type: IntType) -> &'static str {
     }
 }
 
-fn int_bounds_for_int_type(int_type: IntType) -> (i128, i128) {
+pub(super) fn int_bounds_for_int_type(int_type: IntType) -> (i128, i128) {
     match int_type {
         IntType::U8 => (u8::MIN as i128, u8::MAX as i128),
         IntType::U16 => (u16::MIN as i128, u16::MAX as i128),
@@ -237,7 +241,7 @@ fn int_bounds_for_int_type(int_type: IntType) -> (i128, i128) {
     }
 }
 
-fn int_value_type_bounds(value_type: &ValueType) -> Option<(i128, i128)> {
+pub(super) fn int_value_type_bounds(value_type: &ValueType) -> Option<(i128, i128)> {
     if let ValueType::Int(int_type) = value_type {
         Some(int_bounds_for_int_type(*int_type))
     } else {
@@ -245,7 +249,7 @@ fn int_value_type_bounds(value_type: &ValueType) -> Option<(i128, i128)> {
     }
 }
 
-fn is_untyped_int_literal_expr(expr: &Expr) -> bool {
+pub(super) fn is_untyped_int_literal_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Int(_, _) => true,
         Expr::Group { expr, .. } => is_untyped_int_literal_expr(expr),
@@ -253,7 +257,7 @@ fn is_untyped_int_literal_expr(expr: &Expr) -> bool {
     }
 }
 
-fn untyped_int_literal_value(expr: &Expr) -> Option<i128> {
+pub(super) fn untyped_int_literal_value(expr: &Expr) -> Option<i128> {
     match expr {
         Expr::Int(value, _) => Some(*value),
         Expr::Group { expr, .. } => untyped_int_literal_value(expr),
@@ -261,7 +265,7 @@ fn untyped_int_literal_value(expr: &Expr) -> Option<i128> {
     }
 }
 
-fn int_type_bounds(ty: &Type) -> Option<(i128, i128)> {
+pub(super) fn int_type_bounds(ty: &Type) -> Option<(i128, i128)> {
     match ty {
         Type::U8(_) => Some((u8::MIN as i128, u8::MAX as i128)),
         Type::U16(_) => Some((u16::MIN as i128, u16::MAX as i128)),
@@ -271,7 +275,7 @@ fn int_type_bounds(ty: &Type) -> Option<(i128, i128)> {
     }
 }
 
-fn enum_name_matches(expected: &str, candidate: &str) -> bool {
+pub(super) fn enum_name_matches(expected: &str, candidate: &str) -> bool {
     if expected == candidate {
         return true;
     }
@@ -280,4 +284,3 @@ fn enum_name_matches(expected: &str, candidate: &str) -> bool {
     let candidate_base = candidate.rsplit("::").next().unwrap_or(candidate);
     expected_base == candidate_base
 }
-
