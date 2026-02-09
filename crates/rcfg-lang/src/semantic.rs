@@ -194,6 +194,7 @@ pub struct ValuesAnalysisReport {
     pub values: ValuesFile,
     pub stmt_origins: Vec<ValuesStmtOrigin>,
     pub diagnostics: Vec<Diagnostic>,
+    pub diagnostic_stmt_indexes: Vec<Option<usize>>,
 }
 
 pub fn analyze_schema(file: &File) -> SemanticReport {
@@ -216,9 +217,16 @@ pub fn analyze_schema(file: &File) -> SemanticReport {
 }
 
 pub fn analyze_values(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnostic> {
+    analyze_values_with_stmt_indexes(values, symbols).0
+}
+
+fn analyze_values_with_stmt_indexes(
+    values: &ValuesFile,
+    symbols: &SymbolTable,
+) -> (Vec<Diagnostic>, Vec<Option<usize>>) {
     let mut checker = ValuesChecker::new(symbols);
     checker.check(values);
-    checker.diagnostics
+    (checker.diagnostics, checker.diagnostic_stmt_indexes)
 }
 
 pub fn analyze_values_from_path_report(
@@ -226,12 +234,15 @@ pub fn analyze_values_from_path_report(
     symbols: &SymbolTable,
 ) -> ValuesAnalysisReport {
     let (values, stmt_origins, mut diagnostics) = expand_values_includes_with_origins(entry);
-    let mut semantic = analyze_values(&values, symbols);
+    let mut diagnostic_stmt_indexes = vec![None; diagnostics.len()];
+    let (mut semantic, mut semantic_stmt_indexes) = analyze_values_with_stmt_indexes(&values, symbols);
     diagnostics.append(&mut semantic);
+    diagnostic_stmt_indexes.append(&mut semantic_stmt_indexes);
     ValuesAnalysisReport {
         values,
         stmt_origins,
         diagnostics,
+        diagnostic_stmt_indexes,
     }
 }
 
@@ -480,8 +491,10 @@ impl IncludeExpander {
 struct ValuesChecker<'a> {
     symbols: &'a SymbolTable,
     diagnostics: Vec<Diagnostic>,
+    diagnostic_stmt_indexes: Vec<Option<usize>>,
     aliases: HashMap<String, String>,
     assigned: HashMap<String, Span>,
+    current_stmt_index: Option<usize>,
 }
 
 impl<'a> ValuesChecker<'a> {
@@ -489,13 +502,16 @@ impl<'a> ValuesChecker<'a> {
         Self {
             symbols,
             diagnostics: Vec::new(),
+            diagnostic_stmt_indexes: Vec::new(),
             aliases: HashMap::new(),
             assigned: HashMap::new(),
+            current_stmt_index: None,
         }
     }
 
     fn check(&mut self, values: &ValuesFile) {
-        for stmt in &values.stmts {
+        for (index, stmt) in values.stmts.iter().enumerate() {
+            self.current_stmt_index = Some(index);
             match stmt {
                 ValuesStmt::Include(_) => {}
                 ValuesStmt::Use(use_stmt) => {
@@ -510,11 +526,12 @@ impl<'a> ValuesChecker<'a> {
                 }
             }
         }
+        self.current_stmt_index = None;
     }
 
     fn record_duplicate_assignment(&mut self, target: &str, span: Span) {
         if let Some(previous) = self.assigned.insert(target.to_string(), span) {
-            self.diagnostics.push(Diagnostic::warning(
+            self.push_diag(Diagnostic::warning(
                 "W_DUPLICATE_ASSIGNMENT",
                 format!("option `{}` is assigned multiple times; last wins", target),
                 span.join(previous),
@@ -528,7 +545,7 @@ impl<'a> ValuesChecker<'a> {
         };
 
         if self.aliases.contains_key(&alias.value) {
-            self.diagnostics.push(Diagnostic::error(
+            self.push_diag(Diagnostic::error(
                 "E_USE_ALIAS_CONFLICT",
                 format!("use alias `{}` is already defined", alias.value),
                 alias.span,
@@ -545,7 +562,7 @@ impl<'a> ValuesChecker<'a> {
         let candidates = self.symbols.resolve_option_paths(&expanded);
 
         if candidates.is_empty() {
-            self.diagnostics.push(Diagnostic::error(
+            self.push_diag(Diagnostic::error(
                 "E_SYMBOL_NOT_FOUND",
                 format!("assignment target `{}` cannot be resolved", path.to_string()),
                 path.span,
@@ -554,7 +571,7 @@ impl<'a> ValuesChecker<'a> {
         }
 
         if candidates.len() > 1 {
-            self.diagnostics.push(Diagnostic::error(
+            self.push_diag(Diagnostic::error(
                 "E_AMBIGUOUS_PATH",
                 format!(
                     "assignment target `{}` is ambiguous: {}",
@@ -568,7 +585,7 @@ impl<'a> ValuesChecker<'a> {
 
         let resolved = candidates[0].clone();
         if resolved == "ctx" || resolved.starts_with("ctx::") {
-            self.diagnostics.push(Diagnostic::error(
+            self.push_diag(Diagnostic::error(
                 "E_CONTEXT_ASSIGNMENT_NOT_ALLOWED",
                 "assigning values to `ctx` is not allowed",
                 path.span,
@@ -585,7 +602,7 @@ impl<'a> ValuesChecker<'a> {
         };
 
         let Some(expected) = self.symbols.option_type(target).cloned() else {
-            self.diagnostics.push(Diagnostic::error(
+            self.push_diag(Diagnostic::error(
                 "E_SYMBOL_NOT_FOUND",
                 format!("assignment target `{}` is not an option", target),
                 value.span(),
@@ -595,7 +612,7 @@ impl<'a> ValuesChecker<'a> {
 
         let actual = self.value_expr_type(value, &expected);
         if !actual.is_unknown() && !expected.same_as(&actual) {
-            self.diagnostics.push(Diagnostic::error(
+            self.push_diag(Diagnostic::error(
                 "E_TYPE_MISMATCH",
                 format!(
                     "value type mismatch for `{}`: expected {:?}, got {:?}",
@@ -616,7 +633,7 @@ impl<'a> ValuesChecker<'a> {
                 let expanded = expand_with_aliases(path, &self.aliases);
                 let option_matches = self.symbols.resolve_option_paths(&expanded);
                 if !option_matches.is_empty() {
-                    self.diagnostics.push(Diagnostic::error(
+                    self.push_diag(Diagnostic::error(
                         "E_VALUE_PATH_RESOLVES_TO_OPTION",
                         format!("value path `{}` resolves to option", path.to_string()),
                         path.span,
@@ -626,7 +643,7 @@ impl<'a> ValuesChecker<'a> {
 
                 let mut matches = self.symbols.resolve_enum_variant_paths(&expanded);
                 if matches.is_empty() {
-                    self.diagnostics.push(Diagnostic::error(
+                    self.push_diag(Diagnostic::error(
                         "E_VALUE_PATH_NOT_ENUM_VARIANT",
                         format!("value path `{}` is not an enum variant", path.to_string()),
                         path.span,
@@ -635,7 +652,7 @@ impl<'a> ValuesChecker<'a> {
                 }
 
                 if matches.len() > 1 {
-                    self.diagnostics.push(Diagnostic::error(
+                    self.push_diag(Diagnostic::error(
                         "E_AMBIGUOUS_ENUM_VARIANT",
                         format!(
                             "enum variant `{}` is ambiguous: {}",
@@ -662,7 +679,7 @@ impl<'a> ValuesChecker<'a> {
         let raw = match std::env::var(name) {
             Ok(value) => value,
             Err(_) => {
-                self.diagnostics.push(Diagnostic::error(
+                self.push_diag(Diagnostic::error(
                     "E_ENV_NOT_SET",
                     format!("environment variable `{}` is not set", name),
                     span,
@@ -695,7 +712,7 @@ impl<'a> ValuesChecker<'a> {
     }
 
     fn push_env_parse_failed(&mut self, name: &str, value: &str, expected: &str, span: Span) {
-        self.diagnostics.push(Diagnostic::error(
+        self.push_diag(Diagnostic::error(
             "E_ENV_PARSE_FAILED",
             format!(
                 "failed to parse env `{}` value `{}` as {}",
@@ -703,6 +720,11 @@ impl<'a> ValuesChecker<'a> {
             ),
             span,
         ));
+    }
+
+    fn push_diag(&mut self, diagnostic: Diagnostic) {
+        self.diagnostics.push(diagnostic);
+        self.diagnostic_stmt_indexes.push(self.current_stmt_index);
     }
 }
 
@@ -1746,10 +1768,41 @@ mod app {
         let report = super::analyze_values_from_path_report(&root, &symbols);
         assert_eq!(report.values.stmts.len(), 1);
         assert_eq!(report.stmt_origins.len(), 1);
+        assert_eq!(report.diagnostics.len(), report.diagnostic_stmt_indexes.len());
         assert!(report.stmt_origins[0].source.ends_with("base.rcfgv"));
 
         let _ = std::fs::remove_file(&base);
         let _ = std::fs::remove_file(&root);
+        let _ = std::fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn values_report_maps_semantic_diag_to_stmt_index() {
+        let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+        let symbols = symbols_from(schema_src);
+
+        let tmp = std::env::temp_dir().join(format!(
+            "rcfg_diag_stmt_map_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        let values = tmp.join("values.rcfgv");
+        std::fs::write(&values, "app::enabled = 1;\n").expect("write values");
+
+        let report = super::analyze_values_from_path_report(&values, &symbols);
+        let index = report
+            .diagnostics
+            .iter()
+            .position(|diag| diag.code == "E_TYPE_MISMATCH")
+            .expect("expected E_TYPE_MISMATCH");
+        assert_eq!(report.diagnostic_stmt_indexes[index], Some(0));
+
+        let _ = std::fs::remove_file(&values);
         let _ = std::fs::remove_dir(&tmp);
     }
 
