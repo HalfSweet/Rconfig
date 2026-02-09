@@ -503,6 +503,7 @@ enum ResolveOptionPathResult {
 struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
     diagnostics: Vec<Diagnostic>,
+    activation_edges: HashMap<String, HashSet<String>>,
 }
 
 #[derive(Default)]
@@ -950,20 +951,34 @@ impl<'a> TypeChecker<'a> {
         Self {
             symbols,
             diagnostics: Vec::new(),
+            activation_edges: HashMap::new(),
         }
     }
 
     fn check_items(&mut self, items: &[Item], scope: &mut Vec<String>) {
+        let activation_deps = Vec::new();
+        self.check_items_with_activation(items, scope, &activation_deps);
+        self.check_activation_cycles();
+    }
+
+    fn check_items_with_activation(
+        &mut self,
+        items: &[Item],
+        scope: &mut Vec<String>,
+        activation_deps: &[String],
+    ) {
         for item in items {
             match item {
                 Item::Use(_) | Item::Enum(_) => {}
                 Item::Mod(module) => {
                     scope.push(module.name.value.clone());
-                    self.check_items(&module.items, scope);
+                    self.check_items_with_activation(&module.items, scope, activation_deps);
                     scope.pop();
                 }
                 Item::Option(option) => {
                     self.check_option(option, scope);
+                    let option_path = build_full_path(scope, &option.name.value);
+                    self.record_activation_dependencies(&option_path, activation_deps);
                 }
                 Item::Require(require) => {
                     self.lint_require_msg(require);
@@ -980,21 +995,50 @@ impl<'a> TypeChecker<'a> {
                 Item::When(when_block) => {
                     self.expect_bool_expr(&when_block.condition, scope, None);
                     self.check_inactive_value_references(&when_block.condition, scope);
-                    self.check_items(&when_block.items, scope);
+
+                    let condition_deps =
+                        self.collect_condition_option_dependencies(&when_block.condition, scope);
+                    let next_deps = merge_dependency_paths(activation_deps, &condition_deps);
+                    self.check_items_with_activation(&when_block.items, scope, &next_deps);
                 }
                 Item::Match(match_block) => {
                     self.check_match_block(match_block, scope);
+
+                    let match_expr_deps =
+                        self.collect_condition_option_dependencies(&match_block.expr, scope);
+                    let match_deps = merge_dependency_paths(activation_deps, &match_expr_deps);
+
                     for case in &match_block.cases {
+                        let mut case_deps = match_deps.clone();
                         if let Some(guard) = &case.guard {
                             self.expect_bool_expr(guard, scope, None);
                             self.check_inactive_value_references(guard, scope);
+
+                            let guard_deps =
+                                self.collect_condition_option_dependencies(guard, scope);
+                            case_deps = merge_dependency_paths(&case_deps, &guard_deps);
                         }
-                        self.check_items(&case.items, scope);
+                        self.check_items_with_activation(&case.items, scope, &case_deps);
                     }
                 }
             }
         }
     }
+
+    fn record_activation_dependencies(&mut self, option_path: &str, activation_deps: &[String]) {
+        if activation_deps.is_empty() {
+            return;
+        }
+
+        let entry = self
+            .activation_edges
+            .entry(option_path.to_string())
+            .or_default();
+        for dep in activation_deps {
+            entry.insert(dep.clone());
+        }
+    }
+
 
     fn check_option(&mut self, option: &OptionDecl, scope: &[String]) {
         self.lint_option_doc(option, scope);
@@ -1108,6 +1152,139 @@ impl<'a> TypeChecker<'a> {
                 require.span,
             ));
         }
+    }
+
+    fn collect_condition_option_dependencies(&self, expr: &Expr, scope: &[String]) -> Vec<String> {
+        let mut deps = Vec::new();
+        self.collect_condition_option_dependencies_into(expr, scope, &mut deps);
+        deps.sort();
+        deps.dedup();
+        deps
+    }
+
+    fn collect_condition_option_dependencies_into(
+        &self,
+        expr: &Expr,
+        scope: &[String],
+        out: &mut Vec<String>,
+    ) {
+        match expr {
+            Expr::Path(path) => {
+                if let ResolveOptionPathResult::Resolved(option_path, _) =
+                    self.symbols.resolve_option_path_in_scope(scope, path)
+                {
+                    out.push(option_path);
+                }
+            }
+            Expr::Unary { expr, .. } => {
+                self.collect_condition_option_dependencies_into(expr, scope, out)
+            }
+            Expr::Binary { left, right, .. } => {
+                self.collect_condition_option_dependencies_into(left, scope, out);
+                self.collect_condition_option_dependencies_into(right, scope, out);
+            }
+            Expr::Call { args, .. } => {
+                for arg in args {
+                    self.collect_condition_option_dependencies_into(arg, scope, out);
+                }
+            }
+            Expr::InRange { expr, .. } => {
+                self.collect_condition_option_dependencies_into(expr, scope, out)
+            }
+            Expr::InSet { expr, elems, .. } => {
+                self.collect_condition_option_dependencies_into(expr, scope, out);
+                for elem in elems {
+                    if let InSetElem::Path(path) = elem {
+                        if let ResolveOptionPathResult::Resolved(option_path, _) =
+                            self.symbols.resolve_option_path_in_scope(scope, path)
+                        {
+                            out.push(option_path);
+                        }
+                    }
+                }
+            }
+            Expr::Group { expr, .. } => {
+                self.collect_condition_option_dependencies_into(expr, scope, out)
+            }
+            Expr::Bool(_, _) | Expr::Int(_, _) | Expr::String(_, _) | Expr::SelfValue(_) => {}
+        }
+    }
+
+    fn check_activation_cycles(&mut self) {
+        let mut nodes = self
+            .activation_edges
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for deps in self.activation_edges.values() {
+            nodes.extend(deps.iter().cloned());
+        }
+        nodes.sort();
+        nodes.dedup();
+
+        let mut visiting = HashSet::new();
+        let mut visited = HashSet::new();
+        let mut stack = Vec::new();
+        let mut reported = HashSet::new();
+
+        for node in nodes {
+            self.check_activation_cycle_from(
+                &node,
+                &mut visiting,
+                &mut visited,
+                &mut stack,
+                &mut reported,
+            );
+        }
+    }
+
+    fn check_activation_cycle_from(
+        &mut self,
+        node: &str,
+        visiting: &mut HashSet<String>,
+        visited: &mut HashSet<String>,
+        stack: &mut Vec<String>,
+        reported: &mut HashSet<String>,
+    ) {
+        if visiting.contains(node) {
+            if let Some(pos) = stack.iter().position(|item| item == node) {
+                let mut cycle = stack[pos..].to_vec();
+                cycle.push(node.to_string());
+                let signature = canonical_cycle_signature(&cycle);
+                if reported.insert(signature) {
+                    let chain = cycle.join(" -> ");
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E_CIRCULAR_ACTIVATION",
+                            format!("activation dependency cycle detected: {}", chain),
+                            self.symbols.option_span(node).unwrap_or_default(),
+                        )
+                        .with_path(node.to_string()),
+                    );
+                }
+            }
+            return;
+        }
+
+        if visited.contains(node) {
+            return;
+        }
+
+        visiting.insert(node.to_string());
+        stack.push(node.to_string());
+
+        let deps = self
+            .activation_edges
+            .get(node)
+            .cloned()
+            .unwrap_or_default();
+        for dep in deps {
+            self.check_activation_cycle_from(&dep, visiting, visited, stack, reported);
+        }
+
+        stack.pop();
+        visiting.remove(node);
+        visited.insert(node.to_string());
     }
 
     fn check_inactive_value_references(&mut self, expr: &Expr, scope: &[String]) {
@@ -1522,6 +1699,39 @@ impl<'a> TypeChecker<'a> {
             }
         }
     }
+}
+
+fn merge_dependency_paths(base: &[String], extra: &[String]) -> Vec<String> {
+    let mut merged = Vec::with_capacity(base.len() + extra.len());
+    merged.extend(base.iter().cloned());
+    merged.extend(extra.iter().cloned());
+    merged.sort();
+    merged.dedup();
+    merged
+}
+
+fn canonical_cycle_signature(cycle: &[String]) -> String {
+    if cycle.len() <= 1 {
+        return cycle.join("->");
+    }
+
+    let sequence = &cycle[..cycle.len() - 1];
+    if sequence.is_empty() {
+        return String::new();
+    }
+
+    let mut best: Option<String> = None;
+    for offset in 0..sequence.len() {
+        let rotated = (0..sequence.len())
+            .map(|index| sequence[(offset + index) % sequence.len()].clone())
+            .collect::<Vec<_>>()
+            .join("->");
+        if best.as_ref().map_or(true, |current| rotated < *current) {
+            best = Some(rotated);
+        }
+    }
+
+    best.unwrap_or_default()
 }
 
 fn module_has_metadata(module: &crate::ast::ModDecl) -> bool {

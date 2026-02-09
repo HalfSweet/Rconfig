@@ -1036,3 +1036,30 @@ mod app {
         report.diagnostics
     );
 }
+
+#[test]
+fn reports_circular_activation_dependencies() {
+    let src = r#"
+mod app {
+  when b {
+    option a: bool = false;
+  }
+
+  when a {
+    option b: bool = false;
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(parse_diags.is_empty(), "parse diagnostics: {parse_diags:#?}");
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_CIRCULAR_ACTIVATION"),
+        "expected E_CIRCULAR_ACTIVATION, got: {:#?}",
+        report.diagnostics
+    );
+}
