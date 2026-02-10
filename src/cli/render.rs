@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rcfg_lang::{IntType, ResolvedConfig, ResolvedValue, SymbolKind, ValueType};
 
@@ -171,8 +171,15 @@ pub(crate) fn render_resolved_json(
     symbols: &rcfg_lang::SymbolTable,
 ) -> serde_json::Value {
     let mut map = BTreeMap::new();
+    let secret_paths = resolved
+        .options
+        .iter()
+        .filter(|option| symbols.option_is_secret(&option.path))
+        .map(|option| option.path.as_str())
+        .collect::<HashSet<_>>();
+
     for option in &resolved.options {
-        let is_secret = symbols.option_is_secret(&option.path);
+        let is_secret = secret_paths.contains(option.path.as_str());
         let value = if is_secret && !include_secrets {
             serde_json::json!({"redacted": true, "value": null})
         } else {
@@ -185,20 +192,20 @@ pub(crate) fn render_resolved_json(
                     .unwrap_or(serde_json::Value::Null),
             })
         };
-    map.insert(
-        option.path.clone(),
-        serde_json::json!({
-            "active": option.active,
-            "type": option
-                .value_type
-                .as_ref()
-                .map(value_type_to_json)
-                .unwrap_or(serde_json::Value::Null),
-            "source": option.source.map(|source| match source {
-                rcfg_lang::ValueSource::User => "user",
-                rcfg_lang::ValueSource::Default => "default",
-                rcfg_lang::ValueSource::Context => "context",
-            }),
+        map.insert(
+            option.path.clone(),
+            serde_json::json!({
+                "active": option.active,
+                "type": option
+                    .value_type
+                    .as_ref()
+                    .map(value_type_to_json)
+                    .unwrap_or(serde_json::Value::Null),
+                "source": option.source.map(|source| match source {
+                    rcfg_lang::ValueSource::User => "user",
+                    rcfg_lang::ValueSource::Default => "default",
+                    rcfg_lang::ValueSource::Context => "context",
+                }),
                 "data": value,
             }),
         );
