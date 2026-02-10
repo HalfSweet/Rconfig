@@ -3,9 +3,13 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+};
 use crossterm::execute;
-use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use rcfg_lang::ValueType;
@@ -19,8 +23,8 @@ pub fn run_script_mode(app: &mut App, path: &std::path::Path) -> Result<(), Stri
         .map_err(|err| format!("failed to read script {}: {err}", path.display()))?;
 
     for (index, line) in text.lines().enumerate() {
-        let event = parse_script_line(line)
-            .map_err(|err| format!("script line {}: {err}", index + 1))?;
+        let event =
+            parse_script_line(line).map_err(|err| format!("script line {}: {err}", index + 1))?;
         let Some(event) = event else {
             continue;
         };
@@ -156,9 +160,7 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
                 app.state.pop_save_prompt_char();
             }
             AppEvent::Chars(text) => {
-                if let Some(path) = app.state.save_prompt_path.as_mut() {
-                    path.push_str(&text);
-                }
+                app.state.push_save_prompt_str(&text);
             }
             _ => {}
         }
@@ -206,7 +208,10 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
                 })
                 .unwrap_or(false);
 
-            app.state.set_bool_value(!current)?;
+            if let Err(err) = app.state.set_bool_value(!current) {
+                app.state.set_status_message(err);
+                return Ok(false);
+            }
             app.recompute();
             app.state.clear_status_message();
         }
@@ -246,8 +251,15 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
 
 fn perform_save(app: &mut App, target: PathBuf) -> Result<(), String> {
     if app.has_blocking_errors() {
-        app.state
-            .set_status_message("save blocked: resolve diagnostics first");
+        let error_count = app
+            .state
+            .diagnostics
+            .iter()
+            .filter(|diag| diag.severity == rcfg_lang::Severity::Error)
+            .count();
+        app.state.set_status_message(format!(
+            "save blocked: {error_count} error(s) — see diagnostics panel"
+        ));
         return Ok(());
     }
 

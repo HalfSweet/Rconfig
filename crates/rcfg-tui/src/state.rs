@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rcfg_lang::ast::{AssignStmt, ValuesStmt};
 use rcfg_lang::{
-    Diagnostic, Path, ResolvedConfig, ResolvedValue, Spanned, Span, ValueExpr, ValuesFile,
+    Diagnostic, Path, ResolvedConfig, ResolvedValue, Span, Spanned, ValueExpr, ValuesFile,
 };
 
 use crate::model::{ConfigTree, NodeKind};
@@ -54,7 +54,10 @@ impl UiState {
             return;
         }
 
-        let index = visible.iter().position(|id| *id == self.selected).unwrap_or(0);
+        let index = visible
+            .iter()
+            .position(|id| *id == self.selected)
+            .unwrap_or(0);
         let next_index = (index + 1).min(visible.len().saturating_sub(1));
         self.selected = visible[next_index];
         self.pending_quit_confirm = false;
@@ -66,7 +69,10 @@ impl UiState {
             return;
         }
 
-        let index = visible.iter().position(|id| *id == self.selected).unwrap_or(0);
+        let index = visible
+            .iter()
+            .position(|id| *id == self.selected)
+            .unwrap_or(0);
         let prev_index = index.saturating_sub(1);
         self.selected = visible[prev_index];
         self.pending_quit_confirm = false;
@@ -241,13 +247,23 @@ impl UiState {
         }
     }
 
+    pub fn push_save_prompt_str(&mut self, text: &str) {
+        if let Some(path) = self.save_prompt_path.as_mut() {
+            path.push_str(text);
+        }
+    }
+
     pub fn pop_save_prompt_char(&mut self) {
         if let Some(path) = self.save_prompt_path.as_mut() {
             path.pop();
         }
     }
 
-    pub fn apply_runtime_result(&mut self, resolved: &ResolvedConfig, diagnostics: Vec<Diagnostic>) {
+    pub fn apply_runtime_result(
+        &mut self,
+        resolved: &ResolvedConfig,
+        diagnostics: Vec<Diagnostic>,
+    ) {
         self.set_active_from_resolved(resolved);
         self.diagnostics = diagnostics;
     }
