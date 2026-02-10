@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# CMake / build outputs in all examples
+*/build/
+*/build-*/
+*/CMakeFiles/
+*/CMakeCache.txt
+*/cmake_install.cmake
+*/Makefile
+*/compile_commands.json
+
+# Generated config artifacts
+*/generated/
