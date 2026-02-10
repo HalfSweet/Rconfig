@@ -70,6 +70,26 @@ uart::mode = rtu;
 }
 
 #[test]
+fn parses_env_with_fallback_without_feature_gate_error() {
+    let src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+    let (_file, diags) = parse_schema_with_diagnostics(src);
+    assert!(diags.is_empty(), "schema parse diagnostics: {diags:#?}");
+
+    let values_src = r#"app::enabled = env("RCFG_ENABLE", "false");"#;
+    let (_values, values_diags) = parse_values_with_diagnostics(values_src);
+    assert!(
+        values_diags
+            .iter()
+            .all(|diag| diag.code != "E_FEATURE_NOT_SUPPORTED"),
+        "env fallback should be supported, got: {values_diags:#?}"
+    );
+}
+
+#[test]
 fn reports_reserved_grammar_and_conditional_enum() {
     let src = r#"
 when true {

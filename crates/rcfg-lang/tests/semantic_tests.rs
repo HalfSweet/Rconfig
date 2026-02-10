@@ -640,6 +640,58 @@ mod app {
 }
 
 #[test]
+fn values_env_fallback_uses_value_when_variable_missing() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+    let missing = "RCFG_TEST_ENV_FALLBACK_BOOL";
+    unsafe {
+        std::env::remove_var(missing);
+    }
+
+    let values_src = format!("app::enabled = env(\"{}\", \"true\");", missing);
+    let (values, diags) = parse_values_with_diagnostics(&values_src);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+    let semantic_diags = analyze_values(&values, &symbols);
+    assert!(
+        semantic_diags
+            .iter()
+            .all(|diag| diag.code != "E_ENV_NOT_SET" && diag.code != "E_TYPE_MISMATCH"),
+        "unexpected diagnostics: {semantic_diags:#?}"
+    );
+}
+
+#[test]
+fn values_env_fallback_still_checks_target_type() {
+    let schema_src = r#"
+mod app {
+  option retries: u32 = 3;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+    let missing = "RCFG_TEST_ENV_FALLBACK_INT";
+    unsafe {
+        std::env::remove_var(missing);
+    }
+
+    let values_src = format!("app::retries = env(\"{}\", \"oops\");", missing);
+    let (values, diags) = parse_values_with_diagnostics(&values_src);
+    assert!(diags.is_empty(), "parse diagnostics: {diags:#?}");
+
+    let semantic_diags = analyze_values(&values, &symbols);
+    assert!(
+        semantic_diags
+            .iter()
+            .any(|diag| diag.code == "E_ENV_PARSE_FAILED"),
+        "expected E_ENV_PARSE_FAILED, got: {semantic_diags:#?}"
+    );
+}
+
+#[test]
 fn values_env_reports_parse_failure_for_bool() {
     let schema_src = r#"
 mod app {

@@ -399,21 +399,29 @@ impl<'a> ValuesChecker<'a> {
                     resolved_value,
                 }
             }
-            ValueExpr::Env { name, .. } => {
-                self.parse_env_value(name.value.as_str(), expected, value.span())
-            }
+            ValueExpr::Env { name, fallback, .. } => self.parse_env_value(
+                name.value.as_str(),
+                fallback.as_ref().map(|value| value.value.as_str()),
+                expected,
+                value.span(),
+            ),
         }
     }
 
     pub(super) fn parse_env_value(
         &mut self,
         name: &str,
+        fallback: Option<&str>,
         expected: &ValueType,
         span: Span,
     ) -> ParsedValue {
         let raw = match std::env::var(name) {
             Ok(value) => value,
             Err(_) => {
+                if let Some(fallback) = fallback {
+                    return self.parse_env_raw_value(name, fallback.to_string(), expected, span);
+                }
+
                 self.push_diag(Diagnostic::error(
                     "E_ENV_NOT_SET",
                     format!("environment variable `{}` is not set", name),
@@ -427,24 +435,36 @@ impl<'a> ValuesChecker<'a> {
             }
         };
 
+        self.parse_env_raw_value(name, raw, expected, span)
+    }
+
+    fn parse_env_raw_value(
+        &mut self,
+        name: &str,
+        raw: String,
+        expected: &ValueType,
+        span: Span,
+    ) -> ParsedValue {
+        let raw_ref = raw.as_str();
+
         let (actual_type, resolved_value) = match expected {
             ValueType::Bool => {
-                if raw == "true" {
+                if raw_ref == "true" {
                     (ValueType::Bool, Some(ResolvedValue::Bool(true)))
-                } else if raw == "false" {
+                } else if raw_ref == "false" {
                     (ValueType::Bool, Some(ResolvedValue::Bool(false)))
                 } else {
-                    self.push_env_parse_failed(name, &raw, "bool", span);
+                    self.push_env_parse_failed(name, raw_ref, "bool", span);
                     (ValueType::Unknown, None)
                 }
             }
-            ValueType::Int(int_ty) => match parse_env_int(&raw) {
+            ValueType::Int(int_ty) => match parse_env_int(raw_ref) {
                 Some(value) => {
                     let (min, max) = int_bounds_for_int_type(*int_ty);
                     if value < min || value > max {
                         self.push_env_parse_failed(
                             name,
-                            &raw,
+                            raw_ref,
                             &format!("{} in range [{}..={}]", int_type_name(*int_ty), min, max),
                             span,
                         );
@@ -454,20 +474,21 @@ impl<'a> ValuesChecker<'a> {
                     }
                 }
                 None => {
-                    self.push_env_parse_failed(name, &raw, "int", span);
+                    self.push_env_parse_failed(name, raw_ref, "int", span);
                     (ValueType::Unknown, None)
                 }
             },
-            ValueType::UntypedInt => match parse_env_int(&raw) {
+            ValueType::UntypedInt => match parse_env_int(raw_ref) {
                 Some(value) => (ValueType::UntypedInt, Some(ResolvedValue::Int(value))),
                 None => {
-                    self.push_env_parse_failed(name, &raw, "int", span);
+                    self.push_env_parse_failed(name, raw_ref, "int", span);
                     (ValueType::Unknown, None)
                 }
             },
             ValueType::String => (ValueType::String, Some(ResolvedValue::String(raw))),
             ValueType::Enum(expected_enum) => {
-                let enum_variant = self.resolve_env_enum_variant(name, &raw, expected_enum, span);
+                let enum_variant =
+                    self.resolve_env_enum_variant(name, raw_ref, expected_enum, span);
                 if let Some(variant) = enum_variant {
                     (
                         ValueType::Enum(expected_enum.clone()),
@@ -535,9 +556,12 @@ impl<'a> ValuesChecker<'a> {
             ValueExpr::Bool(_, _) => ValueType::Bool,
             ValueExpr::Int(_, _) => ValueType::UntypedInt,
             ValueExpr::String(_, _) => ValueType::String,
-            ValueExpr::Env { name, .. } => {
-                self.env_value_type(name.value.as_str(), expected, value.span())
-            }
+            ValueExpr::Env { name, fallback, .. } => self.env_value_type(
+                name.value.as_str(),
+                fallback.as_ref().map(|value| value.value.as_str()),
+                expected,
+                value.span(),
+            ),
             ValueExpr::Path(path) => {
                 let expanded = expand_with_aliases(path, &self.aliases);
                 let option_matches = self.symbols.resolve_option_paths(&expanded);
@@ -591,10 +615,11 @@ impl<'a> ValuesChecker<'a> {
     pub(super) fn env_value_type(
         &mut self,
         name: &str,
+        fallback: Option<&str>,
         expected: &ValueType,
         span: Span,
     ) -> ValueType {
-        self.parse_env_value(name, expected, span).actual_type
+        self.parse_env_value(name, fallback, expected, span).actual_type
     }
 
     pub(super) fn push_env_parse_failed(

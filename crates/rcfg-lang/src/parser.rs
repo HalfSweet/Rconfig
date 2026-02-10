@@ -1254,13 +1254,7 @@ impl Parser {
         )?;
         let key = self.parse_string_literal("env variable name")?;
         let fallback = if self.eat(TokenKind::Comma).is_some() {
-            let fallback = self.parse_string_literal("env fallback")?;
-            self.push_error(
-                "E_FEATURE_NOT_SUPPORTED",
-                "env(name, fallback) is reserved for v0.2+",
-                fallback.span,
-            );
-            Some(fallback)
+            Some(self.parse_string_literal("env fallback")?)
         } else {
             None
         };
