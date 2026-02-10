@@ -35,6 +35,7 @@ impl SymbolCollector {
                         &option.name.value,
                         SymbolKind::Option,
                         option.name.span,
+                        option.span,
                     ) {
                         self.symbols.insert_option_type(
                             full_path.clone(),
@@ -64,6 +65,7 @@ impl SymbolCollector {
                         &enum_decl.name.value,
                         SymbolKind::Enum,
                         enum_decl.name.span,
+                        enum_decl.span,
                     ) {
                         for variant in &enum_decl.variants {
                             let variant_path = format!("{}::{}", enum_path, variant.name.value);
@@ -103,7 +105,13 @@ impl SymbolCollector {
                         }
                     }
 
-                    self.declare(scope, &module.name.value, SymbolKind::Mod, module.name.span);
+                    self.declare(
+                        scope,
+                        &module.name.value,
+                        SymbolKind::Mod,
+                        module.name.span,
+                        module.span,
+                    );
                     scope.push(module.name.value.clone());
                     self.collect_items_in_context(&module.items, scope, in_conditional);
                     scope.pop();
@@ -120,7 +128,14 @@ impl SymbolCollector {
         }
     }
 
-    fn declare(&mut self, scope: &[String], name: &str, kind: SymbolKind, span: Span) -> bool {
+    fn declare(
+        &mut self,
+        scope: &[String],
+        name: &str,
+        kind: SymbolKind,
+        span: Span,
+        declaration_span: Span,
+    ) -> bool {
         let scope_key = scope.join("::");
         let full_path = if scope_key.is_empty() {
             name.to_string()
@@ -156,8 +171,9 @@ impl SymbolCollector {
         members.insert(name.to_string(), DeclInfo { kind, span });
         self.symbols.insert_symbol(SymbolInfo {
             kind,
-            path: full_path,
+            path: full_path.clone(),
         });
+        self.symbols.insert_symbol_span(full_path, declaration_span);
         true
     }
 }

@@ -60,6 +60,41 @@ mod uart {
 }
 
 #[test]
+fn symbol_table_tracks_mod_and_enum_declaration_spans() {
+    let src = r#"
+mod app {
+  enum Mode { off, on }
+  option enabled: bool = false;
+}
+"#;
+
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+    let mod_span = report
+        .symbols
+        .symbol_span("app")
+        .expect("expected module declaration span");
+    let enum_span = report
+        .symbols
+        .symbol_span("app::Mode")
+        .expect("expected enum declaration span");
+    let option_span = report
+        .symbols
+        .symbol_span("app::enabled")
+        .expect("expected option declaration span");
+
+    assert!(mod_span.start <= enum_span.start, "{mod_span:#?} {enum_span:#?}");
+    assert!(mod_span.end >= enum_span.end, "{mod_span:#?} {enum_span:#?}");
+    assert!(mod_span.start <= option_span.start, "{mod_span:#?} {option_span:#?}");
+    assert!(mod_span.end >= option_span.end, "{mod_span:#?} {option_span:#?}");
+}
+
+#[test]
 fn analyze_schema_files_merges_items() {
     let src_a = r#"
 mod uart {

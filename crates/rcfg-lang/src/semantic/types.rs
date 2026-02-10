@@ -243,6 +243,7 @@ pub struct SymbolTable {
     pub(super) option_defaults: BTreeMap<OptionPath, ConstValue>,
     pub(super) option_ranges: BTreeMap<OptionPath, IntRange>,
     pub(super) option_spans: BTreeMap<OptionPath, Span>,
+    pub(super) symbol_spans: BTreeMap<SymbolPath, Span>,
     pub(super) option_secrets: BTreeMap<OptionPath, bool>,
     pub(super) option_always_active: BTreeMap<OptionPath, bool>,
     pub(super) enum_variants: BTreeMap<VariantPath, EnumPath>,
@@ -298,6 +299,10 @@ impl SymbolTable {
         self.option_spans.insert(OptionPath::from(path), span);
     }
 
+    pub(super) fn insert_symbol_span(&mut self, path: String, span: Span) {
+        self.symbol_spans.insert(SymbolPath::from(path), span);
+    }
+
     pub(super) fn insert_option_secret(&mut self, path: String, secret: bool) {
         self.option_secrets.insert(OptionPath::from(path), secret);
     }
@@ -317,6 +322,10 @@ impl SymbolTable {
 
     pub fn option_span(&self, path: &str) -> Option<Span> {
         self.option_spans.get(path).copied()
+    }
+
+    pub fn symbol_span(&self, path: &str) -> Option<Span> {
+        self.symbol_spans.get(path).copied()
     }
 
     pub fn option_is_secret(&self, path: &str) -> bool {
