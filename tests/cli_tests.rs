@@ -389,6 +389,103 @@ schema = "src/missing.rcfg"
 }
 
 #[test]
+fn rcfg_check_accepts_manifest_dependencies_path_table() {
+    let root = fixture_path("cli_manifest_dependencies");
+    let schema = root.join("src/schema.rcfg");
+    let manifest = root.join("Config.toml");
+    let values = root.join("values.rcfgv");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &manifest,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+hal_uart = "../deps/hal_uart"
+platform = "../deps/platform"
+"#,
+    );
+    write_file(&values, "");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "check",
+            "--manifest",
+            manifest.to_str().expect("manifest path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run rcfg check");
+    assert!(output.status.success(), "rcfg check should succeed");
+}
+
+#[test]
+fn rcfg_check_rejects_manifest_dependencies_non_string_path() {
+    let root = fixture_path("cli_manifest_dependencies_invalid");
+    let schema = root.join("src/schema.rcfg");
+    let manifest = root.join("Config.toml");
+    let values = root.join("values.rcfgv");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &manifest,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+hal_uart = { path = "../deps/hal_uart" }
+"#,
+    );
+    write_file(&values, "");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "check",
+            "--manifest",
+            manifest.to_str().expect("manifest path"),
+            "--values",
+            values.to_str().expect("values path"),
+        ])
+        .output()
+        .expect("run rcfg check");
+    assert!(!output.status.success(), "rcfg check should fail");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("manifest dependency `hal_uart` must be a path string"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn rcfg_i18n_extract_generates_template_toml() {
     let root = fixture_path("cli_i18n_extract");
     let schema = root.join("src/schema.rcfg");

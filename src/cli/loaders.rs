@@ -73,6 +73,7 @@ pub(crate) struct ManifestModel {
     pub(crate) schema: PathBuf,
     pub(crate) package_name: String,
     pub(crate) package_version: String,
+    pub(crate) dependencies: HashMap<String, PathBuf>,
 }
 
 pub(crate) fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, String> {
@@ -121,11 +122,42 @@ pub(crate) fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>
         ));
     }
 
+    let dependencies = parse_manifest_dependencies(&value, base)?;
+
     Ok(Some(ManifestModel {
         schema: schema_path,
         package_name,
         package_version,
+        dependencies,
     }))
+}
+
+fn parse_manifest_dependencies(
+    manifest: &toml::Value,
+    base: &Path,
+) -> Result<HashMap<String, PathBuf>, String> {
+    let Some(dependencies) = manifest.get("dependencies") else {
+        return Ok(HashMap::new());
+    };
+    let dependencies = dependencies
+        .as_table()
+        .ok_or_else(|| "manifest [dependencies] must be a table".to_string())?;
+
+    let mut out = HashMap::new();
+    for (name, value) in dependencies {
+        let dependency_path = value
+            .as_str()
+            .ok_or_else(|| {
+                format!(
+                    "manifest dependency `{}` must be a path string in [dependencies]",
+                    name
+                )
+            })
+            .map(|path| base.join(path))?;
+        out.insert(name.clone(), dependency_path);
+    }
+
+    Ok(out)
 }
 
 pub(crate) fn resolve_schema_path(
