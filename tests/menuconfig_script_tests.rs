@@ -239,10 +239,7 @@ mod app {
 }
 "#,
     );
-    write_file(
-        &script,
-        "\nenter\ndown\nchars a\"b\\c\nsave\nenter\n",
-    );
+    write_file(&script, "\nenter\ndown\nchars a\"b\\c\nsave\nenter\n");
 
     let output = run_menuconfig(
         &[
@@ -304,7 +301,10 @@ space
     let payload: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("script summary json");
 
-    assert_eq!(payload["user_values"]["app::enabled"], serde_json::json!(true));
+    assert_eq!(
+        payload["user_values"]["app::enabled"],
+        serde_json::json!(true)
+    );
 
     let active_paths = payload["active_paths"]
         .as_array()
@@ -334,4 +334,343 @@ space
     assert_eq!(baud["active"], serde_json::json!(true));
     assert_eq!(baud["source"], serde_json::json!("default"));
     assert_eq!(baud["value"], serde_json::json!(115200));
+}
+
+#[test]
+fn menuconfig_script_supports_int_edit_and_range_validation() {
+    let schema = fixture_path("menuconfig_script_int_edit", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_int_edit", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  #[range(1200..=115200)]
+  option baud: u32 = 9600;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+chars 19200
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(
+        payload["user_values"]["app::baud"],
+        serde_json::json!(19200)
+    );
+
+    let resolved = payload["resolved_options"]
+        .as_array()
+        .expect("resolved options array");
+    let baud = resolved
+        .iter()
+        .find(|item| item["path"] == "app::baud")
+        .expect("resolved baud option");
+    assert_eq!(baud["value"], serde_json::json!(19200));
+    assert_eq!(baud["source"], serde_json::json!("user"));
+
+    let diagnostics = payload["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diag| diag["code"] != "E_RANGE_VIOLATION"),
+        "did not expect E_RANGE_VIOLATION for in-range int edit: {payload}"
+    );
+}
+
+#[test]
+fn menuconfig_script_supports_enum_selection() {
+    let schema = fixture_path("menuconfig_script_enum_edit", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_enum_edit", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  enum Mode { rtu, ascii }
+  option mode: Mode = Mode::rtu;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+down
+chars ascii
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(
+        payload["user_values"]["app::mode"],
+        serde_json::json!("ascii")
+    );
+
+    let resolved = payload["resolved_options"]
+        .as_array()
+        .expect("resolved options array");
+    let mode = resolved
+        .iter()
+        .find(|item| item["path"] == "app::mode")
+        .expect("resolved mode option");
+    assert_eq!(mode["value"], serde_json::json!("app::Mode::ascii"));
+    assert_eq!(mode["source"], serde_json::json!("user"));
+}
+
+#[test]
+fn menuconfig_script_blocks_save_when_errors_present() {
+    let schema = fixture_path("menuconfig_script_save_blocked", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_save_blocked", "script.txt");
+    let values = fixture_path("menuconfig_script_save_blocked", "profile.rcfgv");
+
+    let _ = fs::remove_file(&values);
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+  #[msg("demo.app.require.enabled")]
+  require!(enabled == true);
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+save
+enter
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+    assert!(
+        !values.exists(),
+        "save should be blocked when errors are present"
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+    let diagnostics = payload["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diag| diag["code"] == "E_REQUIRE_FAILED"),
+        "expected E_REQUIRE_FAILED in diagnostics: {payload}"
+    );
+}
+
+#[test]
+fn menuconfig_script_reset_clears_selected_override() {
+    let schema = fixture_path("menuconfig_script_reset", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_reset", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+space
+reset
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+    let user_values = payload["user_values"]
+        .as_object()
+        .expect("user values object");
+    assert!(
+        !user_values.contains_key("app::enabled"),
+        "reset should remove selected user override: {payload}"
+    );
+}
+
+#[test]
+fn menuconfig_script_applies_context_to_activation() {
+    let schema = fixture_path("menuconfig_script_context", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_context", "script.txt");
+    let context = fixture_path("menuconfig_script_context", "context.json");
+
+    write_file(
+        &schema,
+        r#"
+mod ctx {
+  option arch: string;
+}
+
+mod app {
+  option enabled: bool = false;
+  when ctx::arch == "arm" {
+    option arm_only: bool = true;
+  }
+}
+"#,
+    );
+    write_file(&script, "\nenter\n");
+    write_file(&context, "{\"ctx::arch\": \"arm\"}\n");
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--context",
+            context.to_str().expect("context path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+    let active_paths = payload["active_paths"]
+        .as_array()
+        .expect("active paths array")
+        .iter()
+        .filter_map(|item| item.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(
+        active_paths.contains(&"app::arm_only"),
+        "ctx-driven option should be active with --context: {payload}"
+    );
+}
+
+#[test]
+fn menuconfig_script_localizes_diagnostics_via_i18n() {
+    let schema = fixture_path("menuconfig_script_i18n", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_i18n", "script.txt");
+    let i18n = fixture_path("menuconfig_script_i18n", "zh-CN.toml");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+
+  #[msg("demo.app.require.fail")]
+  require!(enabled == true);
+}
+"#,
+    );
+    write_file(&script, "\nenter\n");
+    write_file(
+        &i18n,
+        r#"
+locale = "zh-CN"
+
+[strings]
+"demo.app.require.fail" = "必须启用 app::enabled"
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--i18n",
+            i18n.to_str().expect("i18n path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+    let diagnostics = payload["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    let require = diagnostics
+        .iter()
+        .find(|diag| diag["code"] == "E_REQUIRE_FAILED")
+        .expect("E_REQUIRE_FAILED diagnostic");
+
+    assert_eq!(
+        require["message"],
+        serde_json::json!("必须启用 app::enabled")
+    );
 }
