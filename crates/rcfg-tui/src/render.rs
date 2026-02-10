@@ -1,36 +1,205 @@
-use std::io::Write;
+use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
+use ratatui::Frame;
 
+use rcfg_lang::{ResolvedValue, Severity, ValueType};
+
+use crate::app::App;
 use crate::model::NodeKind;
-use crate::state::UiState;
 
-pub fn render_text(state: &UiState, writer: &mut dyn Write) -> Result<(), String> {
-    writeln!(writer, "rcfg menuconfig").map_err(|err| err.to_string())?;
-    writeln!(writer, "selected: {}", selected_path(state)).map_err(|err| err.to_string())?;
-    writeln!(writer, "dirty: {}", state.dirty).map_err(|err| err.to_string())?;
-    writeln!(writer, "diagnostics: {}", state.diagnostics.len()).map_err(|err| err.to_string())?;
+pub fn render_frame(frame: &mut Frame<'_>, app: &App) {
+    let areas = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(8),
+            Constraint::Length(7),
+            Constraint::Length(2),
+        ])
+        .split(frame.area());
 
-    for node_id in state.visible_nodes() {
-        let Some(node) = state.tree.node(node_id) else {
-            continue;
-        };
-        let marker = if node_id == state.selected { ">" } else { " " };
-        let depth = depth_of(state, node_id);
-        let indent = "  ".repeat(depth);
-        let status = if node.kind == NodeKind::Option {
-            if state.active_paths.contains(&node.path) {
-                "active"
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+        .split(areas[0]);
+
+    render_tree_panel(frame, app, body[0]);
+    render_detail_panel(frame, app, body[1]);
+    render_diagnostics_panel(frame, app, areas[1]);
+    render_status_bar(frame, app, areas[2]);
+}
+
+fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
+    let items = app
+        .state
+        .visible_nodes()
+        .into_iter()
+        .filter_map(|node_id| {
+            let node = app.state.tree.node(node_id)?;
+            let depth = depth_of(app, node_id);
+            let indent = "  ".repeat(depth);
+            let marker = if node_id == app.state.selected { ">" } else { " " };
+            let expand = if node.kind == NodeKind::Module {
+                if app.state.expanded.contains(&node.id) {
+                    "▾"
+                } else {
+                    "▸"
+                }
             } else {
-                "inactive"
+                " "
+            };
+            let status = if node.kind == NodeKind::Option {
+                if app.state.active_paths.contains(&node.path) {
+                    ""
+                } else {
+                    " (inactive)"
+                }
+            } else {
+                ""
+            };
+            let text = format!(
+                "{}{}{} {} {}{}",
+                marker,
+                indent,
+                expand,
+                icon(node.kind.clone()),
+                node.path,
+                status
+            );
+            let mut style = Style::default();
+            if node.kind == NodeKind::Option && !app.state.active_paths.contains(&node.path) {
+                style = style.fg(Color::DarkGray);
             }
-        } else {
-            ""
-        };
+            if node_id == app.state.selected {
+                style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
+            }
 
-        writeln!(writer, "{}{}{} {} {}", marker, indent, icon(node.kind.clone()), node.path, status)
-            .map_err(|err| err.to_string())?;
+            Some(ListItem::new(Line::from(text)).style(style))
+        })
+        .collect::<Vec<_>>();
+
+    let tree = List::new(items)
+        .block(Block::default().title("Tree").borders(Borders::ALL))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+    frame.render_widget(tree, area);
+}
+
+fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
+    let mut lines = Vec::new();
+
+    if let Some(node) = app.state.tree.node(app.state.selected) {
+        lines.push(Line::from(vec![
+            Span::styled("path: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(node.path.clone()),
+        ]));
+
+        lines.push(Line::from(vec![
+            Span::styled("kind: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(kind_label(node.kind.clone())),
+        ]));
+
+        lines.push(Line::from(vec![
+            Span::styled("type: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format_value_type(node.value_type.as_ref())),
+        ]));
+
+        let active = if node.kind == NodeKind::Option {
+            app.state.active_paths.contains(&node.path)
+        } else {
+            true
+        };
+        lines.push(Line::from(vec![
+            Span::styled("active: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(if active { "yes" } else { "no" }),
+        ]));
+
+        let override_text = app
+            .state
+            .user_values
+            .get(&node.path)
+            .map(format_value)
+            .unwrap_or_else(|| "<none>".to_string());
+        lines.push(Line::from(vec![
+            Span::styled("override: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(override_text),
+        ]));
+
+        lines.push(Line::default());
+        lines.push(Line::styled(
+            "docs:",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+
+        let docs = app
+            .session
+            .symbols()
+            .symbol_docs(&node.path)
+            .unwrap_or_default();
+
+        if docs.is_empty() {
+            lines.push(Line::from("(none)"));
+        } else {
+            for doc in docs.iter().take(8) {
+                lines.push(Line::from(doc.value.clone()));
+            }
+            if docs.len() > 8 {
+                lines.push(Line::from("..."));
+            }
+        }
     }
 
-    Ok(())
+    let detail = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().title("Details").borders(Borders::ALL));
+
+    frame.render_widget(detail, area);
+}
+
+fn render_diagnostics_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
+    let mut lines = Vec::new();
+
+    if app.state.diagnostics.is_empty() {
+        lines.push(Line::from("no diagnostics"));
+    } else {
+        for diag in app.state.diagnostics.iter().take(4) {
+            let severity = match diag.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+            };
+            let path = diag.path.as_deref().unwrap_or("<global>");
+            let message = app.session.localize_diagnostic_message(diag);
+            lines.push(Line::from(format!("[{severity}] {path}: {message}")));
+        }
+        if app.state.diagnostics.len() > 4 {
+            lines.push(Line::from("..."));
+        }
+    }
+
+    let diagnostics = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().title("Diagnostics").borders(Borders::ALL));
+
+    frame.render_widget(diagnostics, area);
+}
+
+fn render_status_bar(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
+    let mut status = format!(
+        "dirty={} | diagnostics={} | q quit | Ctrl+S save | F1 help",
+        app.state.dirty,
+        app.state.diagnostics.len()
+    );
+
+    if app.state.pending_quit_confirm {
+        status.push_str(" | press q again to confirm exit");
+    }
+
+    let bar = Paragraph::new(status)
+        .style(Style::default().fg(Color::Cyan))
+        .block(Block::default().borders(Borders::ALL));
+
+    frame.render_widget(bar, area);
 }
 
 fn icon(kind: NodeKind) -> &'static str {
@@ -41,20 +210,49 @@ fn icon(kind: NodeKind) -> &'static str {
     }
 }
 
-fn selected_path(state: &UiState) -> String {
-    state
-        .tree
-        .node(state.selected)
-        .map(|node| node.path.clone())
-        .unwrap_or_default()
+fn kind_label(kind: NodeKind) -> &'static str {
+    match kind {
+        NodeKind::Module => "module",
+        NodeKind::Option => "option",
+        NodeKind::Enum => "enum",
+    }
 }
 
-fn depth_of(state: &UiState, node_id: usize) -> usize {
+fn format_value_type(value_type: Option<&ValueType>) -> String {
+    match value_type {
+        Some(ValueType::Bool) => "bool".to_string(),
+        Some(ValueType::String) => "string".to_string(),
+        Some(ValueType::Unknown) => "unknown".to_string(),
+        Some(ValueType::UntypedInt) => "int".to_string(),
+        Some(ValueType::Int(ty)) => format!("{ty:?}").to_lowercase(),
+        Some(ValueType::Enum(name)) => format!("enum<{name}>"),
+        None => "-".to_string(),
+    }
+}
+
+fn format_value(value: &ResolvedValue) -> String {
+    match value {
+        ResolvedValue::Bool(raw) => raw.to_string(),
+        ResolvedValue::Int(raw) => raw.to_string(),
+        ResolvedValue::String(raw) => raw.clone(),
+        ResolvedValue::EnumVariant(raw) => raw.clone(),
+    }
+}
+
+fn depth_of(app: &App, node_id: usize) -> usize {
     let mut depth = 0usize;
-    let mut current = state.tree.node(node_id).and_then(|node| node.parent_id);
+    let mut current = app
+        .state
+        .tree
+        .node(node_id)
+        .and_then(|node| node.parent_id);
     while let Some(parent_id) = current {
         depth += 1;
-        current = state.tree.node(parent_id).and_then(|node| node.parent_id);
+        current = app
+            .state
+            .tree
+            .node(parent_id)
+            .and_then(|node| node.parent_id);
     }
     depth
 }
