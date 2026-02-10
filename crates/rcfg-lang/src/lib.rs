@@ -32,4 +32,4 @@ pub use semantic::{
     expand_values_includes_with_origins_with_root, generate_exports, plan_c_header_exports,
     plan_c_header_exports_with_prefix, resolve_values, resolve_values_with_context,
 };
-pub use span::{Span, Spanned};
+pub use span::{LineCol, SourceIndex, Span, Spanned, TextPosition};
