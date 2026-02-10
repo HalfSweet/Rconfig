@@ -25,6 +25,13 @@ pub struct Backend {
     state: Arc<Mutex<ServerState>>,
 }
 
+fn should_accept_change_version(current: Option<i32>, incoming: i32) -> bool {
+    match current {
+        Some(existing) => incoming > existing,
+        None => true,
+    }
+}
+
 impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
@@ -177,6 +184,11 @@ impl LanguageServer for Backend {
 
         {
             let mut state = self.state.lock().await;
+            let existing_version = state.documents.get_document(&uri).map(|doc| doc.version);
+            if !should_accept_change_version(existing_version, version) {
+                return;
+            }
+
             let kind = state
                 .documents
                 .get_document(&uri)
@@ -285,5 +297,18 @@ impl LanguageServer for Backend {
             .find_map(|project| document_symbol::provide(project, &uri))
             .map(DocumentSymbolResponse::Nested);
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_accept_change_version;
+
+    #[test]
+    fn accepts_only_newer_change_versions() {
+        assert!(should_accept_change_version(None, 1));
+        assert!(should_accept_change_version(Some(1), 2));
+        assert!(!should_accept_change_version(Some(2), 2));
+        assert!(!should_accept_change_version(Some(3), 2));
     }
 }
