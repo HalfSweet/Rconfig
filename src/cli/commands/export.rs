@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
@@ -7,12 +6,13 @@ use std::path::{Path, PathBuf};
 
 use rcfg_lang::{
     BoolFalseExportStyle, Diagnostic, DiagnosticArgValue, EnumExportStyle, ExportNameRule,
-    ExportOptions, IntExportFormat, RelatedInfo, ResolvedValue, Severity, SymbolTable,
+    ExportOptions, IntExportFormat, RelatedInfo, Severity,
     builtin_exporter_names, create_builtin_exporter,
 };
+use rcfg_app::AppSession;
 
 use crate::cli::args::OutputFormat;
-use crate::cli::{I18nCatalog, analyze_values_report, print_diagnostics, resolve_with_context};
+use crate::cli::print_diagnostics;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ExportTarget {
@@ -73,6 +73,7 @@ pub(crate) fn build_targets(
 }
 
 pub(crate) fn execute(
+    session: &AppSession,
     values: &Path,
     targets: &[ExportTarget],
     export_secrets: bool,
@@ -85,17 +86,12 @@ pub(crate) fn execute(
     export_name_rule: ExportNameRule,
     diag_format: OutputFormat,
     parse_diags: Vec<Diagnostic>,
-    symbols: &SymbolTable,
-    context: &HashMap<String, ResolvedValue>,
-    include_root: Option<&Path>,
-    strict: bool,
-    i18n: Option<&I18nCatalog>,
 ) -> Result<(), String> {
-    let values_report = analyze_values_report(values, symbols, context, include_root, strict);
+    let values_report = session.analyze_values_from_path(values);
     let mut all = parse_diags;
     all.extend(values_report.diagnostics.clone());
 
-    let resolved = resolve_with_context(&values_report.values, symbols, context);
+    let resolved = session.resolve(&values_report.values);
 
     let export_options = ExportOptions {
         include_secrets: export_secrets,
@@ -120,14 +116,14 @@ pub(crate) fn execute(
             ));
         };
 
-        let rendered = exporter.render(symbols, &resolved, &export_options);
+        let rendered = exporter.render(session.symbols(), &resolved, &export_options);
         all.extend(rendered.diagnostics);
         rendered_outputs.push((target.out.as_path(), rendered.content));
     }
 
     dedup_diagnostics(&mut all);
 
-    print_diagnostics(&all, diag_format, i18n);
+    print_diagnostics(&all, diag_format, session.i18n());
     if all.iter().any(|diag| diag.severity == Severity::Error) {
         return Err("export blocked by diagnostics".to_string());
     }

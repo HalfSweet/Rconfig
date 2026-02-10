@@ -1,25 +1,21 @@
-use std::collections::HashMap;
 use std::path::Path;
 
-use rcfg_lang::{Diagnostic, ResolvedValue, Severity, SymbolTable};
+use rcfg_lang::{Diagnostic, Severity};
+use rcfg_app::AppSession;
 
 use crate::cli::args::OutputFormat;
-use crate::cli::{I18nCatalog, analyze_values_report, print_diagnostics};
+use crate::cli::print_diagnostics;
 
 pub(crate) fn execute(
+    session: &AppSession,
     values: &Path,
     format: OutputFormat,
     parse_diags: Vec<Diagnostic>,
-    symbols: &SymbolTable,
-    context: &HashMap<String, ResolvedValue>,
-    include_root: Option<&Path>,
-    strict: bool,
-    i18n: Option<&I18nCatalog>,
 ) -> Result<(), String> {
-    let values_report = analyze_values_report(values, symbols, context, include_root, strict);
+    let values_report = session.analyze_values_from_path(values);
     let mut all = parse_diags;
     all.extend(values_report.diagnostics);
-    print_diagnostics(&all, format, i18n);
+    print_diagnostics(&all, format, session.i18n());
     if all.iter().any(|diag| diag.severity == Severity::Error) {
         return Err("check failed with diagnostics".to_string());
     }

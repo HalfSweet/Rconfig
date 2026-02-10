@@ -1,12 +1,11 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use rcfg_lang::{Diagnostic, ResolvedValue, Severity, SymbolTable};
+use rcfg_lang::{Diagnostic, Severity};
+use rcfg_app::AppSession;
 
 use crate::cli::{
-    I18nCatalog, analyze_values_report, print_diagnostics, render_resolved_json,
-    render_schema_ir_json, resolve_with_context, write_diagnostics_json,
+    print_diagnostics, render_resolved_json, render_schema_ir_json, write_diagnostics_json,
 };
 
 pub(crate) struct DumpPaths<'a> {
@@ -16,29 +15,32 @@ pub(crate) struct DumpPaths<'a> {
 }
 
 pub(crate) fn execute(
+    session: &AppSession,
     values: &Path,
     paths: DumpPaths<'_>,
     include_secrets: bool,
     parse_diags: Vec<Diagnostic>,
-    symbols: &SymbolTable,
-    schema_file: &rcfg_lang::File,
-    package_name: Option<&str>,
-    context: &HashMap<String, ResolvedValue>,
-    include_root: Option<&Path>,
-    strict: bool,
-    i18n: Option<&I18nCatalog>,
 ) -> Result<(), String> {
-    let values_report = analyze_values_report(values, symbols, context, include_root, strict);
+    let values_report = session.analyze_values_from_path(values);
     let mut all = parse_diags;
     all.extend(values_report.diagnostics.clone());
     write_diagnostics_json(paths.out_diagnostics, &all)?;
     if all.iter().any(|diag| diag.severity == Severity::Error) {
-        print_diagnostics(&all, crate::cli::args::OutputFormat::Human, i18n);
+        print_diagnostics(
+            &all,
+            crate::cli::args::OutputFormat::Human,
+            session.i18n(),
+        );
         return Err("dump blocked by diagnostics".to_string());
     }
 
-    let resolved = resolve_with_context(&values_report.values, symbols, context);
-    let rendered = render_resolved_json(&resolved, include_secrets, symbols, package_name);
+    let resolved = session.resolve(&values_report.values);
+    let rendered = render_resolved_json(
+        &resolved,
+        include_secrets,
+        session.symbols(),
+        session.package_name(),
+    );
     fs::write(
         paths.out,
         serde_json::to_string_pretty(&rendered)
@@ -47,7 +49,11 @@ pub(crate) fn execute(
     .map_err(|err| format!("failed to write {}: {err}", paths.out.display()))?;
 
     if let Some(schema_ir_path) = paths.out_schema_ir {
-        let schema_ir = render_schema_ir_json(symbols, schema_file, package_name);
+        let schema_ir = render_schema_ir_json(
+            session.symbols(),
+            session.schema_file(),
+            session.package_name(),
+        );
         fs::write(
             schema_ir_path,
             serde_json::to_string_pretty(&schema_ir)

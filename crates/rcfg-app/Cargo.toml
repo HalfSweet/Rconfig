@@ -1,0 +1,10 @@
+[package]
+name = "rcfg-app"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[dependencies]
+rcfg-lang = { path = "../rcfg-lang" }
+serde_json = "1.0.139"
+toml = "0.8.20"

@@ -1,22 +1,21 @@
 use std::fs;
 
 use rcfg_lang::{Diagnostic, Severity};
+use rcfg_app::AppSession;
 
 use crate::cli::args::{I18nCommand, OutputFormat};
 use crate::cli::{
-    I18nCatalog, collect_i18n_template_strings, print_diagnostics, render_i18n_template_toml,
+    collect_i18n_template_strings, print_diagnostics, render_i18n_template_toml,
 };
 
 pub(crate) fn execute(
+    session: &AppSession,
     command: I18nCommand,
     parse_diags: Vec<Diagnostic>,
-    schema_file: &rcfg_lang::File,
-    package_name: Option<&str>,
-    i18n: Option<&I18nCatalog>,
 ) -> Result<(), String> {
     let all = parse_diags;
     if !all.is_empty() {
-        print_diagnostics(&all, OutputFormat::Human, i18n);
+        print_diagnostics(&all, OutputFormat::Human, session.i18n());
     }
     if all.iter().any(|diag| diag.severity == Severity::Error) {
         return Err("i18n extract blocked by diagnostics".to_string());
@@ -24,8 +23,8 @@ pub(crate) fn execute(
 
     match command {
         I18nCommand::Extract { out, locale } => {
-            let package = package_name.unwrap_or("main");
-            let strings = collect_i18n_template_strings(schema_file, package);
+            let package = session.package_name().unwrap_or("main");
+            let strings = collect_i18n_template_strings(session.schema_file(), package);
             let rendered = render_i18n_template_toml(&locale, &strings)?;
             if let Some(parent) = out.parent() {
                 fs::create_dir_all(parent).map_err(|err| {

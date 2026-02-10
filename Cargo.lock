@@ -7,6 +7,7 @@ name = "Rconfig"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "rcfg-app",
  "rcfg-lang",
  "serde_json",
  "toml",
@@ -185,6 +186,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21b2ebcf727b7760c461f091f9f0f539b77b8e87f2fd88131e7f1b433b3cece4"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "rcfg-app"
+version = "0.1.0"
+dependencies = [
+ "rcfg-lang",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]
