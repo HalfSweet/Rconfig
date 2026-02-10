@@ -351,6 +351,10 @@ impl SymbolTable {
         self.option_types.get(path)
     }
 
+    pub fn option_default(&self, path: &str) -> Option<&ConstValue> {
+        self.option_defaults.get(path)
+    }
+
     pub fn schema_items(&self) -> &[Item] {
         &self.schema_items
     }
@@ -414,6 +418,10 @@ impl SymbolTable {
 
     pub fn option_span(&self, path: &str) -> Option<Span> {
         self.option_spans.get(path).copied()
+    }
+
+    pub fn enum_variant_span(&self, variant_path: &str) -> Option<Span> {
+        self.enum_variant_spans.get(variant_path).copied()
     }
 
     pub fn symbol_span(&self, path: &str) -> Option<Span> {
@@ -487,10 +495,6 @@ impl SymbolTable {
         self.enum_variants
             .insert(variant, EnumPath::from(enum_path))
             .map(EnumPath::into_inner)
-    }
-
-    pub(super) fn enum_variant_span(&self, variant_path: &str) -> Option<Span> {
-        self.enum_variant_spans.get(variant_path).copied()
     }
 
     pub(super) fn insert_enum_variant_doc(
@@ -569,7 +573,7 @@ impl SymbolTable {
         ResolvePathResult::Resolved(ty)
     }
 
-    pub(super) fn enum_variant_names(&self, enum_name: &str) -> Option<Vec<String>> {
+    pub fn enum_variant_names(&self, enum_name: &str) -> Option<Vec<String>> {
         let mut variants = self
             .enum_variants
             .iter()
@@ -592,7 +596,7 @@ impl SymbolTable {
         Some(variants)
     }
 
-    pub(super) fn enum_owner_of_variant(&self, variant_path: &str) -> Option<&str> {
+    pub fn enum_owner_of_variant(&self, variant_path: &str) -> Option<&str> {
         self.enum_variants.get(variant_path).map(EnumPath::as_str)
     }
 
