@@ -37,7 +37,7 @@ pub(crate) fn execute(
     }
 
     let resolved = resolve_with_context(&values_report.values, symbols, context);
-    let rendered = render_resolved_json(&resolved, include_secrets, symbols);
+    let rendered = render_resolved_json(&resolved, include_secrets, symbols, package_name);
     fs::write(
         paths.out,
         serde_json::to_string_pretty(&rendered)

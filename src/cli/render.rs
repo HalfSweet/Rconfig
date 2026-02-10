@@ -18,8 +18,9 @@ pub(crate) fn render_schema_ir_json(
 
     for (path, info) in symbols_list {
         let (summary, help) = doc_sections.get(path).cloned().unwrap_or((None, None));
+        let path_with_package = with_package_prefix(path, package_name);
         let entry = serde_json::json!({
-            "path": path,
+            "path": path_with_package,
             "summary": summary,
             "help": help,
             "label_key": i18n_symbol_key(package, path, "label"),
@@ -169,6 +170,7 @@ pub(crate) fn render_resolved_json(
     resolved: &ResolvedConfig,
     include_secrets: bool,
     symbols: &rcfg_lang::SymbolTable,
+    package_name: Option<&str>,
 ) -> serde_json::Value {
     let mut map = BTreeMap::new();
     let secret_paths = resolved
@@ -180,6 +182,7 @@ pub(crate) fn render_resolved_json(
 
     for option in &resolved.options {
         let is_secret = secret_paths.contains(option.path.as_str());
+        let path_with_package = with_package_prefix(option.path.as_str(), package_name);
         let value = if is_secret && !include_secrets {
             serde_json::json!({"redacted": true, "value": null})
         } else {
@@ -193,7 +196,7 @@ pub(crate) fn render_resolved_json(
             })
         };
         map.insert(
-            option.path.clone(),
+            path_with_package,
             serde_json::json!({
                 "active": option.active,
                 "type": option
@@ -211,6 +214,22 @@ pub(crate) fn render_resolved_json(
         );
     }
     serde_json::json!({"options": map})
+}
+
+fn with_package_prefix(path: &str, package_name: Option<&str>) -> String {
+    let Some(package_name) = package_name else {
+        return path.to_string();
+    };
+    if path == "ctx" || path.starts_with("ctx::") {
+        return path.to_string();
+    }
+
+    let prefix = format!("{}::", package_name);
+    if path.starts_with(&prefix) {
+        path.to_string()
+    } else {
+        format!("{}{}", prefix, path)
+    }
 }
 
 fn resolved_value_to_json(value: &ResolvedValue) -> serde_json::Value {
