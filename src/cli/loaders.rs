@@ -71,7 +71,8 @@ pub(crate) fn load_i18n_catalog(path: Option<&Path>) -> Result<Option<I18nCatalo
 #[derive(Debug)]
 pub(crate) struct ManifestModel {
     pub(crate) schema: PathBuf,
-    pub(crate) package_name: Option<String>,
+    pub(crate) package_name: String,
+    pub(crate) package_version: String,
 }
 
 pub(crate) fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, String> {
@@ -85,12 +86,22 @@ pub(crate) fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>
         .parse::<toml::Value>()
         .map_err(|err| format!("failed to parse manifest {}: {err}", path.display()))?;
 
-    let package_name = value
+    let package = value
         .get("package")
         .and_then(toml::Value::as_table)
-        .and_then(|package| package.get("name"))
+        .ok_or_else(|| "manifest missing [package] table".to_string())?;
+
+    let package_name = package
+        .get("name")
         .and_then(toml::Value::as_str)
-        .map(str::to_string);
+        .ok_or_else(|| "manifest missing package.name".to_string())?
+        .to_string();
+
+    let package_version = package
+        .get("version")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| "manifest missing package.version".to_string())?
+        .to_string();
 
     let entry = value
         .get("entry")
@@ -102,9 +113,18 @@ pub(crate) fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>
         .ok_or_else(|| "manifest missing entry.schema".to_string())?;
 
     let base = path.parent().unwrap_or_else(|| Path::new("."));
+    let schema_path = base.join(schema);
+    if !schema_path.is_file() {
+        return Err(format!(
+            "manifest entry schema does not exist: {}",
+            schema_path.display()
+        ));
+    }
+
     Ok(Some(ManifestModel {
-        schema: base.join(schema),
+        schema: schema_path,
         package_name,
+        package_version,
     }))
 }
 

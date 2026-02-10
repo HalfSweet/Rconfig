@@ -53,9 +53,7 @@ fn run(cli: Cli) -> Result<(), String> {
             analyze_schema(&schema_file)
         };
         parse_diags.extend(schema_report.diagnostics.clone());
-        let package_name = manifest
-            .as_ref()
-            .and_then(|model| model.package_name.as_deref());
+        let package_name = manifest.as_ref().map(|model| model.package_name.as_str());
 
         let context = load_context(cli.context.as_deref())?;
         match cli.command {
