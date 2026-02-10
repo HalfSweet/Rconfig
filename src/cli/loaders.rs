@@ -93,9 +93,12 @@ pub(crate) fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>
 
     let text = fs::read_to_string(&manifest_path)
         .map_err(|err| format!("failed to read manifest {}: {err}", manifest_path.display()))?;
-    let value = text
-        .parse::<toml::Value>()
-        .map_err(|err| format!("failed to parse manifest {}: {err}", manifest_path.display()))?;
+    let value = text.parse::<toml::Value>().map_err(|err| {
+        format!(
+            "failed to parse manifest {}: {err}",
+            manifest_path.display()
+        )
+    })?;
 
     let package = value
         .get("package")
@@ -160,6 +163,8 @@ pub(crate) fn load_manifest_graph(path: Option<&Path>) -> Result<Option<Manifest
         &mut ordered,
     )?;
 
+    validate_manifest_package_names(&ordered)?;
+
     let root = ordered
         .iter()
         .find(|manifest| manifest.manifest_path == root_manifest.manifest_path)
@@ -170,6 +175,26 @@ pub(crate) fn load_manifest_graph(path: Option<&Path>) -> Result<Option<Manifest
         root,
         packages_depth_first: ordered,
     }))
+}
+
+fn validate_manifest_package_names(manifests: &[ManifestModel]) -> Result<(), String> {
+    let mut seen = HashMap::new();
+
+    for manifest in manifests {
+        if let Some(existing_path) = seen.insert(
+            manifest.package_name.clone(),
+            manifest.manifest_path.clone(),
+        ) {
+            return Err(format!(
+                "E_PACKAGE_NAME_CONFLICT: duplicate package name `{}` in manifests {} and {}",
+                manifest.package_name,
+                existing_path.display(),
+                manifest.manifest_path.display()
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn visit_manifest_depth_first(
@@ -185,7 +210,10 @@ fn visit_manifest_depth_first(
         )
     })?;
 
-    if let Some(cycle_start) = visiting.iter().position(|current| current == &manifest_path) {
+    if let Some(cycle_start) = visiting
+        .iter()
+        .position(|current| current == &manifest_path)
+    {
         let cycle = visiting[cycle_start..]
             .iter()
             .chain(std::iter::once(&manifest_path))

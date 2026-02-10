@@ -89,7 +89,11 @@ hal_gpio = "../deps/hal_gpio"
     );
 
     let schema = resolve_schema_path(None, Some(&graph.root)).expect("resolve schema");
-    assert!(schema.ends_with("app/src/schema.rcfg"), "{}", schema.display());
+    assert!(
+        schema.ends_with("app/src/schema.rcfg"),
+        "{}",
+        schema.display()
+    );
 }
 
 #[test]
@@ -154,4 +158,65 @@ dep_a = "../dep_a"
 
     let error = load_manifest_graph(Some(&app_manifest)).expect_err("should fail with cycle");
     assert!(error.contains("E_PACKAGE_CYCLE"), "{error}");
+}
+
+#[test]
+fn manifest_graph_reports_duplicate_package_name_conflict() {
+    let root = fixture_root("manifest_graph_duplicate_package_name");
+
+    let app_manifest = root.join("app/Config.toml");
+    let app_schema = root.join("app/src/schema.rcfg");
+
+    let dep_a_manifest = root.join("deps/dep_a/Config.toml");
+    let dep_a_schema = root.join("deps/dep_a/src/schema.rcfg");
+
+    let dep_b_manifest = root.join("deps/dep_b/Config.toml");
+    let dep_b_schema = root.join("deps/dep_b/src/schema.rcfg");
+
+    write_file(&app_schema, "mod app { option enabled: bool = false; }");
+    write_file(&dep_a_schema, "mod dep_a { option enabled: bool = false; }");
+    write_file(&dep_b_schema, "mod dep_b { option enabled: bool = false; }");
+
+    write_file(
+        &app_manifest,
+        r#"
+[package]
+name = "app"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+dep_a = "../deps/dep_a"
+dep_b = "../deps/dep_b"
+"#,
+    );
+    write_file(
+        &dep_a_manifest,
+        r#"
+[package]
+name = "hal_common"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+    );
+    write_file(
+        &dep_b_manifest,
+        r#"
+[package]
+name = "hal_common"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+    );
+
+    let error = load_manifest_graph(Some(&app_manifest))
+        .expect_err("should fail with duplicate package name");
+    assert!(error.contains("E_PACKAGE_NAME_CONFLICT"), "{error}");
+    assert!(error.contains("hal_common"), "{error}");
 }
