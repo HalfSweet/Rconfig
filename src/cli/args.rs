@@ -96,6 +96,16 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         command: I18nCommand,
     },
+    Menuconfig {
+        #[arg(long)]
+        values: Option<PathBuf>,
+
+        #[arg(long)]
+        out: Option<PathBuf>,
+
+        #[arg(long, hide = true)]
+        script: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

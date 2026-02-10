@@ -9,6 +9,7 @@ dependencies = [
  "clap",
  "rcfg-app",
  "rcfg-lang",
+ "rcfg-tui",
  "serde_json",
  "toml",
 ]
@@ -202,6 +203,13 @@ name = "rcfg-lang"
 version = "0.1.0"
 dependencies = [
  "regex",
+]
+
+[[package]]
+name = "rcfg-tui"
+version = "0.1.0"
+dependencies = [
+ "rcfg-app",
 ]
 
 [[package]]

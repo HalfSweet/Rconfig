@@ -135,6 +135,21 @@ fn run(cli: Cli) -> Result<(), String> {
                 parse_diags,
             )?;
         }
+        Commands::Menuconfig {
+            values,
+            out,
+            script,
+        } => {
+            if parse_diags
+                .iter()
+                .any(|diag| diag.severity == rcfg_lang::Severity::Error)
+            {
+                print_diagnostics(&parse_diags, OutputFormat::Human, session.i18n());
+                return Err("menuconfig blocked by diagnostics".to_string());
+            }
+
+            commands::menuconfig::execute(&session, values, out, script)?;
+        }
     }
 
     Ok(())
