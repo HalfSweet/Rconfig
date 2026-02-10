@@ -44,6 +44,7 @@ rcfg export \
 - `--enum-export-style one-hot|string`：enum 的 C 导出策略（默认 `one-hot`）
 - `--int-export-format decimal|hex`：整数导出格式（默认 `decimal`）
 - `--export-name-rule pkg-path|path-only`：导出名规则（默认 `pkg-path`）
+- 构建系统集成示例：`docs/cmake.md`
 
 ## `rcfg dump`
 
