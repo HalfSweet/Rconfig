@@ -106,6 +106,82 @@ mod app {
 }
 
 #[test]
+fn symbol_table_tracks_symbol_references_and_position_lookup() {
+    let src = r#"
+mod app {
+  option enabled: bool = false;
+
+  when enabled {
+    require!(enabled == true);
+  }
+}
+"#;
+
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+    let references = report
+        .symbols
+        .symbol_references("app::enabled")
+        .expect("expected references for app::enabled");
+    assert!(references.len() >= 2, "references: {references:#?}");
+
+    let index = report.symbols.build_position_index();
+
+    let definition_offset = src
+        .find("option enabled")
+        .expect("missing declaration snippet")
+        + "option ".len();
+    let definition = index
+        .find_symbol_at_offset(definition_offset)
+        .expect("expected symbol at declaration offset");
+    assert_eq!(definition.path, "app::enabled");
+    assert_eq!(definition.role, rcfg_lang::SymbolOccurrenceRole::Definition);
+
+    let reference_offset = src
+        .find("when enabled")
+        .expect("missing reference snippet")
+        + "when ".len();
+    let reference = index
+        .find_symbol_at_offset(reference_offset)
+        .expect("expected symbol at reference offset");
+    assert_eq!(reference.path, "app::enabled");
+    assert_eq!(reference.role, rcfg_lang::SymbolOccurrenceRole::Reference);
+}
+
+#[test]
+fn symbol_table_tracks_enum_variant_references() {
+    let src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+
+  match mode {
+    case on => { }
+    case _ => { }
+  }
+}
+"#;
+
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+    let references = report
+        .symbols
+        .symbol_references("app::Mode::on")
+        .expect("expected references for enum variant");
+    assert!(!references.is_empty(), "references: {references:#?}");
+}
+
+#[test]
 fn symbol_table_tracks_mod_and_enum_declaration_spans() {
     let src = r#"
 mod app {

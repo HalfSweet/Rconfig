@@ -1,8 +1,10 @@
 use super::*;
 
 mod collector;
+mod references;
 mod type_checker;
 use self::collector::SymbolCollector;
+use self::references::ReferenceCollector;
 use self::type_checker::TypeChecker;
 
 fn analyze_schema_items(items: &[Item]) -> SemanticReport {
@@ -18,6 +20,10 @@ fn analyze_schema_items(items: &[Item]) -> SemanticReport {
     let mut scope = Vec::new();
     checker.check_items(items, &mut scope);
     diagnostics.extend(checker.diagnostics);
+
+    let mut references = ReferenceCollector::new(&mut symbols);
+    let mut reference_scope = Vec::new();
+    references.collect_items(items, &mut reference_scope);
 
     SemanticReport {
         symbols,

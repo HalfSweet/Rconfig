@@ -14,6 +14,80 @@ pub struct SymbolInfo {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SymbolOccurrenceRole {
+    Definition,
+    Reference,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolOccurrence {
+    pub path: String,
+    pub kind: SymbolKind,
+    pub span: Span,
+    pub role: SymbolOccurrenceRole,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SymbolPositionIndex {
+    occurrences: Vec<SymbolOccurrence>,
+}
+
+impl SymbolPositionIndex {
+    pub fn new(mut occurrences: Vec<SymbolOccurrence>) -> Self {
+        occurrences.sort_by(|left, right| {
+            (left.span.start, left.span.end, left.path.as_str()).cmp(&(
+                right.span.start,
+                right.span.end,
+                right.path.as_str(),
+            ))
+        });
+        Self { occurrences }
+    }
+
+    pub fn occurrences(&self) -> &[SymbolOccurrence] {
+        &self.occurrences
+    }
+
+    pub fn find_symbol_at_offset(&self, offset: usize) -> Option<&SymbolOccurrence> {
+        let boundary = self
+            .occurrences
+            .partition_point(|occurrence| occurrence.span.start <= offset);
+
+        let mut best_index = None;
+        for index in (0..boundary).rev() {
+            let occurrence = &self.occurrences[index];
+            let contains = if occurrence.span.start == occurrence.span.end {
+                offset == occurrence.span.start
+            } else {
+                offset >= occurrence.span.start && offset < occurrence.span.end
+            };
+            if !contains {
+                continue;
+            }
+
+            match best_index {
+                None => best_index = Some(index),
+                Some(current_index) => {
+                    let current = &self.occurrences[current_index];
+                    let current_width = current.span.end.saturating_sub(current.span.start);
+                    let next_width = occurrence.span.end.saturating_sub(occurrence.span.start);
+                    if next_width < current_width {
+                        best_index = Some(index);
+                    } else if next_width == current_width
+                        && current.role == SymbolOccurrenceRole::Definition
+                        && occurrence.role == SymbolOccurrenceRole::Reference
+                    {
+                        best_index = Some(index);
+                    }
+                }
+            }
+        }
+
+        best_index.map(|index| &self.occurrences[index])
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct SymbolPath(String);
 
@@ -250,6 +324,7 @@ pub struct SymbolTable {
     pub(super) enum_variants: BTreeMap<VariantPath, EnumPath>,
     pub(super) enum_variant_spans: BTreeMap<VariantPath, Span>,
     pub(super) enum_variant_docs: BTreeMap<VariantPath, Vec<Spanned<String>>>,
+    pub(super) symbol_references: BTreeMap<String, Vec<Span>>,
     pub(super) schema_items: Vec<Item>,
 }
 
@@ -312,6 +387,14 @@ impl SymbolTable {
         self.symbol_docs.insert(SymbolPath::from(path), docs);
     }
 
+    pub(super) fn insert_symbol_reference(&mut self, path: String, span: Span) {
+        let entry = self.symbol_references.entry(path).or_default();
+        if !entry.contains(&span) {
+            entry.push(span);
+            entry.sort_by_key(|item| (item.start, item.end));
+        }
+    }
+
     pub(super) fn insert_option_secret(&mut self, path: String, secret: bool) {
         self.option_secrets.insert(OptionPath::from(path), secret);
     }
@@ -339,6 +422,50 @@ impl SymbolTable {
 
     pub fn symbol_docs(&self, path: &str) -> Option<&[Spanned<String>]> {
         self.symbol_docs.get(path).map(Vec::as_slice)
+    }
+
+    pub fn symbol_references(&self, path: &str) -> Option<&[Span]> {
+        self.symbol_references.get(path).map(Vec::as_slice)
+    }
+
+    pub fn build_position_index(&self) -> SymbolPositionIndex {
+        let mut occurrences = Vec::new();
+
+        for (path, info) in self.iter() {
+            if let Some(span) = self.symbol_span(path) {
+                occurrences.push(SymbolOccurrence {
+                    path: path.to_string(),
+                    kind: info.kind,
+                    span,
+                    role: SymbolOccurrenceRole::Definition,
+                });
+            }
+        }
+
+        for (variant_path, span) in &self.enum_variant_spans {
+            occurrences.push(SymbolOccurrence {
+                path: variant_path.as_str().to_string(),
+                kind: SymbolKind::Enum,
+                span: *span,
+                role: SymbolOccurrenceRole::Definition,
+            });
+        }
+
+        for (path, spans) in &self.symbol_references {
+            let Some(kind) = self.symbol_kind_for_path(path) else {
+                continue;
+            };
+            for span in spans {
+                occurrences.push(SymbolOccurrence {
+                    path: path.clone(),
+                    kind,
+                    span: *span,
+                    role: SymbolOccurrenceRole::Reference,
+                });
+            }
+        }
+
+        SymbolPositionIndex::new(occurrences)
     }
 
     pub fn option_is_secret(&self, path: &str) -> bool {
@@ -380,6 +507,18 @@ impl SymbolTable {
 
     pub fn enum_variant_docs(&self, variant_path: &str) -> Option<&[Spanned<String>]> {
         self.enum_variant_docs.get(variant_path).map(Vec::as_slice)
+    }
+
+    fn symbol_kind_for_path(&self, path: &str) -> Option<SymbolKind> {
+        if let Some(info) = self.get(path) {
+            return Some(info.kind);
+        }
+
+        if self.enum_variants.contains_key(path) {
+            return Some(SymbolKind::Enum);
+        }
+
+        None
     }
 
     pub(super) fn resolve_path_type(&self, scope: &[String], path: &Path) -> ResolvePathResult {
