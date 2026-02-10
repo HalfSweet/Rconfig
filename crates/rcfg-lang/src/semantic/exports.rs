@@ -17,45 +17,46 @@ pub fn plan_c_header_exports_with_prefix(
     let mut used_names: HashMap<String, String> = HashMap::new();
 
     let mut option_paths = symbols.option_types.keys().cloned().collect::<Vec<_>>();
-    option_paths.sort();
+    option_paths.sort_by(|left, right| left.as_str().cmp(right.as_str()));
 
     for option_path in option_paths {
-        if symbols.option_is_secret(&option_path) && !include_secrets {
+        let option_path_str = option_path.as_str();
+        if symbols.option_is_secret(option_path_str) && !include_secrets {
             diagnostics.push(
                 Diagnostic::warning(
                     "W_SECRET_NOT_EXPORTED",
                     format!(
                         "secret option `{}` is not exported unless `--export-secrets` is enabled",
-                        option_path
+                        option_path_str
                     ),
-                    symbols.option_span(&option_path).unwrap_or_default(),
+                    symbols.option_span(option_path_str).unwrap_or_default(),
                 )
-                .with_path(option_path),
+                .with_path(option_path_str.to_string()),
             );
             continue;
         }
 
-        let export_name = normalize_export_name_with_prefix(&option_path, prefix);
+        let export_name = normalize_export_name_with_prefix(option_path_str, prefix);
         if let Some(existing) = used_names.get(&export_name) {
-            if existing != &option_path {
+            if existing != option_path_str {
                 diagnostics.push(
                     Diagnostic::error(
                         "E_EXPORT_NAME_COLLISION",
                         format!(
                             "export name `{}` collides between `{}` and `{}`",
-                            export_name, existing, option_path
+                            export_name, existing, option_path_str
                         ),
-                        symbols.option_span(&option_path).unwrap_or_default(),
+                        symbols.option_span(option_path_str).unwrap_or_default(),
                     )
-                    .with_path(option_path),
+                    .with_path(option_path_str.to_string()),
                 );
                 continue;
             }
         }
 
-        used_names.insert(export_name.clone(), option_path.clone());
+        used_names.insert(export_name.clone(), option_path_str.to_string());
         planned.push(PlannedExport {
-            path: option_path,
+            path: option_path_str.to_string(),
             name: export_name,
         });
     }

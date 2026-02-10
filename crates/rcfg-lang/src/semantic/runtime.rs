@@ -14,20 +14,20 @@ pub(super) fn evaluate_runtime_state(
         .collect::<BTreeMap<_, _>>();
 
     for (path, default) in &symbols.option_defaults {
-        if values.contains_key(path) {
+        if values.contains_key(path.as_str()) {
             continue;
         }
         if let Some(value) = resolve_const_value(default, symbols) {
-            values.insert(path.clone(), value);
-            sources.insert(path.clone(), ValueSource::Default);
+            values.insert(path.as_str().to_string(), value);
+            sources.insert(path.as_str().to_string(), ValueSource::Default);
         }
     }
 
     let mut active = symbols
         .option_types
         .keys()
-        .filter(|path| symbols.option_is_always_active(path))
-        .cloned()
+        .filter(|path| symbols.option_is_always_active(path.as_str()))
+        .map(|path| path.as_str().to_string())
         .collect::<BTreeSet<_>>();
     let mut ctx_references = BTreeSet::new();
 
@@ -62,8 +62,8 @@ pub(super) fn evaluate_activation_once(
     let mut active = symbols
         .option_types
         .keys()
-        .filter(|path| symbols.option_is_always_active(path))
-        .cloned()
+        .filter(|path| symbols.option_is_always_active(path.as_str()))
+        .map(|path| path.as_str().to_string())
         .collect::<BTreeSet<_>>();
     let mut scope = Vec::new();
     let mut ctx_references = BTreeSet::new();
@@ -214,7 +214,11 @@ pub(super) fn build_resolved_config(
     symbols: &SymbolTable,
     runtime: &RuntimeState,
 ) -> ResolvedConfig {
-    let mut paths = symbols.option_types.keys().cloned().collect::<Vec<_>>();
+    let mut paths = symbols
+        .option_types
+        .keys()
+        .map(|path| path.as_str().to_string())
+        .collect::<Vec<_>>();
     paths.sort();
 
     let options = paths

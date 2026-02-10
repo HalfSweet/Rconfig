@@ -54,6 +54,27 @@ impl From<String> for EnumPath {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct OptionPath(String);
+
+impl OptionPath {
+    pub(super) fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<String> for OptionPath {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl Borrow<str> for OptionPath {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueType {
     Bool,
@@ -196,12 +217,12 @@ impl ValueType {
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     pub(super) symbols: BTreeMap<String, SymbolInfo>,
-    pub(super) option_types: BTreeMap<String, ValueType>,
-    pub(super) option_defaults: BTreeMap<String, ConstValue>,
-    pub(super) option_ranges: BTreeMap<String, IntRange>,
-    pub(super) option_spans: BTreeMap<String, Span>,
-    pub(super) option_secrets: BTreeMap<String, bool>,
-    pub(super) option_always_active: BTreeMap<String, bool>,
+    pub(super) option_types: BTreeMap<OptionPath, ValueType>,
+    pub(super) option_defaults: BTreeMap<OptionPath, ConstValue>,
+    pub(super) option_ranges: BTreeMap<OptionPath, IntRange>,
+    pub(super) option_spans: BTreeMap<OptionPath, Span>,
+    pub(super) option_secrets: BTreeMap<OptionPath, bool>,
+    pub(super) option_always_active: BTreeMap<OptionPath, bool>,
     pub(super) enum_variants: BTreeMap<VariantPath, EnumPath>,
     pub(super) enum_variant_spans: BTreeMap<VariantPath, Span>,
     pub(super) schema_items: Vec<Item>,
@@ -237,27 +258,28 @@ impl SymbolTable {
     }
 
     pub(super) fn insert_option_type(&mut self, path: String, ty: ValueType) {
-        self.option_types.insert(path, ty);
+        self.option_types.insert(OptionPath::from(path), ty);
     }
 
     pub(super) fn insert_option_default(&mut self, path: String, value: ConstValue) {
-        self.option_defaults.insert(path, value);
+        self.option_defaults.insert(OptionPath::from(path), value);
     }
 
     pub(super) fn insert_option_range(&mut self, path: String, range: IntRange) {
-        self.option_ranges.insert(path, range);
+        self.option_ranges.insert(OptionPath::from(path), range);
     }
 
     pub(super) fn insert_option_span(&mut self, path: String, span: Span) {
-        self.option_spans.insert(path, span);
+        self.option_spans.insert(OptionPath::from(path), span);
     }
 
     pub(super) fn insert_option_secret(&mut self, path: String, secret: bool) {
-        self.option_secrets.insert(path, secret);
+        self.option_secrets.insert(OptionPath::from(path), secret);
     }
 
     pub(super) fn insert_option_always_active(&mut self, path: String, is_always_active: bool) {
-        self.option_always_active.insert(path, is_always_active);
+        self.option_always_active
+            .insert(OptionPath::from(path), is_always_active);
     }
 
     pub(super) fn set_schema_items(&mut self, items: Vec<Item>) {
@@ -305,7 +327,7 @@ impl SymbolTable {
         let mut seen = HashSet::new();
 
         for candidate in candidates {
-            if let Some(ty) = self.option_types.get(&candidate) {
+            if let Some(ty) = self.option_types.get(candidate.as_str()) {
                 if seen.insert(candidate.clone()) {
                     matches.push((candidate.clone(), ty.clone()));
                 }
@@ -365,8 +387,8 @@ impl SymbolTable {
     pub(super) fn resolve_option_paths(&self, raw_path: &str) -> Vec<String> {
         self.option_types
             .keys()
-            .filter(|candidate| path_matches(candidate, raw_path))
-            .cloned()
+            .filter(|candidate| path_matches(candidate.as_str(), raw_path))
+            .map(|candidate| candidate.as_str().to_string())
             .collect::<Vec<_>>()
     }
 
@@ -388,7 +410,7 @@ impl SymbolTable {
 
         let mut matches = Vec::new();
         for candidate in candidates {
-            if let Some(ty) = self.option_types.get(&candidate) {
+            if let Some(ty) = self.option_types.get(candidate.as_str()) {
                 matches.push((candidate.clone(), ty.clone()));
             }
         }
@@ -447,7 +469,7 @@ impl SymbolTable {
         let candidates = build_candidate_paths(scope, &raw);
         candidates
             .iter()
-            .any(|candidate| self.option_types.contains_key(candidate))
+            .any(|candidate| self.option_types.contains_key(candidate.as_str()))
     }
 }
 

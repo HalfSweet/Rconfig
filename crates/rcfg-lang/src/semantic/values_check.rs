@@ -667,7 +667,7 @@ impl<'a> ValuesChecker<'a> {
             .symbols
             .option_types
             .keys()
-            .cloned()
+            .map(|path| path.as_str().to_string())
             .collect::<Vec<_>>();
         option_paths.sort();
 
