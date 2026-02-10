@@ -873,4 +873,69 @@ schema = "src/schema.rcfg"
         assert!(error.contains("E_PACKAGE_NAME_CONFLICT"), "{error}");
         assert!(error.contains("hal_common"), "{error}");
     }
+
+    #[test]
+    fn load_session_analyze_and_resolve_are_consistent() {
+        let root = fixture_root("app_session_consistency");
+        let schema = root.join("schema.rcfg");
+        let values = root.join("profile.rcfgv");
+
+        write_file(
+            &schema,
+            r#"
+/// App module.
+mod app {
+  /// Enable app.
+  option enabled: bool = false;
+
+  when enabled {
+    /// Baud rate.
+    option baud: u32 = 115200;
+  }
+}
+"#,
+        );
+        write_file(
+            &values,
+            r#"
+app::enabled = true;
+app::baud = 9600;
+"#,
+        );
+
+        let session = super::load_session(&super::AppLoadOptions {
+            schema: Some(schema.clone()),
+            manifest: None,
+            context: None,
+            i18n: None,
+            strict: false,
+        })
+        .expect("load app session");
+
+        assert!(!session.symbols().is_empty(), "symbols should be loaded");
+
+        let path_report = session.analyze_values_from_path(&values);
+        assert!(
+            !path_report
+                .diagnostics
+                .iter()
+                .any(|diag| diag.severity == rcfg_lang::Severity::Error),
+            "path analysis should have no errors: {:?}",
+            path_report.diagnostics
+        );
+
+        let memory_diags = session.analyze_values(&path_report.values);
+        assert!(
+            !memory_diags
+                .iter()
+                .any(|diag| diag.severity == rcfg_lang::Severity::Error),
+            "memory analysis should have no errors: {:?}",
+            memory_diags
+        );
+
+        let resolved_from_path = path_report.resolved;
+        let resolved_from_memory = session.resolve(&path_report.values);
+        assert_eq!(resolved_from_path, resolved_from_memory);
+    }
+
 }
