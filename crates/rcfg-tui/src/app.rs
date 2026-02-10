@@ -137,11 +137,13 @@ impl App {
             .diagnostics
             .iter()
             .map(|diag| {
+                let localized = self.session.localize_diagnostic_message(diag);
                 serde_json::json!({
                     "severity": match diag.severity { Severity::Error => "error", Severity::Warning => "warning" },
                     "code": diag.code,
                     "path": diag.path,
                     "message_key": diag.message_key,
+                    "message": localized,
                 })
             })
             .collect::<Vec<_>>();
