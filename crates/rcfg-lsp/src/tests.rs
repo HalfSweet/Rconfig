@@ -159,6 +159,25 @@ mod app {
         }
     }
     assert!(saw_no_error, "expected parse error to disappear after didChange");
+
+    notify_service(
+        &mut service,
+        "textDocument/didSave",
+        json!({
+            "textDocument": {
+                "uri": schema_uri
+            }
+        }),
+    )
+    .await;
+
+    let save_publish = wait_for_publish(&mut socket).await;
+    let save_diags = save_publish["params"]["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let save_has_error = save_diags.iter().any(|diag| diag["severity"] == 1);
+    assert!(!save_has_error, "didSave should not reintroduce parse errors: {save_publish:#?}");
 }
 
 #[tokio::test]
