@@ -1,0 +1,6 @@
+[package]
+name = "baz"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"

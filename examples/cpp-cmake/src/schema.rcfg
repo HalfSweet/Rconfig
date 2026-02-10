@@ -1,0 +1,154 @@
+use foo::foo as foo_cfg;
+use bar::bar as bar_cfg;
+#[cfg(true)]
+mod app {
+  /// Build channel consumed by app runtime.
+  enum Channel { dev, stage, prod }
+
+  #[label_key("demo.app.enabled.label")]
+  #[help_key("demo.app.enabled.help")]
+  /// Toggle the top-level app.
+  ///
+  /// Disabled app keeps only minimal exports.
+  option enabled: bool = true;
+
+  option release_name: string = "demo-release";
+  option channel: Channel = Channel::dev;
+
+  #[range(1..=200)]
+  option workers: u16 = 8;
+
+  #[range(-20..=20)]
+  option balance_bias: i32 = 0;
+
+  #[range(0..=100)]
+  option ratio: u8 = 40;
+
+  option lane: string = "beta";
+  option out_format: string = "json";
+
+  /// Pulled from context JSON.
+  option target: string;
+
+  constraint {
+    #[msg("demo.app.workers.range")]
+    require!(workers in 1..=32);
+
+    #[msg("demo.app.workers.max_batch")]
+    require!(workers <= foo_cfg::warmup);
+
+    #[msg("demo.app.ratio.membership")]
+    require!(ratio in { 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 });
+
+    #[msg("demo.app.lane.membership")]
+    require!(lane == "alpha" || lane == "beta" || lane == "gamma");
+
+    #[msg("demo.app.format.membership")]
+    require!(out_format == "json" || out_format == "text" || out_format == "binary");
+
+    #[msg("demo.app.release.match")]
+    require!(matches(release_name, "^[a-z0-9-]+$"));
+  }
+
+  #[msg("demo.app.foo.needs.enabled")]
+  require!(foo_cfg::enabled == true);
+
+  option cache_mb: u32 = 128 {
+    #[msg("demo.app.cache.active")]
+    require!(enabled && foo_cfg::enabled);
+
+      #[msg("demo.app.cache.range")]
+      require!(self in 32..=4096);
+  }
+
+  option api_tag: string = "demo-v1" {
+    #[msg("demo.app.api_tag.active")]
+    require!(enabled && foo_cfg::enabled);
+
+      #[msg("demo.app.api_tag.len")]
+      require!(len(self) >= 4);
+  }
+
+  when enabled && foo_cfg::enabled {
+    #[msg("demo.app.bar.requires")]
+    require!(bar_cfg::enabled);
+
+      #[msg("demo.app.foo.timeout")]
+      require!(foo_cfg::timeout_ms >= 100);
+  }
+
+  option win_console: bool = false {
+    #[msg("demo.app.win_console.active")]
+    require!(target == "windows");
+  }
+
+  option posix_signals: bool = false {
+    #[msg("demo.app.posix_signals.active")]
+    require!(target != "windows");
+  }
+
+  option trace_level: u8 = 0;
+
+  match channel {
+    case Channel::dev => {
+      #[msg("demo.app.dev.trace")]
+      require!(trace_level == 3);
+
+      #[msg("demo.app.dev.workers")]
+      require!(workers in { 8, 10, 12, 16, 24, 32 });
+    }
+
+    case Channel::stage => {
+      #[msg("demo.app.stage.foo.enabled")]
+      require!(foo_cfg::enabled);
+
+      #[msg("demo.app.stage.trace")]
+      require!(trace_level == 2);
+
+      #[msg("demo.app.stage.workers")]
+      require!(workers >= 8);
+    }
+
+    case Channel::prod => {
+      #[msg("demo.app.prod.trace")]
+      require!(trace_level == 1);
+
+      #[msg("demo.app.prod.foo.timeout")]
+      require!(foo_cfg::timeout_ms >= 1500);
+
+      #[msg("demo.app.prod.bar")]
+      require!(bar_cfg::queue_depth >= 64);
+    }
+  }
+
+  patch app {
+    default workers = 12;
+    default ratio = 50;
+    default lane = "gamma";
+    default trace_level = 3;
+  }
+}
+
+mod ctx {
+  option arch: string;
+  option os: string;
+}
+
+mod arch_tune {
+  option simd: bool = false {
+    #[msg("demo.arch.simd.rule")]
+    require!(
+      (ctx::arch == "x86_64" && self == true)
+        || (ctx::arch != "x86_64" && self == false)
+    );
+  }
+
+  patch arch_tune {
+    default simd = true;
+  }
+}
+
+export cmake "demo.cmake" {
+  prefix = "CFG_";
+  bool_false = "define-0";
+}

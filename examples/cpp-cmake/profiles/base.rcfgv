@@ -1,0 +1,27 @@
+use foo::foo as foo_cfg;
+use bar::bar as bar_cfg;
+use demo::app as app_cfg;
+
+foo_cfg::enabled = true;
+foo_cfg::mode = basic;
+foo_cfg::timeout_ms = 1200;
+foo_cfg::retries = 4;
+foo_cfg::format = json;
+foo_cfg::lane = beta;
+
+bar_cfg::enabled = true;
+bar_cfg::flavor = full;
+bar_cfg::queue_depth = 128;
+bar_cfg::endpoint = "bar.default.local";
+
+app_cfg::enabled = true;
+app_cfg::release_name = "demo-release";
+app_cfg::channel = dev;
+app_cfg::workers = 10;
+app_cfg::target = "linux";
+app_cfg::win_console = false;
+app_cfg::posix_signals = true;
+app_cfg::out_format = "json";
+app_cfg::lane = "beta";
+app_cfg::cache_mb = 256;
+app_cfg::api_tag = "demo-v1";
