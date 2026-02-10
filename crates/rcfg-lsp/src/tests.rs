@@ -34,6 +34,45 @@ async fn notify_service(service: &mut LspService<Backend>, method: &str, params:
         .expect("service call should succeed");
 }
 
+async fn notify_service_with_drain(
+    service: &mut LspService<Backend>,
+    socket: &mut tower_lsp::ClientSocket,
+    method: &str,
+    params: Value,
+) -> Vec<Value> {
+    let request = Request::build(method.to_string()).params(params).finish();
+    let mut call = Box::pin(TowerService::call(service, request));
+    let mut publishes = Vec::new();
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            tokio::select! {
+                response = &mut call => {
+                    let _ = response.expect("service call should succeed");
+                    break;
+                }
+                message = socket.next() => {
+                    if let Some(message) = message
+                        && message.method() == "textDocument/publishDiagnostics"
+                    {
+                        publishes.push(serde_json::to_value(message).expect("request to json"));
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting notification to complete");
+
+    while let Ok(Some(message)) = tokio::time::timeout(Duration::from_millis(20), socket.next()).await {
+        if message.method() == "textDocument/publishDiagnostics" {
+            publishes.push(serde_json::to_value(message).expect("request to json"));
+        }
+    }
+
+    publishes
+}
+
 async fn initialize(service: &mut LspService<Backend>) {
     let response = call_service(service, "initialize", 1, json!({ "capabilities": {} })).await;
     assert!(response.get("result").is_some(), "{response:#?}");
@@ -622,4 +661,186 @@ use app::en
         .expect("heuristic use completion should still return app::enabled");
 
     assert_eq!(enabled["insertText"], json!("abled"));
+}
+
+#[tokio::test]
+async fn did_change_ignores_stale_versions_after_newer_change() {
+    let root = fixture_root("lsp_debounce_stale_version");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  option enabled bool = false;
+}
+"#,
+    );
+
+    let schema_uri = as_file_uri(&schema_path);
+    let bad_text = std::fs::read_to_string(&schema_path).expect("read bad schema");
+    let good_text = r#"mod app {
+  option enabled: bool = false;
+}
+"#;
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": bad_text,
+            }
+        }),
+    )
+    .await;
+
+    let open_publish = wait_for_publish(&mut socket).await;
+    let open_has_error = open_publish["params"]["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .any(|diag| diag["severity"] == 1);
+    assert!(open_has_error, "open should report parse error: {open_publish:#?}");
+
+    notify_service(
+        &mut service,
+        "textDocument/didChange",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "version": 3
+            },
+            "contentChanges": [
+                { "text": good_text }
+            ]
+        }),
+    )
+    .await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didChange",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "version": 2
+            },
+            "contentChanges": [
+                { "text": "mod app {\n  option enabled bool = false;\n}\n" }
+            ]
+        }),
+    )
+    .await;
+
+    let publish = wait_for_publish(&mut socket).await;
+    let has_error = publish["params"]["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .any(|diag| diag["severity"] == 1);
+
+    assert!(
+        !has_error,
+        "stale version should not override newer clean content: {publish:#?}"
+    );
+}
+
+
+#[tokio::test]
+async fn multi_file_schema_diagnostics_are_published_to_correct_uri() {
+    let root = fixture_root("lsp_multi_file_schema_diags");
+    let dep_dir = root.join("dep");
+    let root_manifest = root.join("Config.toml");
+    let dep_manifest = dep_dir.join("Config.toml");
+    let schema_a = root.join("a.rcfg");
+    let schema_b = dep_dir.join("b.rcfg");
+
+    write_file(
+        &root_manifest,
+        r#"[package]
+name = "root_pkg"
+version = "0.1.0"
+
+[entry]
+schema = "a.rcfg"
+
+[dependencies]
+dep_pkg = "dep"
+"#,
+    );
+    write_file(
+        &dep_manifest,
+        r#"[package]
+name = "dep_pkg"
+version = "0.1.0"
+
+[entry]
+schema = "b.rcfg"
+"#,
+    );
+    write_file(
+        &schema_a,
+        r#"mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &schema_b,
+        r#"mod board {
+  option speed bool = true;
+}
+"#,
+    );
+
+    let a_text = std::fs::read_to_string(&schema_a).expect("read a");
+    let a_uri = as_file_uri(&schema_a);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    let publishes = notify_service_with_drain(
+        &mut service,
+        &mut socket,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": a_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": a_text,
+            }
+        }),
+    )
+    .await;
+
+    let publish = publishes
+        .iter()
+        .find(|publish| {
+            publish["params"]["uri"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with("/dep/b.rcfg"))
+        })
+        .cloned();
+    assert!(
+        publish.is_some(),
+        "should publish diagnostics for dependency schema URI, got: {publishes:#?}"
+    );
+    let publish = publish.expect("publish exists");
+
+    let diagnostics = publish["params"]["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let has_error = diagnostics.iter().any(|diag| diag["severity"] == 1);
+
+    assert!(has_error, "dep schema parse error should be published");
 }

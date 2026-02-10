@@ -830,3 +830,48 @@ mod app {
         assert!(binding.contains_local_offset(binding.alias_span.start));
     }
 }
+
+#[cfg(test)]
+mod mapping_tests {
+    use super::*;
+
+    #[test]
+    fn rcfg_diag_to_lsp_maps_severity_code_source_range_and_related() {
+        let source_text = "option enabled: bool = false;\n";
+        let source_uri = Url::from_file_path("/tmp/diag_mapping_schema.rcfg").expect("uri");
+
+        let diag = RcfgDiagnostic::warning("W_TEST", "warn message", rcfg_lang::Span::new(0, 6))
+            .with_note("note text")
+            .with_related(rcfg_lang::RelatedInfo {
+                span: rcfg_lang::Span::new(7, 14),
+                path: None,
+                message: "related message".to_string(),
+            });
+
+        let schema_files = vec![SchemaFileSnapshot {
+            uri: source_uri.clone(),
+            text: source_text.to_string(),
+            base_offset: 0,
+        }];
+
+        let mapped = rcfg_diag_to_lsp(&diag, source_text, &schema_files);
+
+        assert_eq!(mapped.severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(
+            mapped.code,
+            Some(NumberOrString::String("W_TEST".to_string()))
+        );
+        assert_eq!(mapped.source.as_deref(), Some("rcfg-lang"));
+        assert_eq!(mapped.range.start.line, 0);
+        assert_eq!(mapped.range.start.character, 0);
+
+        let related = mapped
+            .related_information
+            .expect("related info should be preserved");
+        assert_eq!(related.len(), 1);
+        assert_eq!(related[0].location.uri, source_uri);
+        assert_eq!(related[0].location.range.start.line, 0);
+        assert_eq!(related[0].location.range.start.character, 7);
+        assert_eq!(related[0].message, "related message");
+    }
+}
