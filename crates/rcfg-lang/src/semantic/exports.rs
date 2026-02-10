@@ -12,10 +12,10 @@ pub fn plan_c_header_exports_with_prefix(
     include_secrets: bool,
     prefix: &str,
 ) -> (Vec<PlannedExport>, Vec<Diagnostic>) {
-    plan_c_header_exports_with_options(symbols, include_secrets, prefix, ExportNameRule::PkgPath)
+    plan_exports_with_options(symbols, include_secrets, prefix, ExportNameRule::PkgPath)
 }
 
-fn plan_c_header_exports_with_options(
+fn plan_exports_with_options(
     symbols: &SymbolTable,
     include_secrets: bool,
     prefix: &str,
@@ -81,7 +81,7 @@ pub fn generate_exports(
     resolved: &ResolvedConfig,
     options: &ExportOptions,
 ) -> GeneratedExports {
-    let (planned, mut diagnostics) = plan_c_header_exports_with_options(
+    let (planned, mut diagnostics) = plan_exports_with_options(
         symbols,
         options.include_secrets,
         &options.c_prefix,
@@ -488,7 +488,7 @@ impl ConfigExporter for RustExporter {
         resolved: &ResolvedConfig,
         options: &ExportOptions,
     ) -> ExportRenderResult {
-        let (planned, mut diagnostics) = plan_c_header_exports_with_options(
+        let (planned, mut diagnostics) = plan_exports_with_options(
             symbols,
             options.include_secrets,
             &options.c_prefix,
@@ -658,7 +658,7 @@ impl ConfigExporter for PythonExporter {
         resolved: &ResolvedConfig,
         options: &ExportOptions,
     ) -> ExportRenderResult {
-        let (planned, diagnostics) = plan_c_header_exports_with_options(
+        let (planned, diagnostics) = plan_exports_with_options(
             symbols,
             options.include_secrets,
             &options.c_prefix,
