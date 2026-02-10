@@ -11,6 +11,7 @@ pub(crate) fn render_schema_ir_json(
     let mut enums = Vec::new();
     let mut mods = Vec::new();
     let doc_sections = collect_doc_sections_index(schema);
+    let i18n_overrides = collect_i18n_key_overrides_index(schema);
     let package = package_name.unwrap_or("main");
 
     let mut symbols_list = symbols.iter().collect::<Vec<_>>();
@@ -18,13 +19,18 @@ pub(crate) fn render_schema_ir_json(
 
     for (path, info) in symbols_list {
         let (summary, help) = doc_sections.get(path).cloned().unwrap_or((None, None));
+        let (label_override, help_override) =
+            i18n_overrides.get(path).cloned().unwrap_or((None, None));
+        let label_key = label_override.unwrap_or_else(|| i18n_symbol_key(package, path, "label"));
+        let help_key = help_override.unwrap_or_else(|| i18n_symbol_key(package, path, "help"));
+
         let path_with_package = with_package_prefix(path, package_name);
         let entry = serde_json::json!({
             "path": path_with_package,
             "summary": summary,
             "help": help,
-            "label_key": i18n_symbol_key(package, path, "label"),
-            "help_key": i18n_symbol_key(package, path, "help"),
+            "label_key": label_key,
+            "help_key": help_key,
         });
         match info.kind {
             SymbolKind::Option => options.push(entry),
@@ -49,6 +55,111 @@ pub(crate) fn i18n_symbol_key(package: &str, path: &str, suffix: &str) -> String
         format!("{}.{}", package, suffix)
     } else {
         format!("{}.{}.{}", package, normalized, suffix)
+    }
+}
+
+pub(crate) fn resolve_i18n_keys(
+    package: &str,
+    path: &str,
+    attrs: &[rcfg_lang::Attr],
+) -> (String, String) {
+    let (label_override, help_override) = i18n_key_overrides_from_attrs(attrs);
+
+    let label_key = label_override.unwrap_or_else(|| i18n_symbol_key(package, path, "label"));
+    let help_key = help_override.unwrap_or_else(|| i18n_symbol_key(package, path, "help"));
+
+    (label_key, help_key)
+}
+
+pub(crate) fn i18n_key_overrides_from_attrs(
+    attrs: &[rcfg_lang::Attr],
+) -> (Option<String>, Option<String>) {
+    (
+        extract_i18n_key_override(attrs, "label_key"),
+        extract_i18n_key_override(attrs, "help_key"),
+    )
+}
+
+fn extract_i18n_key_override(attrs: &[rcfg_lang::Attr], name: &str) -> Option<String> {
+    attrs
+        .iter()
+        .find_map(|attr| match &attr.kind {
+            rcfg_lang::AttrKind::Other { name: attr_name, args } if attr_name == name => {
+                args.first().and_then(|arg| match arg {
+                    rcfg_lang::ast::AttrArg::Str(value) if !value.trim().is_empty() => {
+                        Some(value.clone())
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+}
+
+fn collect_i18n_key_overrides_index(
+    schema: &rcfg_lang::File,
+) -> HashMap<String, (Option<String>, Option<String>)> {
+    let mut out = HashMap::new();
+    let mut scope = Vec::new();
+    collect_item_i18n_key_overrides(&schema.items, &mut scope, &mut out);
+    out
+}
+
+fn collect_item_i18n_key_overrides(
+    items: &[rcfg_lang::Item],
+    scope: &mut Vec<String>,
+    out: &mut HashMap<String, (Option<String>, Option<String>)>,
+) {
+    for item in items {
+        match item {
+            rcfg_lang::Item::Mod(module) => {
+                let path = scoped_path(scope, &module.name.value);
+                let (label_key, help_key) = i18n_key_overrides_from_attrs(&module.meta.attrs);
+                insert_i18n_key_overrides(out, path, label_key, help_key);
+
+                scope.push(module.name.value.clone());
+                collect_item_i18n_key_overrides(&module.items, scope, out);
+                scope.pop();
+            }
+            rcfg_lang::Item::Enum(enum_decl) => {
+                let path = scoped_path(scope, &enum_decl.name.value);
+                let (label_key, help_key) = i18n_key_overrides_from_attrs(&enum_decl.meta.attrs);
+                insert_i18n_key_overrides(out, path, label_key, help_key);
+            }
+            rcfg_lang::Item::Option(option) => {
+                let path = scoped_path(scope, &option.name.value);
+                let (label_key, help_key) = i18n_key_overrides_from_attrs(&option.meta.attrs);
+                insert_i18n_key_overrides(out, path, label_key, help_key);
+            }
+            rcfg_lang::Item::When(when_block) => {
+                collect_item_i18n_key_overrides(&when_block.items, scope, out);
+            }
+            rcfg_lang::Item::Match(match_block) => {
+                for case in &match_block.cases {
+                    collect_item_i18n_key_overrides(&case.items, scope, out);
+                }
+            }
+            rcfg_lang::Item::Use(_)
+            | rcfg_lang::Item::Require(_)
+            | rcfg_lang::Item::Constraint(_)
+            | rcfg_lang::Item::Patch(_)
+            | rcfg_lang::Item::Export(_) => {}
+        }
+    }
+}
+
+fn insert_i18n_key_overrides(
+    out: &mut HashMap<String, (Option<String>, Option<String>)>,
+    path: String,
+    label_key: Option<String>,
+    help_key: Option<String>,
+) {
+    let entry = out.entry(path).or_insert((None, None));
+    if entry.0.is_none() && label_key.is_some() {
+        entry.0 = label_key;
+    }
+    if entry.1.is_none() && help_key.is_some() {
+        entry.1 = help_key;
     }
 }
 

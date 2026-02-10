@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use rcfg_lang::AttrKind;
 
-use crate::cli::render::{i18n_symbol_key, scoped_path, split_doc_summary_help};
+use crate::cli::render::{resolve_i18n_keys, scoped_path, split_doc_summary_help};
 
 pub(crate) fn collect_i18n_template_strings(
     schema: &rcfg_lang::File,
@@ -33,7 +33,7 @@ fn collect_item_i18n_strings(
             rcfg_lang::Item::Use(_) | rcfg_lang::Item::Patch(_) | rcfg_lang::Item::Export(_) => {}
             rcfg_lang::Item::Mod(module) => {
                 let path = scoped_path(scope, &module.name.value);
-                push_doc_i18n_strings(&path, &module.meta.doc, package, out);
+                push_doc_i18n_strings(&path, &module.meta.doc, &module.meta.attrs, package, out);
 
                 scope.push(module.name.value.clone());
                 collect_item_i18n_strings(&module.items, scope, package, require_counters, out);
@@ -41,16 +41,22 @@ fn collect_item_i18n_strings(
             }
             rcfg_lang::Item::Enum(enum_decl) => {
                 let enum_path = scoped_path(scope, &enum_decl.name.value);
-                push_doc_i18n_strings(&enum_path, &enum_decl.meta.doc, package, out);
+                push_doc_i18n_strings(&enum_path, &enum_decl.meta.doc, &enum_decl.meta.attrs, package, out);
 
                 for variant in &enum_decl.variants {
                     let variant_path = format!("{}::{}", enum_path, variant.name.value);
-                    push_doc_i18n_strings(&variant_path, &variant.meta.doc, package, out);
+                    push_doc_i18n_strings(
+                        &variant_path,
+                        &variant.meta.doc,
+                        &variant.meta.attrs,
+                        package,
+                        out,
+                    );
                 }
             }
             rcfg_lang::Item::Option(option) => {
                 let path = scoped_path(scope, &option.name.value);
-                push_doc_i18n_strings(&path, &option.meta.doc, package, out);
+                push_doc_i18n_strings(&path, &option.meta.doc, &option.meta.attrs, package, out);
 
                 if let Some(attached) = &option.attached_constraints {
                     for require in &attached.requires {
@@ -83,12 +89,12 @@ fn collect_item_i18n_strings(
 fn push_doc_i18n_strings(
     path: &str,
     doc: &[rcfg_lang::Spanned<String>],
+    attrs: &[rcfg_lang::Attr],
     package: &str,
     out: &mut BTreeMap<String, String>,
 ) {
     let (summary, help) = split_doc_summary_help(doc);
-    let label_key = i18n_symbol_key(package, path, "label");
-    let help_key = i18n_symbol_key(package, path, "help");
+    let (label_key, help_key) = resolve_i18n_keys(package, path, attrs);
 
     insert_i18n_string(out, label_key, summary.unwrap_or_default());
     insert_i18n_string(out, help_key, help.unwrap_or_default());

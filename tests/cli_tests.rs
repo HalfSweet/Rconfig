@@ -710,6 +710,59 @@ schema = "src/schema.rcfg"
 }
 
 #[test]
+fn rcfg_schema_ir_honors_explicit_i18n_key_overrides() {
+    let schema = fixture_path("cli_schema_ir_i18n_override/schema.rcfg");
+    let values = fixture_path("cli_schema_ir_i18n_override/values.rcfgv");
+    let dump = fixture_path("cli_schema_ir_i18n_override/resolved.json");
+    let schema_ir = fixture_path("cli_schema_ir_i18n_override/schema_ir.json");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  #[label_key("demo.custom.baud.label")]
+  #[help_key("demo.custom.baud.help")]
+  /// UART baud rate.
+  ///
+  /// Applied at startup.
+  option baud: u32 = 115200;
+}
+"#,
+    );
+    write_file(&values, "");
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "dump",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--out",
+            dump.to_str().expect("dump path"),
+            "--out-schema-ir",
+            schema_ir.to_str().expect("schema_ir path"),
+        ])
+        .status()
+        .expect("run rcfg dump");
+    assert!(status.success(), "rcfg dump should succeed");
+
+    let schema_ir_text = fs::read_to_string(&schema_ir).expect("read schema_ir");
+    assert!(
+        schema_ir_text.contains("\"label_key\": \"demo.custom.baud.label\""),
+        "{schema_ir_text}"
+    );
+    assert!(
+        schema_ir_text.contains("\"help_key\": \"demo.custom.baud.help\""),
+        "{schema_ir_text}"
+    );
+    assert!(
+        !schema_ir_text.contains("\"label_key\": \"main.app.baud.label\""),
+        "default key should be overridden: {schema_ir_text}"
+    );
+}
+
+#[test]
 fn rcfg_dump_resolved_paths_include_manifest_package_prefix() {
     let root = fixture_path("cli_dump_pkg_prefix");
     let schema = root.join("src/schema.rcfg");
@@ -1144,6 +1197,68 @@ schema = "src/schema.rcfg"
     assert!(
         text.contains("\"demo.app.require.custom\" = \"require condition failed\""),
         "{text}"
+    );
+}
+
+#[test]
+fn rcfg_i18n_extract_honors_explicit_symbol_key_overrides() {
+    let root = fixture_path("cli_i18n_extract_override");
+    let schema = root.join("src/schema.rcfg");
+    let manifest = root.join("Config.toml");
+    let out = root.join("i18n/en.toml");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  #[label_key("demo.custom.enabled.label")]
+  #[help_key("demo.custom.enabled.help")]
+  /// Enable feature.
+  ///
+  /// Detailed option help.
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &manifest,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+    );
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "i18n",
+            "extract",
+            "--manifest",
+            manifest.to_str().expect("manifest path"),
+            "--out",
+            out.to_str().expect("out path"),
+            "--locale",
+            "en",
+        ])
+        .status()
+        .expect("run rcfg i18n extract");
+    assert!(status.success(), "rcfg i18n extract should succeed");
+
+    let text = fs::read_to_string(&out).expect("read i18n template");
+    assert!(
+        text.contains("\"demo.custom.enabled.label\" = \"Enable feature.\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("\"demo.custom.enabled.help\" = \"Detailed option help.\""),
+        "{text}"
+    );
+    assert!(
+        !text.contains("\"demo.app.enabled.label\""),
+        "default key should be overridden: {text}"
     );
 }
 
