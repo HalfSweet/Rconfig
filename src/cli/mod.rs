@@ -88,6 +88,8 @@ fn run(cli: Cli) -> Result<(), String> {
                 values,
                 out_h,
                 out_cmake,
+                export_formats,
+                out,
                 export_secrets,
                 c_prefix,
                 cmake_prefix,
@@ -95,7 +97,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 enum_export_style,
                 int_export_format,
                 export_name_rule,
-                format,
+                diag_format,
             } => {
                 let bool_false_style = match bool_false_style {
                     args::BoolFalseStyle::Omit => rcfg_lang::BoolFalseExportStyle::Omit,
@@ -113,11 +115,20 @@ fn run(cli: Cli) -> Result<(), String> {
                     args::ExportNameRuleArg::PkgPath => rcfg_lang::ExportNameRule::PkgPath,
                     args::ExportNameRuleArg::PathOnly => rcfg_lang::ExportNameRule::PathOnly,
                 };
+                let export_formats = export_formats
+                    .into_iter()
+                    .map(|item| match item {
+                        args::ExportFormatArg::CHeader => "c-header".to_string(),
+                        args::ExportFormatArg::Cmake => "cmake".to_string(),
+                        args::ExportFormatArg::Rust => "rust".to_string(),
+                        args::ExportFormatArg::Python => "python".to_string(),
+                    })
+                    .collect::<Vec<_>>();
+                let targets = commands::export::build_targets(out_h, out_cmake, export_formats, out)?;
 
                 commands::export::execute(
                     &values,
-                    &out_h,
-                    &out_cmake,
+                    &targets,
                     export_secrets,
                     c_prefix,
                     cmake_prefix,
@@ -125,7 +136,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     enum_export_style,
                     int_export_format,
                     export_name_rule,
-                    format,
+                    diag_format,
                     parse_diags,
                     &schema_report.symbols,
                     &context,

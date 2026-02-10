@@ -38,10 +38,16 @@ pub(crate) enum Commands {
         values: PathBuf,
 
         #[arg(long)]
-        out_h: PathBuf,
+        out_h: Option<PathBuf>,
 
         #[arg(long)]
-        out_cmake: PathBuf,
+        out_cmake: Option<PathBuf>,
+
+        #[arg(long = "format", value_enum, action = ArgAction::Append)]
+        export_formats: Vec<ExportFormatArg>,
+
+        #[arg(long = "out", action = ArgAction::Append)]
+        out: Vec<PathBuf>,
 
         #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
         export_secrets: bool,
@@ -64,8 +70,8 @@ pub(crate) enum Commands {
         #[arg(long, value_enum, default_value_t = ExportNameRuleArg::PkgPath)]
         export_name_rule: ExportNameRuleArg,
 
-        #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
-        format: OutputFormat,
+        #[arg(long = "diag-format", value_enum, default_value_t = OutputFormat::Human)]
+        diag_format: OutputFormat,
     },
     Dump {
         #[arg(long)]
@@ -126,6 +132,15 @@ pub(crate) enum ExportNameRuleArg {
     PkgPath,
     #[value(name = "path-only")]
     PathOnly,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum ExportFormatArg {
+    #[value(name = "c-header")]
+    CHeader,
+    Cmake,
+    Rust,
+    Python,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
