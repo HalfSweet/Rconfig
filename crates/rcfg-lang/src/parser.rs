@@ -1,9 +1,9 @@
 use crate::ast::{
     AssignStmt, Attr, AttrArg, AttrKind, BinaryOp, ConstValue, ConstraintBlock, ConstraintItem,
-    EnumDecl, EnumVariant, Expr, File, InSetElem, IncludeStmt, IntRange, Item, ItemMeta,
-    MatchBlock, MatchCase, MatchPat, ModDecl, OptionAttachedConstraints, OptionDecl, PatchBlock,
-    PatchDefaultStmt, PatchStmt, Path, RequireStmt, Type, UnaryOp, UseStmt, ValueExpr, ValuesFile,
-    ValuesStmt, WhenBlock,
+    EnumDecl, EnumVariant, ExportBlock, ExportSetStmt, ExportStmt, Expr, File, InSetElem,
+    IncludeStmt, IntRange, Item, ItemMeta, MatchBlock, MatchCase, MatchPat, ModDecl,
+    OptionAttachedConstraints, OptionDecl, PatchBlock, PatchDefaultStmt, PatchStmt, Path,
+    RequireStmt, Type, UnaryOp, UseStmt, ValueExpr, ValuesFile, ValuesStmt, WhenBlock,
 };
 use crate::error::{Diagnostic, Severity};
 use crate::lexer::{Lexer, Token, TokenKind};
@@ -145,19 +145,7 @@ impl Parser {
             TokenKind::KwWhen => self.parse_when_block(meta).map(Item::When),
             TokenKind::KwMatch => self.parse_match_block(meta).map(Item::Match),
             TokenKind::KwPatch => self.parse_patch_block(meta).map(Item::Patch),
-            TokenKind::KwExport => {
-                self.push_error(
-                    "E_FEATURE_NOT_SUPPORTED",
-                    format!(
-                        "reserved grammar `{}` is not supported in v0.1",
-                        token.lexeme
-                    ),
-                    token.span,
-                );
-                self.bump();
-                self.skip_reserved_item_body();
-                None
-            }
+            TokenKind::KwExport => self.parse_export_block(meta).map(Item::Export),
             TokenKind::Eof | TokenKind::RBrace => None,
             _ => {
                 self.push_error(
@@ -259,11 +247,6 @@ impl Parser {
                     "E_PARSE_EXPECTED_TOKEN",
                     "expected `)` after cfg expression",
                 )?;
-                self.push_error(
-                    "E_FEATURE_NOT_SUPPORTED",
-                    "`#[cfg(...)]` is reserved in v0.1, use `when` instead",
-                    name.span,
-                );
                 Some(AttrKind::Cfg(expr))
             }
             _ => {
@@ -842,6 +825,94 @@ impl Parser {
             path,
             value,
             span: start.span.join(end.span),
+        }))
+    }
+
+    fn parse_export_block(&mut self, meta: ItemMeta) -> Option<ExportBlock> {
+        let start = self.expect(
+            TokenKind::KwExport,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `export`",
+        )?;
+
+        while !self.at(TokenKind::LBrace)
+            && !self.at(TokenKind::Eof)
+            && !self.at(TokenKind::Semicolon)
+        {
+            self.bump();
+        }
+
+        if self.at(TokenKind::Semicolon) {
+            self.push_error(
+                "E_PARSE_EXPECTED_TOKEN",
+                "expected `{` after export declaration",
+                self.peek().span,
+            );
+            self.bump();
+            return None;
+        }
+
+        self.expect(
+            TokenKind::LBrace,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `{` after export declaration",
+        )?;
+
+        let mut stmts = Vec::new();
+        while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+            let mark = self.cursor;
+
+            let leading = self.parse_item_meta();
+            if !leading.doc.is_empty() || !leading.attrs.is_empty() {
+                self.push_error(
+                    "E_PARSE_UNEXPECTED_TOKEN",
+                    "only key/value statements are allowed in export block",
+                    self.prev_span(),
+                );
+            }
+
+            if let Some(stmt) = self.parse_export_set_stmt() {
+                stmts.push(stmt);
+            }
+
+            if self.cursor == mark {
+                self.synchronize_in_block();
+            }
+        }
+
+        let end = self.expect(
+            TokenKind::RBrace,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `}` to close export block",
+        )?;
+
+        Some(ExportBlock {
+            meta,
+            stmts,
+            span: start.span.join(end.span),
+        })
+    }
+
+    fn parse_export_set_stmt(&mut self) -> Option<ExportStmt> {
+        let key = self.parse_ident("export key")?;
+        self.expect(
+            TokenKind::Eq,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `=` in export statement",
+        )?;
+        let value = self.parse_const_value()?;
+        let end = self.expect(
+            TokenKind::Semicolon,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `;` after export statement",
+        )?;
+
+        let span = key.span.join(end.span);
+
+        Some(ExportStmt::Set(ExportSetStmt {
+            key,
+            value,
+            span,
         }))
     }
 

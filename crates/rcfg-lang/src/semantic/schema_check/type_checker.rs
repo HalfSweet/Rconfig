@@ -46,7 +46,7 @@ impl<'a> TypeChecker<'a> {
                 Item::Use(use_stmt) => {
                     self.register_use_alias(use_stmt);
                 }
-                Item::Enum(_) => {}
+                Item::Enum(_) | Item::Export(_) => {}
                 Item::Patch(patch) => {
                     self.check_patch_block(patch, scope);
                 }

@@ -90,27 +90,40 @@ mod app {
 }
 
 #[test]
-fn reports_reserved_grammar_and_conditional_enum() {
+fn parses_cfg_attr_and_export_block_without_feature_gate_error() {
     let src = r#"
-when true {
-  enum Mode { a, b }
+#[cfg(true)]
+mod app {
+  option enabled: bool = false;
 }
 
-patch foo { default x = true; }
-
-export c "config.h" { prefix = "CONFIG_"; }
+export c "config.h" {
+  prefix = "CONFIG_";
+}
 "#;
-    let (_file, diags) = parse_schema_with_diagnostics(src);
+    let (file, diags) = parse_schema_with_diagnostics(src);
     assert!(
-        diags
+        diags.iter().all(|d| d.code != "E_FEATURE_NOT_SUPPORTED"),
+        "cfg/export should not be blocked by feature gate, got: {diags:#?}"
+    );
+    assert_eq!(file.items.len(), 2);
+
+    let Item::Mod(module) = &file.items[0] else {
+        panic!("expected mod item");
+    };
+    assert!(
+        module
+            .meta
+            .attrs
             .iter()
-            .any(|d| d.code == "E_ILLEGAL_TYPE_DECL_IN_CONDITIONAL"),
-        "expected conditional enum error"
+            .any(|attr| matches!(attr.kind, rcfg_lang::AttrKind::Cfg(_))),
+        "expected cfg attribute in module metadata"
     );
-    assert!(
-        diags.iter().any(|d| d.code == "E_FEATURE_NOT_SUPPORTED"),
-        "expected reserved feature error"
-    );
+
+    let Item::Export(export) = &file.items[1] else {
+        panic!("expected export item");
+    };
+    assert_eq!(export.stmts.len(), 1);
 }
 
 #[test]

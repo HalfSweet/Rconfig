@@ -11,6 +11,7 @@ pub enum Item {
     Mod(ModDecl),
     Enum(EnumDecl),
     Option(OptionDecl),
+    Export(ExportBlock),
     Patch(PatchBlock),
     Require(RequireStmt),
     Constraint(ConstraintBlock),
@@ -71,6 +72,25 @@ pub struct OptionDecl {
     pub ty: Type,
     pub default: Option<ConstValue>,
     pub attached_constraints: Option<OptionAttachedConstraints>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportBlock {
+    pub meta: ItemMeta,
+    pub stmts: Vec<ExportStmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExportStmt {
+    Set(ExportSetStmt),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportSetStmt {
+    pub key: Spanned<String>,
+    pub value: ConstValue,
     pub span: Span,
 }
 

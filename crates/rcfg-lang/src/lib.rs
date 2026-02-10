@@ -6,9 +6,9 @@ pub mod semantic;
 pub mod span;
 
 pub use ast::{
-    Attr, AttrKind, ConstValue, EnumVariant, Expr, File, IntRange, Item, MatchCase, MatchPat,
-    OptionAttachedConstraints, OptionDecl, PatchBlock, PatchDefaultStmt, PatchStmt, Path, Type,
-    UseStmt, ValueExpr, ValuesFile,
+    Attr, AttrKind, ConstValue, EnumVariant, ExportBlock, ExportSetStmt, ExportStmt, Expr, File,
+    IntRange, Item, MatchCase, MatchPat, OptionAttachedConstraints, OptionDecl, PatchBlock,
+    PatchDefaultStmt, PatchStmt, Path, Type, UseStmt, ValueExpr, ValuesFile,
 };
 pub use error::{Diagnostic, DiagnosticArgValue, RelatedInfo, Severity};
 pub use parser::{
