@@ -29,7 +29,9 @@ pub fn render_frame(frame: &mut Frame<'_>, app: &App) {
     render_diagnostics_panel(frame, app, areas[1]);
     render_status_bar(frame, app, areas[2]);
 
-    if app.state.help_visible {
+    if app.state.save_prompt_path().is_some() {
+        render_save_overlay(frame, app);
+    } else if app.state.help_visible {
         render_help_overlay(frame, app);
     }
 }
@@ -200,6 +202,32 @@ fn render_status_bar(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .block(Block::default().borders(Borders::ALL));
 
     frame.render_widget(bar, area);
+}
+
+fn render_save_overlay(frame: &mut Frame<'_>, app: &App) {
+    let popup_area = centered_rect(70, 30, frame.area());
+    frame.render_widget(Clear, popup_area);
+
+    let mut lines = Vec::new();
+    lines.push(Line::styled(
+        "Save",
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+    lines.push(Line::from("Edit path and press Enter (Esc cancel)"));
+    lines.push(Line::default());
+
+    let path = app
+        .state
+        .save_prompt_path()
+        .map(str::to_string)
+        .unwrap_or_else(|| app.save_target().display().to_string());
+    lines.push(Line::from(path));
+
+    let panel = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().title("Save Path").borders(Borders::ALL));
+
+    frame.render_widget(panel, popup_area);
 }
 
 fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {

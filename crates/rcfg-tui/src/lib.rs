@@ -35,8 +35,9 @@ impl std::error::Error for TuiError {}
 
 pub fn run(config: TuiConfig) -> Result<(), TuiError> {
     let save_target = config
-        .initial_values_path
+        .out_path
         .clone()
+        .or_else(|| config.initial_values_path.clone())
         .unwrap_or_else(|| PathBuf::from(".config.rcfgv"));
 
     let mut app = App::new(config.session, save_target);

@@ -1,5 +1,6 @@
 use std::fs;
 use std::io;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -73,7 +74,8 @@ fn run_terminal_loop(
 
         match event::read().map_err(|err| format!("failed to read terminal event: {err}"))? {
             CrosstermEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                if let Some(event) = map_key_event(key_event)
+                let in_save_prompt = app.state.save_prompt_path().is_some();
+                if let Some(event) = map_key_event(key_event, in_save_prompt)
                     && apply_event(app, event)?
                 {
                     break;
@@ -89,7 +91,20 @@ fn run_terminal_loop(
     Ok(())
 }
 
-fn map_key_event(key_event: KeyEvent) -> Option<AppEvent> {
+fn map_key_event(key_event: KeyEvent, in_save_prompt: bool) -> Option<AppEvent> {
+    if in_save_prompt {
+        return match (key_event.code, key_event.modifiers) {
+            (KeyCode::Enter, _) => Some(AppEvent::Enter),
+            (KeyCode::Esc, _) => Some(AppEvent::Esc),
+            (KeyCode::Backspace, _) => Some(AppEvent::Backspace),
+            (KeyCode::Char('s'), modifiers) if modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(AppEvent::Save)
+            }
+            (KeyCode::Char(ch), modifiers) if modifiers.is_empty() => Some(AppEvent::InputChar(ch)),
+            _ => None,
+        };
+    }
+
     match (key_event.code, key_event.modifiers) {
         (KeyCode::Up, _) => Some(AppEvent::Up),
         (KeyCode::Down, _) => Some(AppEvent::Down),
@@ -112,6 +127,38 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
             AppEvent::Esc | AppEvent::F1 => {
                 app.state.close_help_panel();
                 app.state.clear_status_message();
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
+
+    if app.state.save_prompt_path().is_some() {
+        match event {
+            AppEvent::Enter | AppEvent::Save => {
+                let target = app
+                    .state
+                    .save_prompt_path()
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| app.save_target().to_path_buf());
+                perform_save(app, target)?;
+            }
+            AppEvent::Esc => {
+                app.state.close_save_prompt();
+                app.state.set_status_message("save canceled");
+            }
+            AppEvent::InputChar(ch) => {
+                app.state.push_save_prompt_char(ch);
+            }
+            AppEvent::Backspace => {
+                app.state.pop_save_prompt_char();
+            }
+            AppEvent::Chars(text) => {
+                if let Some(path) = app.state.save_prompt_path.as_mut() {
+                    path.push_str(&text);
+                }
             }
             _ => {}
         }
@@ -168,20 +215,10 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
             app.state.clear_status_message();
         }
         AppEvent::Save => {
-            if app.has_blocking_errors() {
-                app.state
-                    .set_status_message("save blocked: resolve diagnostics first");
-                return Ok(false);
-            }
-
-            let rendered = app.minimal_values_text();
-            let target = app.save_target().to_path_buf();
-            fs::write(&target, rendered)
-                .map_err(|err| format!("failed to write {}: {err}", target.display()))?;
-            app.state.dirty = false;
-            app.state.clear_quit_confirmation();
             app.state
-                .set_status_message(format!("saved: {}", target.display()));
+                .open_save_prompt(app.save_target().display().to_string());
+            app.state
+                .set_status_message("edit save path then press Enter to save");
         }
         AppEvent::Quit => {
             if app.state.request_quit() {
@@ -200,10 +237,31 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
             app.recompute();
             app.state.clear_status_message();
         }
+        AppEvent::InputChar(_) | AppEvent::Backspace => {}
         AppEvent::Resize(_, _) => {}
     }
 
     Ok(false)
+}
+
+fn perform_save(app: &mut App, target: PathBuf) -> Result<(), String> {
+    if app.has_blocking_errors() {
+        app.state
+            .set_status_message("save blocked: resolve diagnostics first");
+        return Ok(());
+    }
+
+    let rendered = app.minimal_values_text();
+    fs::write(&target, rendered)
+        .map_err(|err| format!("failed to write {}: {err}", target.display()))?;
+
+    app.state.dirty = false;
+    app.state.clear_quit_confirmation();
+    app.state.close_save_prompt();
+    app.state
+        .set_status_message(format!("saved: {}", target.display()));
+
+    Ok(())
 }
 
 fn apply_text_override(app: &mut App, text: String) -> Result<(), String> {

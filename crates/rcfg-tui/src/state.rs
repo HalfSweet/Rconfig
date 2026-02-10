@@ -19,6 +19,7 @@ pub struct UiState {
     pub pending_quit_confirm: bool,
     pub help_visible: bool,
     pub status_message: Option<String>,
+    pub save_prompt_path: Option<String>,
 }
 
 impl UiState {
@@ -35,6 +36,7 @@ impl UiState {
             pending_quit_confirm: false,
             help_visible: false,
             status_message: None,
+            save_prompt_path: None,
         }
     }
 
@@ -219,6 +221,30 @@ impl UiState {
 
     pub fn clear_status_message(&mut self) {
         self.status_message = None;
+    }
+
+    pub fn open_save_prompt(&mut self, default_path: String) {
+        self.save_prompt_path = Some(default_path);
+    }
+
+    pub fn close_save_prompt(&mut self) {
+        self.save_prompt_path = None;
+    }
+
+    pub fn save_prompt_path(&self) -> Option<&str> {
+        self.save_prompt_path.as_deref()
+    }
+
+    pub fn push_save_prompt_char(&mut self, ch: char) {
+        if let Some(path) = self.save_prompt_path.as_mut() {
+            path.push(ch);
+        }
+    }
+
+    pub fn pop_save_prompt_char(&mut self) {
+        if let Some(path) = self.save_prompt_path.as_mut() {
+            path.pop();
+        }
     }
 
     pub fn apply_runtime_result(&mut self, resolved: &ResolvedConfig, diagnostics: Vec<Diagnostic>) {

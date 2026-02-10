@@ -10,6 +10,8 @@ pub enum AppEvent {
     Quit,
     Reset,
     Chars(String),
+    InputChar(char),
+    Backspace,
     Resize(u16, u16),
 }
 
@@ -34,6 +36,7 @@ pub fn parse_script_line(line: &str) -> Result<Option<AppEvent>, String> {
         "quit" => AppEvent::Quit,
         "reset" => AppEvent::Reset,
         "chars" => AppEvent::Chars(rest),
+        "backspace" => AppEvent::Backspace,
         _ => return Err(format!("unsupported script command `{command}`")),
     };
 
