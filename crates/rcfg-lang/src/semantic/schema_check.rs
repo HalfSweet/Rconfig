@@ -73,12 +73,39 @@ pub fn analyze_values_with_context(
     analyze_values_with_context_and_stmt_indexes(values, symbols, context).0
 }
 
+pub fn analyze_values_with_context_and_root(
+    values: &ValuesFile,
+    symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
+    include_root: &FsPath,
+) -> Vec<Diagnostic> {
+    let (expanded_values, mut diagnostics) =
+        expand_values_includes_from_memory_with_root(values, include_root);
+
+    let (mut semantic, _) =
+        analyze_values_with_context_and_stmt_indexes(&expanded_values, symbols, context);
+    diagnostics.append(&mut semantic);
+    diagnostics
+}
+
 pub fn analyze_values_with_context_strict(
     values: &ValuesFile,
     symbols: &SymbolTable,
     context: &HashMap<String, ResolvedValue>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = analyze_values_with_context(values, symbols, context);
+    promote_strict_diagnostics(&mut diagnostics);
+    diagnostics
+}
+
+pub fn analyze_values_with_context_and_root_strict(
+    values: &ValuesFile,
+    symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
+    include_root: &FsPath,
+) -> Vec<Diagnostic> {
+    let mut diagnostics =
+        analyze_values_with_context_and_root(values, symbols, context, include_root);
     promote_strict_diagnostics(&mut diagnostics);
     diagnostics
 }
@@ -179,8 +206,12 @@ pub fn analyze_values_from_path_report_with_context_and_root_strict(
     context: &HashMap<String, ResolvedValue>,
     include_root: &FsPath,
 ) -> ValuesAnalysisReport {
-    let mut report =
-        analyze_values_from_path_report_with_context_and_root(entry, symbols, context, include_root);
+    let mut report = analyze_values_from_path_report_with_context_and_root(
+        entry,
+        symbols,
+        context,
+        include_root,
+    );
     promote_strict_diagnostics(&mut report.diagnostics);
     report
 }
@@ -236,7 +267,8 @@ pub fn expand_values_includes_from_path_with_root(
     entry: &FsPath,
     include_root: &FsPath,
 ) -> (ValuesFile, Vec<Diagnostic>) {
-    let (values, _, diagnostics) = expand_values_includes_with_origins_with_root(entry, include_root);
+    let (values, _, diagnostics) =
+        expand_values_includes_with_origins_with_root(entry, include_root);
     (values, diagnostics)
 }
 
@@ -255,6 +287,54 @@ pub fn expand_values_includes_with_origins_with_root(
 
 fn canonical_include_root(root: &FsPath) -> PathBuf {
     fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf())
+}
+
+fn resolve_memory_include_target(root_dir: &FsPath, include_path: &str) -> PathBuf {
+    if include_path == "@root" {
+        return root_dir.to_path_buf();
+    }
+
+    if let Some(stripped) = include_path.strip_prefix("@root/") {
+        return root_dir.join(stripped);
+    }
+
+    root_dir.join(include_path)
+}
+
+fn expand_values_includes_from_memory_with_root(
+    values: &ValuesFile,
+    include_root: &FsPath,
+) -> (ValuesFile, Vec<Diagnostic>) {
+    let root_dir = canonical_include_root(include_root);
+    let mut expander = IncludeExpander::with_root(root_dir.clone());
+    let mut expanded_stmts = Vec::new();
+
+    for stmt in values.stmts.iter().cloned() {
+        match stmt {
+            ValuesStmt::Include(include) => {
+                let target = resolve_memory_include_target(&root_dir, &include.path.value);
+                expander.expand_file(&target, &mut expanded_stmts);
+            }
+            other => {
+                expanded_stmts.push(ExpandedValuesStmt {
+                    stmt: other,
+                    origin: ValuesStmtOrigin {
+                        source: "<memory>".to_string(),
+                        include_chain: vec!["<memory>".to_string()],
+                    },
+                });
+            }
+        }
+    }
+
+    let values = ValuesFile {
+        stmts: expanded_stmts
+            .into_iter()
+            .map(|expanded| expanded.stmt)
+            .collect::<Vec<_>>(),
+    };
+
+    (values, expander.diagnostics)
 }
 
 fn expand_values_includes_with_origins_internal(
@@ -279,7 +359,9 @@ fn expand_values_includes_with_origins_internal(
         origins.push(expanded.origin);
     }
     (
-        ValuesFile { stmts: values_stmts },
+        ValuesFile {
+            stmts: values_stmts,
+        },
         origins,
         expander.diagnostics,
     )

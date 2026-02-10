@@ -97,16 +97,25 @@ impl AppSession {
     }
 
     pub fn analyze_values(&self, values: &rcfg_lang::ValuesFile) -> Vec<Diagnostic> {
-        let mut diagnostics = if self.context.is_empty() {
-            if self.strict {
-                rcfg_lang::analyze_values_strict(values, &self.symbols)
-            } else {
-                rcfg_lang::analyze_values(values, &self.symbols)
+        let mut diagnostics = match (self.strict, self.include_root.as_deref()) {
+            (true, Some(root)) => rcfg_lang::analyze_values_with_context_and_root_strict(
+                values,
+                &self.symbols,
+                &self.context,
+                root,
+            ),
+            (false, Some(root)) => rcfg_lang::analyze_values_with_context_and_root(
+                values,
+                &self.symbols,
+                &self.context,
+                root,
+            ),
+            (true, None) => {
+                rcfg_lang::analyze_values_with_context_strict(values, &self.symbols, &self.context)
             }
-        } else if self.strict {
-            rcfg_lang::analyze_values_with_context_strict(values, &self.symbols, &self.context)
-        } else {
-            rcfg_lang::analyze_values_with_context(values, &self.symbols, &self.context)
+            (false, None) => {
+                rcfg_lang::analyze_values_with_context(values, &self.symbols, &self.context)
+            }
         };
 
         diagnostics.extend(self.parse_diagnostics.clone());
@@ -601,13 +610,19 @@ fn namespace_schema_items_for_package(
     }
 
     if !inserted_namespace && !namespaced_items.is_empty() {
-        out.push(make_package_namespace_module(package_name, namespaced_items));
+        out.push(make_package_namespace_module(
+            package_name,
+            namespaced_items,
+        ));
     }
 
     out
 }
 
-fn make_package_namespace_module(package_name: &str, items: Vec<rcfg_lang::Item>) -> rcfg_lang::Item {
+fn make_package_namespace_module(
+    package_name: &str,
+    items: Vec<rcfg_lang::Item>,
+) -> rcfg_lang::Item {
     rcfg_lang::Item::Mod(rcfg_lang::ast::ModDecl {
         meta: rcfg_lang::ast::ItemMeta::empty(),
         name: rcfg_lang::Spanned::new(package_name.to_string(), rcfg_lang::Span::default()),
@@ -624,13 +639,15 @@ pub fn analyze_values_report(
     strict: bool,
 ) -> ValuesAnalysisReport {
     match (strict, include_root) {
-        (true, Some(root)) => {
-            analyze_values_from_path_report_with_context_and_root_strict(values, symbols, context, root)
-        }
+        (true, Some(root)) => analyze_values_from_path_report_with_context_and_root_strict(
+            values, symbols, context, root,
+        ),
         (false, Some(root)) => {
             analyze_values_from_path_report_with_context_and_root(values, symbols, context, root)
         }
-        (true, None) => analyze_values_from_path_report_with_context_strict(values, symbols, context),
+        (true, None) => {
+            analyze_values_from_path_report_with_context_strict(values, symbols, context)
+        }
         (false, None) => analyze_values_from_path_report_with_context(values, symbols, context),
     }
 }
@@ -938,4 +955,86 @@ app::baud = 9600;
         assert_eq!(resolved_from_path, resolved_from_memory);
     }
 
+    #[test]
+    fn analyze_values_expands_includes_with_include_root() {
+        let root = fixture_root("app_session_analyze_values_include_root");
+        let manifest = root.join("Config.toml");
+        let schema = root.join("schema.rcfg");
+        let include = root.join("profiles/defaults.rcfgv");
+        let values = root.join("profile.rcfgv");
+
+        let _ = std::fs::remove_file(&include);
+        let _ = std::fs::remove_file(&values);
+
+        write_file(
+            &manifest,
+            r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "schema.rcfg"
+"#,
+        );
+        write_file(
+            &schema,
+            r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+        );
+        write_file(&include, "app::enabled = true;\n");
+        write_file(&values, "include \"@root/profiles/defaults.rcfgv\";\n");
+
+        let session = super::load_session(&super::AppLoadOptions {
+            schema: None,
+            manifest: Some(manifest),
+            context: None,
+            i18n: None,
+            strict: false,
+        })
+        .expect("load app session");
+
+        let path_report = session.analyze_values_from_path(&values);
+        assert!(
+            path_report
+                .diagnostics
+                .iter()
+                .all(|diag| diag.code != "E_INCLUDE_NOT_FOUND"),
+            "path analysis should resolve include via include_root: {:?}",
+            path_report.diagnostics
+        );
+
+        std::fs::remove_file(&include).expect("remove include file after path expansion");
+        let _ = std::fs::remove_file(&values);
+
+        let include_stmt = rcfg_lang::ast::IncludeStmt {
+            path: rcfg_lang::Spanned::new(
+                "@root/profiles/defaults.rcfgv".to_string(),
+                rcfg_lang::Span::default(),
+            ),
+            span: rcfg_lang::Span::default(),
+        };
+        let include_only_values = rcfg_lang::ValuesFile {
+            stmts: vec![rcfg_lang::ast::ValuesStmt::Include(include_stmt)],
+        };
+
+        let memory_diags = session.analyze_values(&include_only_values);
+        assert!(
+            memory_diags
+                .iter()
+                .any(|diag| diag.code == "E_INCLUDE_NOT_FOUND"),
+            "memory analysis should detect include in ValuesFile with include_root: {memory_diags:?}"
+        );
+
+        let resolved = path_report.resolved;
+        let enabled = resolved
+            .options
+            .iter()
+            .find(|option| option.path.ends_with("::app::enabled"))
+            .expect("namespaced app::enabled option");
+        assert_eq!(enabled.value, Some(rcfg_lang::ResolvedValue::Bool(true)));
+    }
 }
