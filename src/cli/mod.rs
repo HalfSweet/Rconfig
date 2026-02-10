@@ -18,11 +18,15 @@ pub(crate) mod i18n_extract;
 pub(crate) mod loaders;
 pub(crate) mod render;
 
+#[cfg(test)]
+mod loaders_tests;
+
 use self::args::{Cli, Commands, OutputFormat};
 pub(crate) use self::diagnostics::{print_diagnostics, write_diagnostics_json};
 pub(crate) use self::i18n_extract::{collect_i18n_template_strings, render_i18n_template_toml};
 pub(crate) use self::loaders::{
-    I18nCatalog, load_context, load_i18n_catalog, load_manifest, resolve_schema_path,
+    I18nCatalog, ManifestGraph, load_context, load_i18n_catalog, load_manifest_graph,
+    resolve_schema_path,
 };
 pub(crate) use self::render::{render_resolved_json, render_schema_ir_json};
 
@@ -40,12 +44,24 @@ pub(crate) fn entry() -> i32 {
 
 fn run(cli: Cli) -> Result<(), String> {
     let i18n = load_i18n_catalog(cli.i18n.as_deref())?;
-    let manifest = load_manifest(cli.manifest.as_deref())?;
-    let schema_path = resolve_schema_path(cli.schema.as_deref(), manifest.as_ref())?;
+    let manifest_graph = load_manifest_graph(cli.manifest.as_deref())?;
+    let root_manifest = manifest_graph.as_ref().map(|graph| &graph.root);
+    let schema_path = resolve_schema_path(cli.schema.as_deref(), root_manifest)?;
 
-    let schema_text = fs::read_to_string(&schema_path)
-        .map_err(|err| format!("failed to read schema {}: {err}", schema_path.display()))?;
-    let (schema_file, mut parse_diags) = parse_schema_with_diagnostics(&schema_text);
+    let (schema_file, mut parse_diags) = if let Some(graph) = manifest_graph.as_ref() {
+        if cli.schema.is_none() {
+            load_schema_with_dependencies(graph)?
+        } else {
+            let schema_text = fs::read_to_string(&schema_path)
+                .map_err(|err| format!("failed to read schema {}: {err}", schema_path.display()))?;
+            parse_schema_with_diagnostics(&schema_text)
+        }
+    } else {
+        let schema_text = fs::read_to_string(&schema_path)
+            .map_err(|err| format!("failed to read schema {}: {err}", schema_path.display()))?;
+        parse_schema_with_diagnostics(&schema_text)
+    };
+
     if parse_diags.is_empty() {
         let schema_report = if cli.strict {
             analyze_schema_strict(&schema_file)
@@ -53,7 +69,7 @@ fn run(cli: Cli) -> Result<(), String> {
             analyze_schema(&schema_file)
         };
         parse_diags.extend(schema_report.diagnostics.clone());
-        let package_name = manifest.as_ref().map(|model| model.package_name.as_str());
+        let package_name = root_manifest.map(|model| model.package_name.as_str());
 
         let context = load_context(cli.context.as_deref())?;
         match cli.command {
@@ -132,6 +148,26 @@ fn run(cli: Cli) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn load_schema_with_dependencies(graph: &ManifestGraph) -> Result<(rcfg_lang::File, Vec<rcfg_lang::Diagnostic>), String> {
+    let mut all_items = Vec::new();
+    let mut all_diags = Vec::new();
+
+    for manifest in &graph.packages_depth_first {
+        let schema_text = fs::read_to_string(&manifest.schema).map_err(|err| {
+            format!(
+                "failed to read schema {} for package `{}`: {err}",
+                manifest.schema.display(),
+                manifest.package_name
+            )
+        })?;
+        let (schema_file, mut diags) = parse_schema_with_diagnostics(&schema_text);
+        all_items.extend(schema_file.items);
+        all_diags.append(&mut diags);
+    }
+
+    Ok((rcfg_lang::File { items: all_items }, all_diags))
 }
 
 pub(crate) fn analyze_values_report(

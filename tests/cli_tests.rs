@@ -665,3 +665,161 @@ locale = "zh-CN"
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("需要启用 app::enabled"), "{stdout}");
 }
+
+#[test]
+fn rcfg_check_loads_dependency_package_schema_from_manifest_graph() {
+    let root = fixture_path("cli_manifest_dep_graph");
+    let app_schema = root.join("app/src/schema.rcfg");
+    let app_manifest = root.join("app/Config.toml");
+    let values = root.join("app/values.rcfgv");
+
+    let dep_manifest = root.join("deps/hal_uart/Config.toml");
+    let dep_schema = root.join("deps/hal_uart/src/schema.rcfg");
+
+    write_file(
+        &dep_schema,
+        r#"
+mod hal_uart {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &dep_manifest,
+        r#"
+[package]
+name = "hal_uart"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+    );
+
+    write_file(
+        &app_schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &app_manifest,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+hal_uart = "../deps/hal_uart"
+"#,
+    );
+    write_file(
+        &values,
+        r#"
+hal_uart::enabled = true;
+app::enabled = true;
+"#,
+    );
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "check",
+            "--manifest",
+            app_manifest.to_str().expect("manifest path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run rcfg check");
+    assert!(output.status.success(), "rcfg check should succeed");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("E_SYMBOL_NOT_FOUND"),
+        "dependency symbols should be available: {stdout}"
+    );
+}
+
+#[test]
+fn rcfg_check_reports_package_cycle_from_manifest_dependencies() {
+    let root = fixture_path("cli_manifest_dep_cycle");
+    let app_schema = root.join("app/src/schema.rcfg");
+    let app_manifest = root.join("app/Config.toml");
+    let values = root.join("app/values.rcfgv");
+
+    let dep_a_manifest = root.join("deps/dep_a/Config.toml");
+    let dep_a_schema = root.join("deps/dep_a/src/schema.rcfg");
+
+    let dep_b_manifest = root.join("deps/dep_b/Config.toml");
+    let dep_b_schema = root.join("deps/dep_b/src/schema.rcfg");
+
+    write_file(&app_schema, "mod app { option enabled: bool = false; }");
+    write_file(&dep_a_schema, "mod dep_a { option enabled: bool = false; }");
+    write_file(&dep_b_schema, "mod dep_b { option enabled: bool = false; }");
+
+    write_file(
+        &app_manifest,
+        r#"
+[package]
+name = "app"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+dep_a = "../deps/dep_a"
+"#,
+    );
+    write_file(
+        &dep_a_manifest,
+        r#"
+[package]
+name = "dep_a"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+dep_b = "../dep_b"
+"#,
+    );
+    write_file(
+        &dep_b_manifest,
+        r#"
+[package]
+name = "dep_b"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+dep_a = "../dep_a"
+"#,
+    );
+    write_file(&values, "");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "check",
+            "--manifest",
+            app_manifest.to_str().expect("manifest path"),
+            "--values",
+            values.to_str().expect("values path"),
+        ])
+        .output()
+        .expect("run rcfg check");
+    assert!(!output.status.success(), "rcfg check should fail");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("E_PACKAGE_CYCLE"), "{stderr}");
+}
