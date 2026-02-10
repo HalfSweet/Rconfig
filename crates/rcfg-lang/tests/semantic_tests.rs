@@ -5,8 +5,8 @@ use rcfg_lang::{
     analyze_schema, analyze_schema_files, analyze_schema_strict, analyze_values,
     analyze_values_from_path, analyze_values_from_path_report, analyze_values_strict,
     expand_values_includes_from_path, expand_values_includes_with_origins, generate_exports,
-    plan_c_header_exports, resolve_values, BoolFalseExportStyle, DiagnosticArgValue, ExportOptions,
-    Severity, SymbolKind, SymbolTable,
+    plan_c_header_exports, resolve_values, BoolFalseExportStyle, DiagnosticArgValue,
+    EnumExportStyle, ExportOptions, Severity, SymbolKind, SymbolTable,
 };
 
 fn symbols_from(src: &str) -> SymbolTable {
@@ -2275,6 +2275,7 @@ mod app {
             c_prefix: "MYCFG_".to_string(),
             cmake_prefix: "MY_".to_string(),
             bool_false_style: BoolFalseExportStyle::Omit,
+            enum_export_style: EnumExportStyle::OneHot,
         },
     );
 
@@ -2286,6 +2287,54 @@ mod app {
     assert!(
         exports.cmake.contains("set(MY_APP_ENABLED ON)"),
         "expected custom cmake prefix, got: {}",
+        exports.cmake
+    );
+}
+
+#[test]
+fn exports_enum_as_string_when_configured() {
+    let schema_src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = Mode::off;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("app::mode = on;");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
+
+    let resolved = resolve_values(&values, &symbols);
+    let exports = generate_exports(
+        &symbols,
+        &resolved,
+        &ExportOptions {
+            enum_export_style: EnumExportStyle::String,
+            ..ExportOptions::default()
+        },
+    );
+
+    assert!(
+        exports
+            .c_header
+            .contains("#define CONFIG_APP_MODE \"app::Mode::on\""),
+        "expected enum string define, got: {}",
+        exports.c_header
+    );
+    assert!(
+        !exports.c_header.contains("CONFIG_APP_MODE_OFF")
+            && !exports.c_header.contains("CONFIG_APP_MODE_ON"),
+        "did not expect one-hot enum defines, got: {}",
+        exports.c_header
+    );
+    assert!(
+        exports
+            .cmake
+            .contains("set(CFG_APP_MODE \"app::Mode::on\")"),
+        "expected enum cmake export, got: {}",
         exports.cmake
     );
 }

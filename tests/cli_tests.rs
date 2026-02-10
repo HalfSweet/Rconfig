@@ -110,6 +110,59 @@ app::retries = 8;
 }
 
 #[test]
+fn rcfg_export_can_use_string_style_for_enum() {
+    let schema = fixture_path("cli_export_enum_style/schema.rcfg");
+    let values = fixture_path("cli_export_enum_style/values.rcfgv");
+    let out_h = fixture_path("cli_export_enum_style/config.h");
+    let out_cmake = fixture_path("cli_export_enum_style/config.cmake");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = Mode::off;
+}
+"#,
+    );
+    write_file(&values, "app::mode = on;");
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "export",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--out-h",
+            out_h.to_str().expect("header path"),
+            "--out-cmake",
+            out_cmake.to_str().expect("cmake path"),
+            "--enum-export-style",
+            "string",
+        ])
+        .status()
+        .expect("run rcfg export");
+    assert!(status.success(), "rcfg export should succeed");
+
+    let header = fs::read_to_string(&out_h).expect("read header");
+    let cmake = fs::read_to_string(&out_cmake).expect("read cmake");
+
+    assert!(
+        header.contains("#define CONFIG_APP_MODE \"app::Mode::on\""),
+        "{header}"
+    );
+    assert!(
+        !header.contains("CONFIG_APP_MODE_OFF") && !header.contains("CONFIG_APP_MODE_ON"),
+        "{header}"
+    );
+    assert!(
+        cmake.contains("set(CFG_APP_MODE \"app::Mode::on\")"),
+        "{cmake}"
+    );
+}
+
+#[test]
 fn rcfg_export_can_define_zero_for_false_bool() {
     let schema = fixture_path("cli_export_bool_false/schema.rcfg");
     let values = fixture_path("cli_export_bool_false/values.rcfgv");

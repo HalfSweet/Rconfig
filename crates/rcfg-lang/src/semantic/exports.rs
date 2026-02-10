@@ -118,42 +118,49 @@ pub fn generate_exports(
             Some(ResolvedValue::EnumVariant(selected_variant)) => {
                 cmake_lines.push(format!("set({} \"{}\")", cmake_name, selected_variant));
 
-                let enum_owner = symbols.enum_owner_of_variant(selected_variant);
-                let Some(enum_owner) = enum_owner else {
-                    diagnostics.push(Diagnostic::error(
-                        "E_VALUE_PATH_NOT_ENUM_VARIANT",
-                        format!(
-                            "resolved enum variant `{}` for `{}` cannot be resolved",
-                            selected_variant, export.path
-                        ),
-                        symbols.option_span(&export.path).unwrap_or_default(),
-                    ));
-                    continue;
-                };
+                match options.enum_export_style {
+                    EnumExportStyle::String => {
+                        c_lines.push(format!("#define {} \"{}\"", export.name, selected_variant));
+                    }
+                    EnumExportStyle::OneHot => {
+                        let enum_owner = symbols.enum_owner_of_variant(selected_variant);
+                        let Some(enum_owner) = enum_owner else {
+                            diagnostics.push(Diagnostic::error(
+                                "E_VALUE_PATH_NOT_ENUM_VARIANT",
+                                format!(
+                                    "resolved enum variant `{}` for `{}` cannot be resolved",
+                                    selected_variant, export.path
+                                ),
+                                symbols.option_span(&export.path).unwrap_or_default(),
+                            ));
+                            continue;
+                        };
 
-                let mut variants = symbols
-                    .enum_variants
-                    .iter()
-                    .filter(|(_, owner)| owner.as_str() == enum_owner)
-                    .map(|(variant_path, _)| variant_path.as_str().to_string())
-                    .collect::<Vec<_>>();
-                variants.sort();
+                        let mut variants = symbols
+                            .enum_variants
+                            .iter()
+                            .filter(|(_, owner)| owner.as_str() == enum_owner)
+                            .map(|(variant_path, _)| variant_path.as_str().to_string())
+                            .collect::<Vec<_>>();
+                        variants.sort();
 
-                for variant in variants {
-                    let variant_name = normalize_export_name_with_prefix(
-                        &format!(
-                            "{}::{}",
-                            export.path,
-                            variant.rsplit("::").next().unwrap_or(&variant)
-                        ),
-                        &options.c_prefix,
-                    );
-                    let is_selected = variant == *selected_variant;
-                    c_lines.push(format!(
-                        "#define {} {}",
-                        variant_name,
-                        if is_selected { 1 } else { 0 }
-                    ));
+                        for variant in variants {
+                            let variant_name = normalize_export_name_with_prefix(
+                                &format!(
+                                    "{}::{}",
+                                    export.path,
+                                    variant.rsplit("::").next().unwrap_or(&variant)
+                                ),
+                                &options.c_prefix,
+                            );
+                            let is_selected = variant == *selected_variant;
+                            c_lines.push(format!(
+                                "#define {} {}",
+                                variant_name,
+                                if is_selected { 1 } else { 0 }
+                            ));
+                        }
+                    }
                 }
             }
             None => {}

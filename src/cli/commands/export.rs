@@ -3,8 +3,8 @@ use std::fs;
 use std::path::Path;
 
 use rcfg_lang::{
-    generate_exports, BoolFalseExportStyle, Diagnostic, ExportOptions, ResolvedValue, Severity,
-    SymbolTable,
+    generate_exports, BoolFalseExportStyle, Diagnostic, EnumExportStyle, ExportOptions,
+    ResolvedValue, Severity, SymbolTable,
 };
 
 use crate::cli::args::OutputFormat;
@@ -18,6 +18,7 @@ pub(crate) fn execute(
     c_prefix: String,
     cmake_prefix: String,
     bool_false_style: BoolFalseExportStyle,
+    enum_export_style: EnumExportStyle,
     format: OutputFormat,
     parse_diags: Vec<Diagnostic>,
     symbols: &SymbolTable,
@@ -38,6 +39,7 @@ pub(crate) fn execute(
             c_prefix,
             cmake_prefix,
             bool_false_style,
+            enum_export_style,
         },
     );
     all.extend(exports.diagnostics.clone());

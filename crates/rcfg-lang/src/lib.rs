@@ -14,7 +14,7 @@ pub use parser::{
     parse_schema, parse_schema_with_diagnostics, parse_values, parse_values_with_diagnostics,
 };
 pub use semantic::{
-    BoolFalseExportStyle, ExportOptions, GeneratedExports, IntType, PlannedExport, ResolvedConfig, ResolvedOption,
+    BoolFalseExportStyle, EnumExportStyle, ExportOptions, GeneratedExports, IntType, PlannedExport, ResolvedConfig, ResolvedOption,
     ResolvedValue, SemanticReport, SymbolInfo, SymbolKind, SymbolTable, ValueSource, ValueType,
     ValuesAnalysisReport, ValuesStmtOrigin, analyze_schema, analyze_schema_files,
     analyze_schema_files_strict, analyze_schema_strict, analyze_values, analyze_values_from_path,

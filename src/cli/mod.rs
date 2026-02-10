@@ -92,11 +92,16 @@ fn run(cli: Cli) -> Result<(), String> {
                 c_prefix,
                 cmake_prefix,
                 bool_false_style,
+                enum_export_style,
                 format,
             } => {
                 let bool_false_style = match bool_false_style {
                     args::BoolFalseStyle::Omit => rcfg_lang::BoolFalseExportStyle::Omit,
                     args::BoolFalseStyle::DefineZero => rcfg_lang::BoolFalseExportStyle::DefineZero,
+                };
+                let enum_export_style = match enum_export_style {
+                    args::EnumExportStyleArg::OneHot => rcfg_lang::EnumExportStyle::OneHot,
+                    args::EnumExportStyleArg::String => rcfg_lang::EnumExportStyle::String,
                 };
 
                 commands::export::execute(
@@ -107,6 +112,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     c_prefix,
                     cmake_prefix,
                     bool_false_style,
+                    enum_export_style,
                     format,
                     parse_diags,
                     &schema_report.symbols,

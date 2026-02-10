@@ -557,12 +557,19 @@ pub enum BoolFalseExportStyle {
     DefineZero,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnumExportStyle {
+    OneHot,
+    String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportOptions {
     pub include_secrets: bool,
     pub c_prefix: String,
     pub cmake_prefix: String,
     pub bool_false_style: BoolFalseExportStyle,
+    pub enum_export_style: EnumExportStyle,
 }
 
 impl Default for ExportOptions {
@@ -572,6 +579,7 @@ impl Default for ExportOptions {
             c_prefix: "CONFIG_".to_string(),
             cmake_prefix: "CFG_".to_string(),
             bool_false_style: BoolFalseExportStyle::Omit,
+            enum_export_style: EnumExportStyle::OneHot,
         }
     }
 }
