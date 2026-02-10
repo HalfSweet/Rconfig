@@ -343,8 +343,15 @@ impl SymbolTable {
     }
 
     pub(super) fn resolve_path_type(&self, scope: &[String], path: &Path) -> ResolvePathResult {
-        let raw = path.to_string();
-        let candidates = build_candidate_paths(scope, &raw);
+        self.resolve_path_type_raw_in_scope(scope, &path.to_string())
+    }
+
+    pub(super) fn resolve_path_type_raw_in_scope(
+        &self,
+        scope: &[String],
+        raw_path: &str,
+    ) -> ResolvePathResult {
+        let candidates = build_candidate_paths(scope, raw_path);
 
         let mut matches = Vec::new();
         let mut seen = HashSet::new();
@@ -428,8 +435,15 @@ impl SymbolTable {
         scope: &[String],
         path: &Path,
     ) -> ResolveOptionPathResult {
-        let raw = path.to_string();
-        let candidates = build_candidate_paths(scope, &raw);
+        self.resolve_option_path_raw_in_scope(scope, &path.to_string())
+    }
+
+    pub(super) fn resolve_option_path_raw_in_scope(
+        &self,
+        scope: &[String],
+        raw_path: &str,
+    ) -> ResolveOptionPathResult {
+        let candidates = build_candidate_paths(scope, raw_path);
 
         let mut matches = Vec::new();
         for candidate in candidates {
@@ -460,8 +474,15 @@ impl SymbolTable {
         scope: &[String],
         path: &Path,
     ) -> ResolveEnumVariantPathResult {
-        let raw = path.to_string();
-        let candidates = build_candidate_paths(scope, &raw);
+        self.resolve_enum_variant_path_raw_in_scope(scope, &path.to_string())
+    }
+
+    pub(super) fn resolve_enum_variant_path_raw_in_scope(
+        &self,
+        scope: &[String],
+        raw_path: &str,
+    ) -> ResolveEnumVariantPathResult {
+        let candidates = build_candidate_paths(scope, raw_path);
 
         let mut matches = Vec::new();
         for candidate in candidates {
@@ -488,8 +509,15 @@ impl SymbolTable {
     }
 
     pub(super) fn path_resolves_to_option_in_scope(&self, scope: &[String], path: &Path) -> bool {
-        let raw = path.to_string();
-        let candidates = build_candidate_paths(scope, &raw);
+        self.path_resolves_to_option_raw_in_scope(scope, &path.to_string())
+    }
+
+    pub(super) fn path_resolves_to_option_raw_in_scope(
+        &self,
+        scope: &[String],
+        raw_path: &str,
+    ) -> bool {
+        let candidates = build_candidate_paths(scope, raw_path);
         candidates
             .iter()
             .any(|candidate| self.option_types.contains_key(candidate.as_str()))
