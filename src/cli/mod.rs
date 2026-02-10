@@ -91,8 +91,14 @@ fn run(cli: Cli) -> Result<(), String> {
                 export_secrets,
                 c_prefix,
                 cmake_prefix,
+                bool_false_style,
                 format,
             } => {
+                let bool_false_style = match bool_false_style {
+                    args::BoolFalseStyle::Omit => rcfg_lang::BoolFalseExportStyle::Omit,
+                    args::BoolFalseStyle::DefineZero => rcfg_lang::BoolFalseExportStyle::DefineZero,
+                };
+
                 commands::export::execute(
                     &values,
                     &out_h,
@@ -100,6 +106,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     export_secrets,
                     c_prefix,
                     cmake_prefix,
+                    bool_false_style,
                     format,
                     parse_diags,
                     &schema_report.symbols,

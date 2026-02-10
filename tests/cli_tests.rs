@@ -110,6 +110,48 @@ app::retries = 8;
 }
 
 #[test]
+fn rcfg_export_can_define_zero_for_false_bool() {
+    let schema = fixture_path("cli_export_bool_false/schema.rcfg");
+    let values = fixture_path("cli_export_bool_false/values.rcfgv");
+    let out_h = fixture_path("cli_export_bool_false/config.h");
+    let out_cmake = fixture_path("cli_export_bool_false/config.cmake");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(&values, "");
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "export",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--out-h",
+            out_h.to_str().expect("header path"),
+            "--out-cmake",
+            out_cmake.to_str().expect("cmake path"),
+            "--bool-false-style",
+            "define-0",
+        ])
+        .status()
+        .expect("run rcfg export");
+    assert!(status.success(), "rcfg export should succeed");
+
+    let header = fs::read_to_string(&out_h).expect("read header");
+    let cmake = fs::read_to_string(&out_cmake).expect("read cmake");
+
+    assert!(header.contains("#define CONFIG_APP_ENABLED 0"), "{header}");
+    assert!(cmake.contains("set(CFG_APP_ENABLED OFF)"), "{cmake}");
+}
+
+#[test]
 fn rcfg_dump_writes_schema_ir_and_diagnostics_json() {
     let schema = fixture_path("cli_dump/schema.rcfg");
     let values = fixture_path("cli_dump/values.rcfgv");

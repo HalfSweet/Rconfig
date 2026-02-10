@@ -551,11 +551,18 @@ pub struct PlannedExport {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoolFalseExportStyle {
+    Omit,
+    DefineZero,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportOptions {
     pub include_secrets: bool,
     pub c_prefix: String,
     pub cmake_prefix: String,
+    pub bool_false_style: BoolFalseExportStyle,
 }
 
 impl Default for ExportOptions {
@@ -564,6 +571,7 @@ impl Default for ExportOptions {
             include_secrets: false,
             c_prefix: "CONFIG_".to_string(),
             cmake_prefix: "CFG_".to_string(),
+            bool_false_style: BoolFalseExportStyle::Omit,
         }
     }
 }

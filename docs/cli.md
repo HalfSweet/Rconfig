@@ -40,6 +40,7 @@ rcfg export \
 - `--export-secrets`：允许导出 `#[secret]`
 - `--c-prefix <STR>`：C 宏前缀，默认 `CONFIG_`
 - `--cmake-prefix <STR>`：CMake 变量前缀，默认 `CFG_`
+- `--bool-false-style omit|define-0`：bool=false 的 C 导出策略（默认 `omit`）
 
 ## `rcfg dump`
 

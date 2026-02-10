@@ -52,6 +52,9 @@ pub(crate) enum Commands {
         #[arg(long, default_value = "CFG_")]
         cmake_prefix: String,
 
+        #[arg(long, value_enum, default_value_t = BoolFalseStyle::Omit)]
+        bool_false_style: BoolFalseStyle,
+
         #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
         format: OutputFormat,
     },
@@ -86,6 +89,13 @@ pub(crate) enum I18nCommand {
         #[arg(long, default_value = "en")]
         locale: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum BoolFalseStyle {
+    Omit,
+    #[value(name = "define-0")]
+    DefineZero,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

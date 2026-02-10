@@ -97,6 +97,8 @@ pub fn generate_exports(
             Some(ResolvedValue::Bool(value)) => {
                 if *value {
                     c_lines.push(format!("#define {} 1", export.name));
+                } else if options.bool_false_style == BoolFalseExportStyle::DefineZero {
+                    c_lines.push(format!("#define {} 0", export.name));
                 }
                 cmake_lines.push(format!(
                     "set({} {})",
