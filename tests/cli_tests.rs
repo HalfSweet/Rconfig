@@ -1130,3 +1130,78 @@ mod app {
         "cmake should not be rewritten"
     );
 }
+
+#[test]
+fn cmake_can_consume_exported_config_module() {
+    if std::process::Command::new("cmake")
+        .arg("--version")
+        .status()
+        .is_err()
+    {
+        eprintln!("cmake not found, skip integration validation");
+        return;
+    }
+
+    let root = fixture_path("cli_cmake_integration");
+    let schema = root.join("schema.rcfg");
+    let values = root.join("values.rcfgv");
+    let out_h = root.join("config.h");
+    let out_cmake = root.join("config.cmake");
+    let script = root.join("check.cmake");
+    let result = root.join("result.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+  option retries: u32 = 3;
+}
+"#,
+    );
+    write_file(
+        &values,
+        r#"
+app::enabled = true;
+app::retries = 8;
+"#,
+    );
+
+    let export_status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "export",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--out-h",
+            out_h.to_str().expect("header path"),
+            "--out-cmake",
+            out_cmake.to_str().expect("cmake path"),
+        ])
+        .status()
+        .expect("run rcfg export");
+    assert!(export_status.success(), "rcfg export should succeed");
+
+    write_file(
+        &script,
+        format!(
+            r#"
+include("{}")
+file(WRITE "{}" "${{CFG_APP_ENABLED}};${{CFG_APP_RETRIES}}")
+"#,
+            out_cmake.to_string_lossy(),
+            result.to_string_lossy()
+        )
+        .as_str(),
+    );
+
+    let cmake_status = std::process::Command::new("cmake")
+        .args(["-P", script.to_str().expect("script path")])
+        .status()
+        .expect("run cmake script");
+    assert!(cmake_status.success(), "cmake -P should succeed");
+
+    let rendered = fs::read_to_string(&result).expect("read cmake result");
+    assert_eq!(rendered, "ON;8");
+}
