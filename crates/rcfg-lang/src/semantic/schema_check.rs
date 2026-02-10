@@ -727,7 +727,7 @@ impl<'a> TypeChecker<'a> {
             .symbols
             .enum_variants
             .keys()
-            .cloned()
+            .map(|path| path.as_str().to_string())
             .collect::<Vec<_>>();
         variants.sort();
 

@@ -228,9 +228,10 @@ pub(super) fn eval_path_as_enum_variant(
     let _ = runtime;
     let _ = ctx_references;
     match symbols.resolve_enum_variant_path_in_scope(scope, path) {
-        ResolveEnumVariantPathResult::Resolved(variant, _) => {
-            symbols.enum_variants.get(&variant).map(|_| variant)
-        }
+        ResolveEnumVariantPathResult::Resolved(variant, _) => symbols
+            .enum_variants
+            .get(variant.as_str())
+            .map(|_| variant),
         ResolveEnumVariantPathResult::NotFound | ResolveEnumVariantPathResult::Ambiguous(_) => None,
     }
 }

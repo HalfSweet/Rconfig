@@ -1,4 +1,5 @@
 use super::*;
+use std::borrow::Borrow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolKind {
@@ -11,6 +12,46 @@ pub enum SymbolKind {
 pub struct SymbolInfo {
     pub kind: SymbolKind,
     pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct VariantPath(String);
+
+impl VariantPath {
+    pub(super) fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<String> for VariantPath {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl Borrow<str> for VariantPath {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct EnumPath(String);
+
+impl EnumPath {
+    pub(super) fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub(super) fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for EnumPath {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,8 +202,8 @@ pub struct SymbolTable {
     pub(super) option_spans: BTreeMap<String, Span>,
     pub(super) option_secrets: BTreeMap<String, bool>,
     pub(super) option_always_active: BTreeMap<String, bool>,
-    pub(super) enum_variants: BTreeMap<String, String>,
-    pub(super) enum_variant_spans: BTreeMap<String, Span>,
+    pub(super) enum_variants: BTreeMap<VariantPath, EnumPath>,
+    pub(super) enum_variant_spans: BTreeMap<VariantPath, Span>,
     pub(super) schema_items: Vec<Item>,
 }
 
@@ -245,8 +286,11 @@ impl SymbolTable {
         enum_path: String,
         span: Span,
     ) -> Option<String> {
-        self.enum_variant_spans.insert(variant_path.clone(), span);
-        self.enum_variants.insert(variant_path, enum_path)
+        let variant = VariantPath::from(variant_path);
+        self.enum_variant_spans.insert(variant.clone(), span);
+        self.enum_variants
+            .insert(variant, EnumPath::from(enum_path))
+            .map(EnumPath::into_inner)
     }
 
     pub(super) fn enum_variant_span(&self, variant_path: &str) -> Option<Span> {
@@ -267,9 +311,9 @@ impl SymbolTable {
                 }
             }
 
-            if let Some(enum_path) = self.enum_variants.get(&candidate) {
+            if let Some(enum_path) = self.enum_variants.get(candidate.as_str()) {
                 if seen.insert(candidate.clone()) {
-                    matches.push((candidate.clone(), ValueType::Enum(enum_path.clone())));
+                    matches.push((candidate.clone(), ValueType::Enum(enum_path.as_str().to_string())));
                 }
             }
         }
@@ -295,8 +339,14 @@ impl SymbolTable {
         let mut variants = self
             .enum_variants
             .iter()
-            .filter(|(_, owner)| enum_name_matches(enum_name, owner))
-            .filter_map(|(variant_path, _)| variant_path.rsplit("::").next().map(str::to_string))
+            .filter(|(_, owner)| enum_name_matches(enum_name, owner.as_str()))
+            .filter_map(|(variant_path, _)| {
+                variant_path
+                    .as_str()
+                    .rsplit("::")
+                    .next()
+                    .map(str::to_string)
+            })
             .collect::<Vec<_>>();
 
         if variants.is_empty() {
@@ -309,7 +359,7 @@ impl SymbolTable {
     }
 
     pub(super) fn enum_owner_of_variant(&self, variant_path: &str) -> Option<&str> {
-        self.enum_variants.get(variant_path).map(String::as_str)
+        self.enum_variants.get(variant_path).map(EnumPath::as_str)
     }
 
     pub(super) fn resolve_option_paths(&self, raw_path: &str) -> Vec<String> {
@@ -323,8 +373,8 @@ impl SymbolTable {
     pub(super) fn resolve_enum_variant_paths(&self, raw_path: &str) -> Vec<String> {
         self.enum_variants
             .keys()
-            .filter(|candidate| path_matches(candidate, raw_path))
-            .cloned()
+            .filter(|candidate| path_matches(candidate.as_str(), raw_path))
+            .map(|candidate| candidate.as_str().to_string())
             .collect::<Vec<_>>()
     }
 
@@ -370,8 +420,8 @@ impl SymbolTable {
 
         let mut matches = Vec::new();
         for candidate in candidates {
-            if let Some(enum_path) = self.enum_variants.get(&candidate) {
-                matches.push((candidate.clone(), enum_path.clone()));
+            if let Some(enum_path) = self.enum_variants.get(candidate.as_str()) {
+                matches.push((candidate.clone(), enum_path.as_str().to_string()));
             }
         }
 

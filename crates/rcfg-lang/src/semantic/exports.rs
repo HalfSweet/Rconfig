@@ -136,7 +136,7 @@ pub fn generate_exports(
                     .enum_variants
                     .iter()
                     .filter(|(_, owner)| owner.as_str() == enum_owner)
-                    .map(|(variant_path, _)| variant_path.clone())
+                    .map(|(variant_path, _)| variant_path.as_str().to_string())
                     .collect::<Vec<_>>();
                 variants.sort();
 
