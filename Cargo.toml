@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/rcfg-app", "crates/rcfg-lang", "crates/rcfg-tui"]
+members = ["crates/rcfg-app", "crates/rcfg-lang", "crates/rcfg-lsp", "crates/rcfg-tui"]
 resolver = "2"
 
 [package]

@@ -1,0 +1,12 @@
+[package]
+name = "rcfg-lsp"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[dependencies]
+rcfg-lang = { path = "../rcfg-lang" }
+serde_json = "1.0.139"
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "io-std", "time", "sync"] }
+tower-lsp = "0.20.0"
+
