@@ -210,6 +210,8 @@ name = "rcfg-tui"
 version = "0.1.0"
 dependencies = [
  "rcfg-app",
+ "rcfg-lang",
+ "serde_json",
 ]
 
 [[package]]

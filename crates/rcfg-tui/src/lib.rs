@@ -1,5 +1,14 @@
+mod app;
+mod event;
+mod model;
+mod render;
+mod runtime;
+mod save;
+mod state;
+
 use std::path::PathBuf;
 
+use app::App;
 use rcfg_app::AppSession;
 
 #[derive(Debug, Clone)]
@@ -24,8 +33,12 @@ impl std::fmt::Display for TuiError {
 impl std::error::Error for TuiError {}
 
 pub fn run(config: TuiConfig) -> Result<(), TuiError> {
-    let _ = config;
-    Err(TuiError {
-        message: "menuconfig is not implemented yet".to_string(),
-    })
+    let mut app = App::new(config.session);
+
+    if let Some(script) = config.script_path.as_deref() {
+        runtime::run_script_mode(&mut app, script).map_err(|message| TuiError { message })?;
+        return Ok(());
+    }
+
+    runtime::run_terminal_mode(&mut app).map_err(|message| TuiError { message })
 }
