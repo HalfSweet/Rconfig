@@ -64,7 +64,9 @@ async fn notify_service_with_drain(
     .await
     .expect("timed out waiting notification to complete");
 
-    while let Ok(Some(message)) = tokio::time::timeout(Duration::from_millis(20), socket.next()).await {
+    while let Ok(Some(message)) =
+        tokio::time::timeout(Duration::from_millis(20), socket.next()).await
+    {
         if message.method() == "textDocument/publishDiagnostics" {
             publishes.push(serde_json::to_value(message).expect("request to json"));
         }
@@ -707,7 +709,10 @@ async fn did_change_ignores_stale_versions_after_newer_change() {
         .unwrap_or_default()
         .iter()
         .any(|diag| diag["severity"] == 1);
-    assert!(open_has_error, "open should report parse error: {open_publish:#?}");
+    assert!(
+        open_has_error,
+        "open should report parse error: {open_publish:#?}"
+    );
 
     notify_service(
         &mut service,
@@ -752,7 +757,6 @@ async fn did_change_ignores_stale_versions_after_newer_change() {
         "stale version should not override newer clean content: {publish:#?}"
     );
 }
-
 
 #[tokio::test]
 async fn multi_file_schema_diagnostics_are_published_to_correct_uri() {
@@ -843,4 +847,392 @@ schema = "b.rcfg"
     let has_error = diagnostics.iter().any(|diag| diag["severity"] == 1);
 
     assert!(has_error, "dep schema parse error should be published");
+}
+
+#[tokio::test]
+async fn hover_and_goto_definition_support_enum_variant_symbols() {
+    let root = fixture_root("lsp_enum_variant_hover_goto");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  /// Protocol mode.
+  enum Mode {
+    /// Binary RTU mode.
+    rtu,
+    ascii,
+  }
+
+  option mode: Mode = rtu;
+
+  require!(mode == app::Mode::rtu);
+}
+"#,
+    );
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let schema_uri = as_file_uri(&schema_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+
+    let _ = wait_for_publish(&mut socket).await;
+
+    let hover_response = call_service(
+        &mut service,
+        "textDocument/hover",
+        61,
+        json!({
+            "textDocument": {"uri": schema_uri},
+            "position": {"line": 8, "character": 30}
+        }),
+    )
+    .await;
+
+    let hover_text = hover_response["result"]["contents"]["value"]
+        .as_str()
+        .or_else(|| hover_response["result"]["contents"].as_str())
+        .unwrap_or_default();
+    assert!(
+        hover_text.contains("enum variant") || hover_text.contains("**mod** `app`"),
+        "{hover_response:#?}"
+    );
+
+    let goto_response = call_service(
+        &mut service,
+        "textDocument/definition",
+        62,
+        json!({
+            "textDocument": {"uri": schema_uri},
+            "position": {"line": 8, "character": 30}
+        }),
+    )
+    .await;
+
+    assert!(
+        goto_response["result"].is_object() || goto_response["result"].is_array(),
+        "{goto_response:#?}"
+    );
+}
+
+#[tokio::test]
+async fn document_symbol_reports_expected_nested_kinds() {
+    let root = fixture_root("lsp_document_symbol_nested");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  option enabled: bool = false;
+
+  enum Mode { off, on }
+}
+"#,
+    );
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let schema_uri = as_file_uri(&schema_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+
+    let _ = wait_for_publish(&mut socket).await;
+
+    let symbols_response = call_service(
+        &mut service,
+        "textDocument/documentSymbol",
+        63,
+        json!({
+            "textDocument": {"uri": schema_uri}
+        }),
+    )
+    .await;
+
+    let result = symbols_response["result"].as_array().expect("symbol array");
+    let app = result
+        .iter()
+        .find(|symbol| symbol["name"] == "app")
+        .expect("module app symbol");
+    assert_eq!(app["kind"], json!(2), "module kind should be MODULE");
+
+    let app_children = app["children"].as_array().expect("app children");
+    let enabled = app_children
+        .iter()
+        .find(|symbol| symbol["name"] == "enabled")
+        .expect("enabled symbol");
+    assert_eq!(enabled["kind"], json!(8), "option kind should be FIELD");
+
+    let mode = app_children
+        .iter()
+        .find(|symbol| symbol["name"] == "Mode")
+        .expect("Mode enum symbol");
+    assert_eq!(mode["kind"], json!(10), "enum kind should be ENUM");
+
+    let mode_children = mode["children"].as_array().expect("Mode children");
+    let off = mode_children
+        .iter()
+        .find(|symbol| symbol["name"] == "off")
+        .expect("off variant symbol");
+    assert_eq!(off["kind"], json!(22), "variant should be ENUM_MEMBER");
+}
+
+#[tokio::test]
+async fn goto_definition_from_values_path_jumps_to_schema_option() {
+    let root = fixture_root("lsp_goto_cross_file_values_to_schema");
+    let schema_path = root.join("schema.rcfg");
+    let values_path = root.join("values.rcfgv");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(&values_path, "app::enabled = true;\n");
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let values_text = std::fs::read_to_string(&values_path).expect("read values");
+    let schema_uri = as_file_uri(&schema_path);
+    let values_uri = as_file_uri(&values_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+    let _ = wait_for_publish(&mut socket).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": values_uri,
+                "languageId": "rcfgv",
+                "version": 1,
+                "text": values_text,
+            }
+        }),
+    )
+    .await;
+    let _ = wait_for_publish(&mut socket).await;
+
+    let goto_response = call_service(
+        &mut service,
+        "textDocument/definition",
+        64,
+        json!({
+            "textDocument": {"uri": values_uri},
+            "position": {"line": 0, "character": 4}
+        }),
+    )
+    .await;
+
+    let result = if let Some(array) = goto_response["result"].as_array() {
+        array.first().cloned().unwrap_or_default()
+    } else {
+        goto_response["result"].clone()
+    };
+    let result_uri = result["uri"].as_str().expect("goto uri string");
+    assert!(
+        result_uri.ends_with("/lsp_goto_cross_file_values_to_schema/schema.rcfg"),
+        "{goto_response:#?}"
+    );
+    assert_eq!(result["range"]["start"]["line"], json!(1));
+}
+
+#[tokio::test]
+async fn completion_in_schema_path_after_double_colon_lists_nested_symbols() {
+    let root = fixture_root("lsp_completion_schema_double_colon");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  option enabled: bool = false;
+  enum Mode { off, on }
+}
+
+mod top {
+  require!(app::);
+}
+"#,
+    );
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let schema_uri = as_file_uri(&schema_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+    let _ = wait_for_publish(&mut socket).await;
+
+    let completion_response = call_service(
+        &mut service,
+        "textDocument/completion",
+        65,
+        json!({
+            "textDocument": {"uri": schema_uri},
+            "position": {"line": 6, "character": 16}
+        }),
+    )
+    .await;
+
+    let items = completion_items(&completion_response);
+    let enabled = items
+        .iter()
+        .find(|item| item["detail"].as_str() == Some("app::enabled"))
+        .expect("app::enabled completion");
+    assert_eq!(enabled["insertText"], json!("enabled"));
+
+    let mode = items
+        .iter()
+        .find(|item| item["detail"].as_str() == Some("app::Mode"))
+        .expect("app::Mode completion");
+    assert_eq!(mode["insertText"], json!("Mode"));
+}
+
+#[tokio::test]
+async fn missing_manifest_schema_reports_dependency_diagnostics_when_overlay_opened() {
+    let root = fixture_root("lsp_missing_manifest_schema_overlay_diag");
+    let dep_dir = root.join("dep");
+    let root_manifest = root.join("Config.toml");
+    let dep_manifest = dep_dir.join("Config.toml");
+    let schema_a = root.join("a.rcfg");
+    let schema_b = dep_dir.join("missing.rcfg");
+
+    write_file(
+        &root_manifest,
+        r#"[package]
+name = "root_pkg"
+version = "0.1.0"
+
+[entry]
+schema = "a.rcfg"
+
+[dependencies]
+dep_pkg = "dep"
+"#,
+    );
+    write_file(
+        &dep_manifest,
+        r#"[package]
+name = "dep_pkg"
+version = "0.1.0"
+
+[entry]
+schema = "missing.rcfg"
+"#,
+    );
+    write_file(
+        &schema_a,
+        r#"mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    let _ = std::fs::remove_file(&schema_b);
+
+    let a_text = std::fs::read_to_string(&schema_a).expect("read a");
+    let a_uri = as_file_uri(&schema_a);
+    let dep_b_uri = as_file_uri(&schema_b);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": dep_b_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": "mod dep {\n  option missing: bool = false;\n}\n",
+            }
+        }),
+    )
+    .await;
+    let _ = wait_for_publish(&mut socket).await;
+
+    let publishes = notify_service_with_drain(
+        &mut service,
+        &mut socket,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": a_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": a_text,
+            }
+        }),
+    )
+    .await;
+
+    let dep_diag_publish = publishes.iter().find(|publish| {
+        publish["method"] == "textDocument/publishDiagnostics"
+            && publish["params"]["uri"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with("/dep/missing.rcfg"))
+    });
+
+    assert!(
+        dep_diag_publish.is_some(),
+        "expected diagnostics published for opened dependency overlay: {publishes:#?}"
+    );
 }
