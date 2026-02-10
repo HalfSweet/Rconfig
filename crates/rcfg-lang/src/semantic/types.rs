@@ -313,7 +313,7 @@ impl SymbolTable {
         self.option_ranges.get(path)
     }
 
-    pub(super) fn option_span(&self, path: &str) -> Option<Span> {
+    pub fn option_span(&self, path: &str) -> Option<Span> {
         self.option_spans.get(path).copied()
     }
 
