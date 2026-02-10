@@ -147,6 +147,31 @@ impl App {
             .collect::<Vec<_>>();
 
         let active_paths = self.state.active_paths.iter().cloned().collect::<Vec<_>>();
+        let resolved = self.session.resolve(&self.state.to_values_file());
+        let resolved_options = resolved
+            .options
+            .iter()
+            .map(|option| {
+                let value = option.value.as_ref().map(|value| match value {
+                    ResolvedValue::Bool(raw) => serde_json::json!(raw),
+                    ResolvedValue::Int(raw) => serde_json::json!(raw),
+                    ResolvedValue::String(raw) => serde_json::json!(raw),
+                    ResolvedValue::EnumVariant(raw) => serde_json::json!(raw),
+                });
+
+                serde_json::json!({
+                    "path": option.path,
+                    "active": option.active,
+                    "source": option.source.map(|source| match source {
+                        ValueSource::User => "user",
+                        ValueSource::Patch => "patch",
+                        ValueSource::Default => "default",
+                        ValueSource::Context => "context",
+                    }),
+                    "value": value,
+                })
+            })
+            .collect::<Vec<_>>();
 
         serde_json::json!({
             "selected_path": self
@@ -158,6 +183,7 @@ impl App {
             "user_values": user_values,
             "active_paths": active_paths,
             "diagnostics": diagnostics,
+            "resolved_options": resolved_options,
         })
     }
 
