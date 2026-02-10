@@ -15,6 +15,27 @@ pub struct SymbolInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct SymbolPath(String);
+
+impl SymbolPath {
+    pub(super) fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<String> for SymbolPath {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl Borrow<str> for SymbolPath {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct VariantPath(String);
 
 impl VariantPath {
@@ -216,7 +237,7 @@ impl ValueType {
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
-    pub(super) symbols: BTreeMap<String, SymbolInfo>,
+    pub(super) symbols: BTreeMap<SymbolPath, SymbolInfo>,
     pub(super) option_types: BTreeMap<OptionPath, ValueType>,
     pub(super) option_defaults: BTreeMap<OptionPath, ConstValue>,
     pub(super) option_ranges: BTreeMap<OptionPath, IntRange>,
@@ -241,8 +262,10 @@ impl SymbolTable {
         self.symbols.get(path)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &SymbolInfo)> {
-        self.symbols.iter()
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &SymbolInfo)> {
+        self.symbols
+            .iter()
+            .map(|(path, info)| (path.as_str(), info))
     }
 
     pub fn option_type(&self, path: &str) -> Option<&ValueType> {
@@ -254,7 +277,7 @@ impl SymbolTable {
     }
 
     pub(super) fn insert_symbol(&mut self, symbol: SymbolInfo) {
-        self.symbols.insert(symbol.path.clone(), symbol);
+        self.symbols.insert(SymbolPath::from(symbol.path.clone()), symbol);
     }
 
     pub(super) fn insert_option_type(&mut self, path: String, ty: ValueType) {
