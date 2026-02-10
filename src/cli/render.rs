@@ -44,7 +44,24 @@ pub(crate) fn render_schema_ir_json(
 }
 
 pub(crate) fn i18n_symbol_key(package: &str, path: &str, suffix: &str) -> String {
-    format!("{}.{}.{}", package, path.replace("::", "."), suffix)
+    let normalized = normalize_i18n_path(package, path);
+    if normalized.is_empty() {
+        format!("{}.{}", package, suffix)
+    } else {
+        format!("{}.{}.{}", package, normalized, suffix)
+    }
+}
+
+fn normalize_i18n_path(package: &str, path: &str) -> String {
+    let stripped = if path == package {
+        ""
+    } else if let Some(rest) = path.strip_prefix(&format!("{}::", package)) {
+        rest
+    } else {
+        path
+    };
+
+    stripped.replace("::", ".")
 }
 
 fn collect_doc_sections_index(
@@ -220,7 +237,7 @@ fn with_package_prefix(path: &str, package_name: Option<&str>) -> String {
     let Some(package_name) = package_name else {
         return path.to_string();
     };
-    if path == "ctx" || path.starts_with("ctx::") {
+    if path == "ctx" || path.starts_with("ctx::") || path == package_name {
         return path.to_string();
     }
 

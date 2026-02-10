@@ -494,6 +494,12 @@ fn rcfg_check_accepts_manifest_dependencies_path_table() {
     let manifest = root.join("Config.toml");
     let values = root.join("values.rcfgv");
 
+    let hal_manifest = root.join("deps/hal_uart/Config.toml");
+    let hal_schema = root.join("deps/hal_uart/src/schema.rcfg");
+
+    let platform_manifest = root.join("deps/platform/Config.toml");
+    let platform_schema = root.join("deps/platform/src/schema.rcfg");
+
     write_file(
         &schema,
         r#"
@@ -502,6 +508,15 @@ mod app {
 }
 "#,
     );
+    write_file(
+        &hal_schema,
+        "mod hal_uart { option enabled: bool = false; }",
+    );
+    write_file(
+        &platform_schema,
+        "mod platform { option enabled: bool = false; }",
+    );
+
     write_file(
         &manifest,
         r#"
@@ -513,8 +528,30 @@ version = "0.1.0"
 schema = "src/schema.rcfg"
 
 [dependencies]
-hal_uart = "../deps/hal_uart"
-platform = "../deps/platform"
+hal_uart = "deps/hal_uart"
+platform = "deps/platform"
+"#,
+    );
+    write_file(
+        &hal_manifest,
+        r#"
+[package]
+name = "hal_uart"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+    );
+    write_file(
+        &platform_manifest,
+        r#"
+[package]
+name = "platform"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
 "#,
     );
     write_file(&values, "");
