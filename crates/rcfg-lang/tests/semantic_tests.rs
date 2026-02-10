@@ -340,7 +340,7 @@ fn reports_non_exhaustive_match() {
     let src = r#"
 mod app {
   enum Mode { off, on }
-  option mode: Mode = off;
+  option mode: Mode = Mode::off;
 
   match mode {
     case Mode::on => { }
@@ -614,6 +614,73 @@ mod app {
             .diagnostics
             .iter()
             .all(|diag| diag.code != "E_SYMBOL_NOT_FOUND" && diag.code != "E_AMBIGUOUS_PATH"),
+        "unexpected diagnostics: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn schema_use_alias_supports_cross_package_when_condition() {
+    let src = r#"
+mod hal_uart {
+  option enabled: bool = true;
+}
+
+mod app {
+  use hal_uart as uart;
+  when uart::enabled {
+    option boot: bool = false;
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_SYMBOL_NOT_FOUND" && diag.code != "E_AMBIGUOUS_PATH"),
+        "unexpected diagnostics: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn schema_use_alias_supports_cross_package_match_reference() {
+    let src = r#"
+mod hal_uart {
+  enum Mode { off, on }
+  option mode: Mode = Mode::off;
+}
+
+mod app {
+  use hal_uart as uart;
+  match uart::mode {
+    case uart::Mode::off => {
+      option boot: bool = false;
+    }
+    case uart::Mode::on => { }
+  }
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+    assert!(
+        report.diagnostics.iter().all(|diag| {
+            diag.code != "E_SYMBOL_NOT_FOUND"
+                && diag.code != "E_AMBIGUOUS_PATH"
+                && diag.code != "E_MATCH_SCRUTINEE_NOT_ALWAYS_ACTIVE"
+        }),
         "unexpected diagnostics: {:#?}",
         report.diagnostics
     );
