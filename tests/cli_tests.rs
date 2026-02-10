@@ -702,6 +702,8 @@ schema = "src/schema.rcfg"
 mod app {
   option enabled: bool = false;
 }
+
+require!(hal_uart::enabled == false);
 "#,
     );
     write_file(
@@ -721,8 +723,8 @@ hal_uart = "../deps/hal_uart"
     write_file(
         &values,
         r#"
-hal_uart::enabled = true;
-app::enabled = true;
+demo::app::enabled = true;
+hal_uart::hal_uart::enabled = true;
 "#,
     );
 
@@ -733,17 +735,15 @@ app::enabled = true;
             app_manifest.to_str().expect("manifest path"),
             "--values",
             values.to_str().expect("values path"),
-            "--format",
-            "json",
         ])
         .output()
         .expect("run rcfg check");
-    assert!(output.status.success(), "rcfg check should succeed");
+    assert!(!output.status.success(), "rcfg check should fail");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        !stdout.contains("E_SYMBOL_NOT_FOUND"),
-        "dependency symbols should be available: {stdout}"
+        stdout.contains("E_REQUIRE_FAILED"),
+        "cross-package require should evaluate dependency option: {stdout}"
     );
 }
 

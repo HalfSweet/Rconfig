@@ -163,11 +163,67 @@ fn load_schema_with_dependencies(graph: &ManifestGraph) -> Result<(rcfg_lang::Fi
             )
         })?;
         let (schema_file, mut diags) = parse_schema_with_diagnostics(&schema_text);
-        all_items.extend(schema_file.items);
+        all_items.extend(namespace_schema_items_for_package(
+            schema_file.items,
+            manifest.package_name.as_str(),
+        ));
         all_diags.append(&mut diags);
     }
 
     Ok((rcfg_lang::File { items: all_items }, all_diags))
+}
+
+fn namespace_schema_items_for_package(items: Vec<rcfg_lang::Item>, package_name: &str) -> Vec<rcfg_lang::Item> {
+    let mut first_namespaced_index = None;
+    let mut namespaced_items = Vec::new();
+
+    for (index, item) in items.iter().enumerate() {
+        let is_ctx_module = matches!(
+            item,
+            rcfg_lang::Item::Mod(module) if module.name.value == "ctx"
+        );
+        if is_ctx_module {
+            continue;
+        }
+
+        if first_namespaced_index.is_none() {
+            first_namespaced_index = Some(index);
+        }
+        namespaced_items.push(item.clone());
+    }
+
+    let mut out = Vec::new();
+    let mut inserted_namespace = false;
+    for (index, item) in items.into_iter().enumerate() {
+        let is_ctx_module = matches!(
+            item,
+            rcfg_lang::Item::Mod(ref module) if module.name.value == "ctx"
+        );
+
+        if !inserted_namespace && first_namespaced_index.is_some_and(|value| value == index) {
+            out.push(make_package_namespace_module(package_name, namespaced_items.clone()));
+            inserted_namespace = true;
+        }
+
+        if is_ctx_module {
+            out.push(item);
+        }
+    }
+
+    if !inserted_namespace && !namespaced_items.is_empty() {
+        out.push(make_package_namespace_module(package_name, namespaced_items));
+    }
+
+    out
+}
+
+fn make_package_namespace_module(package_name: &str, items: Vec<rcfg_lang::Item>) -> rcfg_lang::Item {
+    rcfg_lang::Item::Mod(rcfg_lang::ast::ModDecl {
+        meta: rcfg_lang::ast::ItemMeta::empty(),
+        name: rcfg_lang::Spanned::new(package_name.to_string(), rcfg_lang::Span::default()),
+        items,
+        span: rcfg_lang::Span::default(),
+    })
 }
 
 pub(crate) fn analyze_values_report(
