@@ -2,10 +2,11 @@ use std::path::PathBuf;
 
 use rcfg_lang::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 use rcfg_lang::{
-    DiagnosticArgValue, ExportOptions, Severity, SymbolKind, SymbolTable, analyze_schema,
-    analyze_schema_files, analyze_schema_strict, analyze_values, analyze_values_from_path,
-    analyze_values_from_path_report, analyze_values_strict, expand_values_includes_from_path,
-    expand_values_includes_with_origins, generate_exports, plan_c_header_exports, resolve_values,
+    analyze_schema, analyze_schema_files, analyze_schema_strict, analyze_values,
+    analyze_values_from_path, analyze_values_from_path_report, analyze_values_strict,
+    expand_values_includes_from_path, expand_values_includes_with_origins, generate_exports,
+    plan_c_header_exports, resolve_values, DiagnosticArgValue, ExportOptions, Severity, SymbolKind,
+    SymbolTable,
 };
 
 fn symbols_from(src: &str) -> SymbolTable {
@@ -585,6 +586,36 @@ uart::enable = true;
     assert!(
         semantic_diags.is_empty(),
         "expected no diagnostics, got: {semantic_diags:#?}"
+    );
+}
+
+#[test]
+fn schema_use_alias_supports_cross_package_require_reference() {
+    let src = r#"
+mod hal_uart {
+  option enabled: bool = false;
+}
+
+mod app {
+  use hal_uart as uart;
+  option boot: bool = false;
+  require!(uart::enabled == false);
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diag| diag.code != "E_SYMBOL_NOT_FOUND" && diag.code != "E_AMBIGUOUS_PATH"),
+        "unexpected diagnostics: {:#?}",
+        report.diagnostics
     );
 }
 

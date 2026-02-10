@@ -66,11 +66,13 @@ pub(super) fn evaluate_activation_once(
         .map(|path| path.as_str().to_string())
         .collect::<BTreeSet<_>>();
     let mut scope = Vec::new();
+    let mut aliases = HashMap::new();
     let mut ctx_references = BTreeSet::new();
     collect_active_options(
         symbols,
         symbols.schema_items(),
         &mut scope,
+        &mut aliases,
         runtime,
         true,
         &mut active,
@@ -89,6 +91,7 @@ pub(super) fn collect_active_options(
     symbols: &SymbolTable,
     items: &[Item],
     scope: &mut Vec<String>,
+    aliases: &mut HashMap<String, String>,
     runtime: &RuntimeState,
     guard_active: bool,
     active: &mut BTreeSet<String>,
@@ -96,7 +99,12 @@ pub(super) fn collect_active_options(
 ) {
     for item in items {
         match item {
-            Item::Use(_) | Item::Require(_) | Item::Constraint(_) | Item::Enum(_) => {}
+            Item::Use(use_stmt) => {
+                if let Some(alias) = &use_stmt.alias {
+                    aliases.insert(alias.value.clone(), use_stmt.path.to_string());
+                }
+            }
+            Item::Require(_) | Item::Constraint(_) | Item::Enum(_) => {}
             Item::Option(option) => {
                 let option_path = build_full_path(scope, &option.name.value);
                 if guard_active {
@@ -109,6 +117,7 @@ pub(super) fn collect_active_options(
                     symbols,
                     &module.items,
                     scope,
+                    aliases,
                     runtime,
                     guard_active,
                     active,
@@ -121,6 +130,7 @@ pub(super) fn collect_active_options(
                     &when_block.condition,
                     symbols,
                     scope,
+                    aliases,
                     runtime,
                     ctx_references,
                 )
@@ -129,6 +139,7 @@ pub(super) fn collect_active_options(
                     symbols,
                     &when_block.items,
                     scope,
+                    aliases,
                     runtime,
                     guard_active && cond,
                     active,
@@ -136,8 +147,14 @@ pub(super) fn collect_active_options(
                 );
             }
             Item::Match(match_block) => {
-                let selected =
-                    select_match_case_index(&match_block, symbols, scope, runtime, ctx_references);
+                let selected = select_match_case_index(
+                    &match_block,
+                    symbols,
+                    scope,
+                    aliases,
+                    runtime,
+                    ctx_references,
+                );
                 for (index, case) in match_block.cases.iter().enumerate() {
                     let case_active =
                         selected.is_some_and(|selected_index| selected_index == index);
@@ -145,6 +162,7 @@ pub(super) fn collect_active_options(
                         symbols,
                         &case.items,
                         scope,
+                        aliases,
                         runtime,
                         guard_active && case_active,
                         active,
@@ -160,10 +178,19 @@ pub(super) fn select_match_case_index(
     block: &MatchBlock,
     symbols: &SymbolTable,
     scope: &[String],
+    aliases: &HashMap<String, String>,
     runtime: &RuntimeState,
     ctx_references: &mut BTreeSet<String>,
 ) -> Option<usize> {
-    let scrutinee = eval_expr(&block.expr, symbols, scope, runtime, ctx_references, true)?;
+    let scrutinee = eval_expr(
+        &block.expr,
+        symbols,
+        scope,
+        aliases,
+        runtime,
+        ctx_references,
+        true,
+    )?;
 
     for (index, case) in block.cases.iter().enumerate() {
         if !match_pattern_matches(
@@ -171,6 +198,7 @@ pub(super) fn select_match_case_index(
             &scrutinee,
             symbols,
             scope,
+            aliases,
             runtime,
             ctx_references,
         ) {
@@ -178,7 +206,9 @@ pub(super) fn select_match_case_index(
         }
 
         if let Some(guard) = &case.guard {
-            if !eval_expr_as_bool(guard, symbols, scope, runtime, ctx_references).unwrap_or(false) {
+            if !eval_expr_as_bool(guard, symbols, scope, aliases, runtime, ctx_references)
+                .unwrap_or(false)
+            {
                 return None;
             }
         }
@@ -193,19 +223,19 @@ pub(super) fn match_pattern_matches(
     scrutinee: &ResolvedValue,
     symbols: &SymbolTable,
     scope: &[String],
+    aliases: &HashMap<String, String>,
     runtime: &RuntimeState,
     ctx_references: &mut BTreeSet<String>,
 ) -> bool {
     match pattern {
         MatchPat::Wildcard(_) => true,
         MatchPat::Paths(paths, _) => paths.iter().any(|path| {
-            eval_path_as_enum_variant(path, symbols, scope, runtime, ctx_references).is_some_and(
-                |variant| {
+            eval_path_as_enum_variant(path, symbols, scope, aliases, runtime, ctx_references)
+                .is_some_and(|variant| {
                     scrutinee
                         .as_enum_variant()
                         .is_some_and(|current| current == variant)
-                },
-            )
+                })
         }),
     }
 }
@@ -258,18 +288,31 @@ pub(super) fn collect_runtime_require_diagnostics(
     symbols: &SymbolTable,
     items: &[Item],
     scope: &mut Vec<String>,
+    aliases: &mut HashMap<String, String>,
     runtime: &RuntimeState,
     diagnostics: &mut Vec<(Diagnostic, Option<usize>)>,
     require_counters: &mut HashMap<String, usize>,
 ) {
     for item in items {
         match item {
-            Item::Use(_) | Item::Enum(_) | Item::Option(_) => {}
+            Item::Use(use_stmt) => {
+                if let Some(alias) = &use_stmt.alias {
+                    aliases.insert(alias.value.clone(), use_stmt.path.to_string());
+                }
+            }
+            Item::Enum(_) | Item::Option(_) => {}
             Item::Require(require) => {
                 let ordinal = next_require_ordinal(require_counters, scope);
                 let require_key = require_message_key(require, scope, ordinal);
-                if !eval_expr_as_bool(&require.expr, symbols, scope, runtime, &mut BTreeSet::new())
-                    .unwrap_or(false)
+                if !eval_expr_as_bool(
+                    &require.expr,
+                    symbols,
+                    scope,
+                    aliases,
+                    runtime,
+                    &mut BTreeSet::new(),
+                )
+                .unwrap_or(false)
                 {
                     diagnostics.push((
                         Diagnostic::error(
@@ -291,6 +334,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                             &require.expr,
                             symbols,
                             scope,
+                            aliases,
                             runtime,
                             &mut BTreeSet::new(),
                         )
@@ -315,6 +359,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                     symbols,
                     &module.items,
                     scope,
+                    aliases,
                     runtime,
                     diagnostics,
                     require_counters,
@@ -326,6 +371,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                     &when_block.condition,
                     symbols,
                     scope,
+                    aliases,
                     runtime,
                     &mut BTreeSet::new(),
                 )
@@ -335,6 +381,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                         symbols,
                         &when_block.items,
                         scope,
+                        aliases,
                         runtime,
                         diagnostics,
                         require_counters,
@@ -346,6 +393,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                     match_block,
                     symbols,
                     scope,
+                    aliases,
                     runtime,
                     &mut BTreeSet::new(),
                 ) {
@@ -353,6 +401,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                         symbols,
                         &match_block.cases[index].items,
                         scope,
+                        aliases,
                         runtime,
                         diagnostics,
                         require_counters,

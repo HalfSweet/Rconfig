@@ -13,6 +13,7 @@ pub(super) struct TypeChecker<'a> {
     activation_edges: HashMap<String, HashSet<String>>,
     used_enum_variants: HashSet<String>,
     require_counters: HashMap<String, usize>,
+    aliases: HashMap<String, String>,
 }
 
 impl<'a> TypeChecker<'a> {
@@ -23,6 +24,7 @@ impl<'a> TypeChecker<'a> {
             activation_edges: HashMap::new(),
             used_enum_variants: HashSet::new(),
             require_counters: HashMap::new(),
+            aliases: HashMap::new(),
         }
     }
 
@@ -41,7 +43,10 @@ impl<'a> TypeChecker<'a> {
     ) {
         for item in items {
             match item {
-                Item::Use(_) | Item::Enum(_) => {}
+                Item::Use(use_stmt) => {
+                    self.register_use_alias(use_stmt);
+                }
+                Item::Enum(_) => {}
                 Item::Mod(module) => {
                     scope.push(module.name.value.clone());
                     self.check_items_with_activation(&module.items, scope, activation_deps);
@@ -207,10 +212,18 @@ impl<'a> TypeChecker<'a> {
             ConstValue::Bool(_, _) => ValueType::Bool,
             ConstValue::Int(_, _) => ValueType::UntypedInt,
             ConstValue::String(_, _) => ValueType::String,
-            ConstValue::EnumPath(path) => match self.symbols.resolve_path_type(scope, path) {
-                ResolvePathResult::Resolved(ty) => ty,
-                ResolvePathResult::NotFound | ResolvePathResult::Ambiguous(_) => ValueType::Unknown,
-            },
+            ConstValue::EnumPath(path) => {
+                let expanded = expand_with_aliases(path, &self.aliases);
+                match self
+                    .symbols
+                    .resolve_path_type_raw_in_scope(scope, &expanded)
+                {
+                    ResolvePathResult::Resolved(ty) => ty,
+                    ResolvePathResult::NotFound | ResolvePathResult::Ambiguous(_) => {
+                        ValueType::Unknown
+                    }
+                }
+            }
         }
     }
 
@@ -321,7 +334,11 @@ impl<'a> TypeChecker<'a> {
             return;
         };
 
-        match self.symbols.resolve_enum_variant_path_in_scope(scope, path) {
+        let expanded = expand_with_aliases(path, &self.aliases);
+        match self
+            .symbols
+            .resolve_enum_variant_path_raw_in_scope(scope, &expanded)
+        {
             ResolveEnumVariantPathResult::Resolved(variant_path, _) => {
                 self.used_enum_variants.insert(variant_path);
             }
@@ -407,8 +424,10 @@ impl<'a> TypeChecker<'a> {
     ) {
         match expr {
             Expr::Path(path) => {
-                if let ResolveOptionPathResult::Resolved(option_path, _) =
-                    self.symbols.resolve_option_path_in_scope(scope, path)
+                let expanded = expand_with_aliases(path, &self.aliases);
+                if let ResolveOptionPathResult::Resolved(option_path, _) = self
+                    .symbols
+                    .resolve_option_path_raw_in_scope(scope, &expanded)
                 {
                     out.push(option_path);
                 }
@@ -432,8 +451,10 @@ impl<'a> TypeChecker<'a> {
                 self.collect_condition_option_dependencies_into(expr, scope, out);
                 for elem in elems {
                     if let InSetElem::Path(path) = elem {
-                        if let ResolveOptionPathResult::Resolved(option_path, _) =
-                            self.symbols.resolve_option_path_in_scope(scope, path)
+                        let expanded = expand_with_aliases(path, &self.aliases);
+                        if let ResolveOptionPathResult::Resolved(option_path, _) = self
+                            .symbols
+                            .resolve_option_path_raw_in_scope(scope, &expanded)
                         {
                             out.push(option_path);
                         }
@@ -520,10 +541,15 @@ impl<'a> TypeChecker<'a> {
 
     fn check_inactive_value_references(&mut self, expr: &Expr, scope: &[String]) {
         match expr {
-            Expr::Path(path) => match self.symbols.resolve_option_path_in_scope(scope, path) {
-                ResolveOptionPathResult::Resolved(option_path, ty) => {
-                    if !self.symbols.option_is_always_active(&option_path) && !ty.is_bool() {
-                        self.diagnostics.push(
+            Expr::Path(path) => {
+                let expanded = expand_with_aliases(path, &self.aliases);
+                match self
+                    .symbols
+                    .resolve_option_path_raw_in_scope(scope, &expanded)
+                {
+                    ResolveOptionPathResult::Resolved(option_path, ty) => {
+                        if !self.symbols.option_is_always_active(&option_path) && !ty.is_bool() {
+                            self.diagnostics.push(
                             Diagnostic::error(
                                 "E_INACTIVE_VALUE_REFERENCE",
                                 format!(
@@ -534,13 +560,14 @@ impl<'a> TypeChecker<'a> {
                             )
                             .with_path(option_path),
                         );
+                        }
+                    }
+                    ResolveOptionPathResult::NotFound => {}
+                    ResolveOptionPathResult::Ambiguous(candidates) => {
+                        let _ = candidates;
                     }
                 }
-                ResolveOptionPathResult::NotFound => {}
-                ResolveOptionPathResult::Ambiguous(candidates) => {
-                    let _ = candidates;
-                }
-            },
+            }
             Expr::Unary { expr, .. } => self.check_inactive_value_references(expr, scope),
             Expr::Binary { left, right, .. } => {
                 self.check_inactive_value_references(left, scope);
@@ -664,8 +691,10 @@ impl<'a> TypeChecker<'a> {
     fn match_scrutinee_option_path(&self, expr: &Expr, scope: &[String]) -> Option<String> {
         match expr {
             Expr::Path(path) => {
-                if let ResolveOptionPathResult::Resolved(option_path, ValueType::Enum(_)) =
-                    self.symbols.resolve_option_path_in_scope(scope, path)
+                let expanded = expand_with_aliases(path, &self.aliases);
+                if let ResolveOptionPathResult::Resolved(option_path, ValueType::Enum(_)) = self
+                    .symbols
+                    .resolve_option_path_raw_in_scope(scope, &expanded)
                 {
                     Some(option_path)
                 } else {
@@ -740,7 +769,10 @@ impl<'a> TypeChecker<'a> {
                     }
 
                     if let ResolveEnumVariantPathResult::Resolved(variant_path, resolved_enum) =
-                        self.symbols.resolve_enum_variant_path_in_scope(scope, path)
+                        self.symbols.resolve_enum_variant_path_raw_in_scope(
+                            scope,
+                            &expand_with_aliases(path, &self.aliases),
+                        )
                     {
                         if enum_name_matches(enum_name, &resolved_enum) {
                             self.used_enum_variants.insert(variant_path);
@@ -870,7 +902,11 @@ impl<'a> TypeChecker<'a> {
                 let left_ty = self.infer_expr_type(expr, scope, self_ty);
                 for elem in elems {
                     if let InSetElem::Path(path) = elem {
-                        if self.symbols.path_resolves_to_option_in_scope(scope, path) {
+                        let expanded = expand_with_aliases(path, &self.aliases);
+                        if self
+                            .symbols
+                            .path_resolves_to_option_raw_in_scope(scope, &expanded)
+                        {
                             self.diagnostics.push(Diagnostic::error(
                                 "E_IN_NOT_CONSTANT",
                                 "`in { ... }` elements must be constants, option paths are not allowed",
@@ -940,12 +976,16 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn resolve_path_type(&mut self, path: &Path, scope: &[String]) -> ValueType {
-        match self.symbols.resolve_path_type(scope, path) {
+        let expanded = expand_with_aliases(path, &self.aliases);
+        match self
+            .symbols
+            .resolve_path_type_raw_in_scope(scope, &expanded)
+        {
             ResolvePathResult::Resolved(ty) => ty,
             ResolvePathResult::NotFound => {
                 self.diagnostics.push(Diagnostic::error(
                     "E_SYMBOL_NOT_FOUND",
-                    format!("path `{}` cannot be resolved", path.to_string()),
+                    format!("path `{}` cannot be resolved", expanded),
                     path.span,
                 ));
                 ValueType::Unknown
@@ -955,7 +995,7 @@ impl<'a> TypeChecker<'a> {
                     "E_AMBIGUOUS_PATH",
                     format!(
                         "path `{}` is ambiguous, candidates: {}",
-                        path.to_string(),
+                        expanded,
                         candidates.join(", ")
                     ),
                     path.span,
@@ -963,6 +1003,24 @@ impl<'a> TypeChecker<'a> {
                 ValueType::Unknown
             }
         }
+    }
+
+    fn register_use_alias(&mut self, use_stmt: &crate::ast::UseStmt) {
+        let Some(alias) = &use_stmt.alias else {
+            return;
+        };
+
+        if self.aliases.contains_key(&alias.value) {
+            self.diagnostics.push(Diagnostic::error(
+                "E_USE_ALIAS_CONFLICT",
+                format!("use alias `{}` is already defined", alias.value),
+                alias.span,
+            ));
+            return;
+        }
+
+        self.aliases
+            .insert(alias.value.clone(), use_stmt.path.to_string());
     }
 
     fn check_call(&mut self, name: &str, args: &[ValueType], span: Span) -> ValueType {

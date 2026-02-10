@@ -619,7 +619,8 @@ impl<'a> ValuesChecker<'a> {
         expected: &ValueType,
         span: Span,
     ) -> ValueType {
-        self.parse_env_value(name, fallback, expected, span).actual_type
+        self.parse_env_value(name, fallback, expected, span)
+            .actual_type
     }
 
     pub(super) fn push_env_parse_failed(
@@ -757,11 +758,13 @@ impl<'a> ValuesChecker<'a> {
     ) -> Vec<(Diagnostic, Option<usize>)> {
         let mut diagnostics = Vec::new();
         let mut scope = Vec::new();
+        let mut aliases = HashMap::new();
         let mut require_counters = HashMap::new();
         collect_runtime_require_diagnostics(
             self.symbols,
             self.symbols.schema_items(),
             &mut scope,
+            &mut aliases,
             runtime,
             &mut diagnostics,
             &mut require_counters,

@@ -5,16 +5,19 @@ pub(super) fn eval_expr_as_bool(
     expr: &Expr,
     symbols: &SymbolTable,
     scope: &[String],
+    aliases: &HashMap<String, String>,
     runtime: &RuntimeState,
     ctx_references: &mut BTreeSet<String>,
 ) -> Option<bool> {
-    eval_expr(expr, symbols, scope, runtime, ctx_references, true).and_then(|value| value.as_bool())
+    eval_expr(expr, symbols, scope, aliases, runtime, ctx_references, true)
+        .and_then(|value| value.as_bool())
 }
 
 pub(super) fn eval_expr(
     expr: &Expr,
     symbols: &SymbolTable,
     scope: &[String],
+    aliases: &HashMap<String, String>,
     runtime: &RuntimeState,
     ctx_references: &mut BTreeSet<String>,
     inactive_bool_as_false: bool,
@@ -28,6 +31,7 @@ pub(super) fn eval_expr(
             path,
             symbols,
             scope,
+            aliases,
             runtime,
             ctx_references,
             inactive_bool_as_false,
@@ -37,6 +41,7 @@ pub(super) fn eval_expr(
             args,
             symbols,
             scope,
+            aliases,
             runtime,
             ctx_references,
         ),
@@ -44,16 +49,26 @@ pub(super) fn eval_expr(
             op: UnaryOp::Not,
             expr,
             ..
-        } => eval_expr_as_bool(expr, symbols, scope, runtime, ctx_references)
+        } => eval_expr_as_bool(expr, symbols, scope, aliases, runtime, ctx_references)
             .map(|value| ResolvedValue::Bool(!value)),
         Expr::Binary {
             op, left, right, ..
-        } => eval_binary_expr(*op, left, right, symbols, scope, runtime, ctx_references),
+        } => eval_binary_expr(
+            *op,
+            left,
+            right,
+            symbols,
+            scope,
+            aliases,
+            runtime,
+            ctx_references,
+        ),
         Expr::InRange { expr, range, .. } => {
             let value = eval_expr(
                 expr,
                 symbols,
                 scope,
+                aliases,
                 runtime,
                 ctx_references,
                 inactive_bool_as_false,
@@ -71,6 +86,7 @@ pub(super) fn eval_expr(
                 expr,
                 symbols,
                 scope,
+                aliases,
                 runtime,
                 ctx_references,
                 inactive_bool_as_false,
@@ -82,6 +98,7 @@ pub(super) fn eval_expr(
                         path,
                         symbols,
                         scope,
+                        aliases,
                         runtime,
                         ctx_references,
                         inactive_bool_as_false,
@@ -95,6 +112,7 @@ pub(super) fn eval_expr(
             expr,
             symbols,
             scope,
+            aliases,
             runtime,
             ctx_references,
             inactive_bool_as_false,
@@ -108,31 +126,58 @@ pub(super) fn eval_binary_expr(
     right: &Expr,
     symbols: &SymbolTable,
     scope: &[String],
+    aliases: &HashMap<String, String>,
     runtime: &RuntimeState,
     ctx_references: &mut BTreeSet<String>,
 ) -> Option<ResolvedValue> {
     match op {
         BinaryOp::Or => Some(ResolvedValue::Bool(
-            eval_expr_as_bool(left, symbols, scope, runtime, ctx_references)?
-                || eval_expr_as_bool(right, symbols, scope, runtime, ctx_references)?,
+            eval_expr_as_bool(left, symbols, scope, aliases, runtime, ctx_references)?
+                || eval_expr_as_bool(right, symbols, scope, aliases, runtime, ctx_references)?,
         )),
         BinaryOp::And => Some(ResolvedValue::Bool(
-            eval_expr_as_bool(left, symbols, scope, runtime, ctx_references)?
-                && eval_expr_as_bool(right, symbols, scope, runtime, ctx_references)?,
+            eval_expr_as_bool(left, symbols, scope, aliases, runtime, ctx_references)?
+                && eval_expr_as_bool(right, symbols, scope, aliases, runtime, ctx_references)?,
         )),
         BinaryOp::Eq => {
-            let lhs = eval_expr(left, symbols, scope, runtime, ctx_references, true)?;
-            let rhs = eval_expr(right, symbols, scope, runtime, ctx_references, true)?;
+            let lhs = eval_expr(left, symbols, scope, aliases, runtime, ctx_references, true)?;
+            let rhs = eval_expr(
+                right,
+                symbols,
+                scope,
+                aliases,
+                runtime,
+                ctx_references,
+                true,
+            )?;
             Some(ResolvedValue::Bool(values_equal(&lhs, &rhs)))
         }
         BinaryOp::Ne => {
-            let lhs = eval_expr(left, symbols, scope, runtime, ctx_references, true)?;
-            let rhs = eval_expr(right, symbols, scope, runtime, ctx_references, true)?;
+            let lhs = eval_expr(left, symbols, scope, aliases, runtime, ctx_references, true)?;
+            let rhs = eval_expr(
+                right,
+                symbols,
+                scope,
+                aliases,
+                runtime,
+                ctx_references,
+                true,
+            )?;
             Some(ResolvedValue::Bool(!values_equal(&lhs, &rhs)))
         }
         BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-            let lhs = eval_expr(left, symbols, scope, runtime, ctx_references, true)?.as_int()?;
-            let rhs = eval_expr(right, symbols, scope, runtime, ctx_references, true)?.as_int()?;
+            let lhs = eval_expr(left, symbols, scope, aliases, runtime, ctx_references, true)?
+                .as_int()?;
+            let rhs = eval_expr(
+                right,
+                symbols,
+                scope,
+                aliases,
+                runtime,
+                ctx_references,
+                true,
+            )?
+            .as_int()?;
             let result = match op {
                 BinaryOp::Lt => lhs < rhs,
                 BinaryOp::Le => lhs <= rhs,
@@ -160,6 +205,7 @@ pub(super) fn eval_call(
     args: &[Expr],
     symbols: &SymbolTable,
     scope: &[String],
+    aliases: &HashMap<String, String>,
     runtime: &RuntimeState,
     ctx_references: &mut BTreeSet<String>,
 ) -> Option<ResolvedValue> {
@@ -168,7 +214,15 @@ pub(super) fn eval_call(
             if args.len() != 1 {
                 return None;
             }
-            let value = eval_expr(&args[0], symbols, scope, runtime, ctx_references, true)?;
+            let value = eval_expr(
+                &args[0],
+                symbols,
+                scope,
+                aliases,
+                runtime,
+                ctx_references,
+                true,
+            )?;
             Some(ResolvedValue::Int(
                 value.as_string()?.chars().count() as i128
             ))
@@ -177,8 +231,24 @@ pub(super) fn eval_call(
             if args.len() != 2 {
                 return None;
             }
-            let input = eval_expr(&args[0], symbols, scope, runtime, ctx_references, true)?;
-            let pattern = eval_expr(&args[1], symbols, scope, runtime, ctx_references, true)?;
+            let input = eval_expr(
+                &args[0],
+                symbols,
+                scope,
+                aliases,
+                runtime,
+                ctx_references,
+                true,
+            )?;
+            let pattern = eval_expr(
+                &args[1],
+                symbols,
+                scope,
+                aliases,
+                runtime,
+                ctx_references,
+                true,
+            )?;
             let input = input.as_string()?;
             let pattern = pattern.as_string()?;
             let regex = Regex::new(pattern).ok()?;
@@ -192,11 +262,13 @@ pub(super) fn eval_path_value(
     path: &Path,
     symbols: &SymbolTable,
     scope: &[String],
+    aliases: &HashMap<String, String>,
     runtime: &RuntimeState,
     ctx_references: &mut BTreeSet<String>,
     inactive_bool_as_false: bool,
 ) -> Option<ResolvedValue> {
-    match symbols.resolve_option_path_in_scope(scope, path) {
+    let expanded = expand_with_aliases(path, aliases);
+    match symbols.resolve_option_path_raw_in_scope(scope, &expanded) {
         ResolveOptionPathResult::Resolved(option_path, ty) => {
             if option_path == "ctx" || option_path.starts_with("ctx::") {
                 ctx_references.insert(option_path.clone());
@@ -212,7 +284,7 @@ pub(super) fn eval_path_value(
             runtime.values.get(&option_path).cloned()
         }
         ResolveOptionPathResult::NotFound | ResolveOptionPathResult::Ambiguous(_) => {
-            eval_path_as_enum_variant(path, symbols, scope, runtime, ctx_references)
+            eval_path_as_enum_variant(path, symbols, scope, aliases, runtime, ctx_references)
                 .map(|variant| ResolvedValue::EnumVariant(variant.to_string()))
         }
     }
@@ -222,16 +294,17 @@ pub(super) fn eval_path_as_enum_variant(
     path: &Path,
     symbols: &SymbolTable,
     scope: &[String],
+    aliases: &HashMap<String, String>,
     runtime: &RuntimeState,
     ctx_references: &mut BTreeSet<String>,
 ) -> Option<String> {
     let _ = runtime;
     let _ = ctx_references;
-    match symbols.resolve_enum_variant_path_in_scope(scope, path) {
-        ResolveEnumVariantPathResult::Resolved(variant, _) => symbols
-            .enum_variants
-            .get(variant.as_str())
-            .map(|_| variant),
+    let expanded = expand_with_aliases(path, aliases);
+    match symbols.resolve_enum_variant_path_raw_in_scope(scope, &expanded) {
+        ResolveEnumVariantPathResult::Resolved(variant, _) => {
+            symbols.enum_variants.get(variant.as_str()).map(|_| variant)
+        }
         ResolveEnumVariantPathResult::NotFound | ResolveEnumVariantPathResult::Ambiguous(_) => None,
     }
 }
