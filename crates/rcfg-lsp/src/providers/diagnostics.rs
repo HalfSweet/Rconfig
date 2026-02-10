@@ -33,6 +33,7 @@ pub struct DiagnosticsResult {
     pub diagnostics_by_uri: HashMap<Url, Vec<Diagnostic>>,
     pub project: Option<(String, ProjectSnapshot)>,
     pub parse_only_notice: Option<String>,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +49,7 @@ struct SchemaAnalysis {
     analysis: ProjectAnalysis,
     uri_base_offsets: HashMap<Url, usize>,
     doc_indexes: HashMap<Url, String>,
+    warnings: Vec<String>,
 }
 
 pub fn analyze_document(
@@ -68,9 +70,12 @@ fn analyze_schema_document(uri: &Url, open_documents: &[DocumentState]) -> Diagn
         return DiagnosticsResult::default();
     };
 
-    let (project_key, sources) = collect_schema_sources_for_path(&path, open_documents);
-    let Some(analysis) = analyze_schema_sources(&sources) else {
-        return DiagnosticsResult::default();
+    let (project_key, sources, warnings) = collect_schema_sources_for_path(&path, open_documents);
+    let Some(analysis) = analyze_schema_sources_with_warnings(&sources, warnings.clone()) else {
+        return DiagnosticsResult {
+            warnings,
+            ..DiagnosticsResult::default()
+        };
     };
 
     let schema_docs = sources
@@ -90,6 +95,7 @@ fn analyze_schema_document(uri: &Url, open_documents: &[DocumentState]) -> Diagn
         diagnostics_by_uri: analysis.diagnostics_by_uri,
         project: Some((project_key, project)),
         parse_only_notice: None,
+        warnings: analysis.warnings,
     }
 }
 
@@ -125,6 +131,7 @@ fn analyze_values_document(
     let mut diagnostics_by_uri = HashMap::<Url, Vec<Diagnostic>>::new();
     let mut parse_only_notice = None;
     let mut project = None;
+    let mut warnings = Vec::new();
 
     let schema_sources = match &resolution {
         ValuesSchemaResolution::Manifest { schemas, .. } => {
@@ -158,6 +165,7 @@ fn analyze_values_document(
             diagnostics_by_uri,
             project,
             parse_only_notice,
+            warnings,
         };
     }
 
@@ -166,8 +174,11 @@ fn analyze_values_document(
             diagnostics_by_uri,
             project,
             parse_only_notice,
+            warnings,
         };
     };
+
+    warnings.extend(schema_analysis.warnings.clone());
 
     let symbols = schema_analysis.analysis.symbols.clone();
 
@@ -248,13 +259,14 @@ fn analyze_values_document(
         diagnostics_by_uri,
         project,
         parse_only_notice,
+        warnings,
     }
 }
 
 fn collect_schema_sources_for_path(
     path: &Path,
     open_documents: &[DocumentState],
-) -> (String, Vec<SchemaSource>) {
+) -> (String, Vec<SchemaSource>, Vec<String>) {
     let open_schema_overlays = open_documents
         .iter()
         .filter(|doc| doc.kind == DocumentKind::Schema)
@@ -271,35 +283,13 @@ fn collect_schema_sources_for_path(
     {
         let project_key = format!("manifest:{}", manifest.display());
         let baseline = manifest_schema_paths(&graph);
+        let mut warnings = Vec::new();
+        let overlays = open_schema_overlays.clone();
 
         let mut resolved = HashMap::<PathBuf, SchemaSource>::new();
-        for schema_path in baseline {
-            if let Some((_, text, uri)) = open_schema_overlays
-                .iter()
-                .find(|(candidate, _, _)| same_path(candidate, &schema_path))
-            {
-                resolved.insert(
-                    schema_path.clone(),
-                    SchemaSource {
-                        uri: uri.clone(),
-                        path: schema_path,
-                        text: text.clone(),
-                    },
-                );
-                continue;
-            }
-
-            if let Ok(text) = fs::read_to_string(&schema_path)
-                && let Ok(uri) = Url::from_file_path(&schema_path)
-            {
-                resolved.insert(
-                    schema_path.clone(),
-                    SchemaSource {
-                        uri,
-                        path: schema_path,
-                        text,
-                    },
-                );
+        for schema_path in &baseline {
+            if let Some(source) = read_schema_source(schema_path, &overlays) {
+                resolved.insert(schema_path.clone(), source);
             }
         }
 
@@ -322,7 +312,12 @@ fn collect_schema_sources_for_path(
 
         let mut sources = resolved.into_values().collect::<Vec<_>>();
         sources.sort_by(|left, right| left.path.cmp(&right.path));
-        return (project_key, sources);
+        warnings.extend(schema_sources_read_warnings(
+            &baseline,
+            &sources,
+            &open_schema_overlays,
+        ));
+        return (project_key, sources, warnings);
     }
 
     let mut sources = collect_schema_sources_from_paths(&[path.to_path_buf()], open_documents);
@@ -347,7 +342,37 @@ fn collect_schema_sources_for_path(
         .parent()
         .map(|parent| format!("dir:{}", parent.display()))
         .unwrap_or_else(|| format!("uri:{}", path.display()));
-    (key, sources)
+    (key, sources, Vec::new())
+}
+
+fn schema_sources_read_warnings(
+    requested: &[PathBuf],
+    resolved: &[SchemaSource],
+    overlays: &[(PathBuf, String, Url)],
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    for schema_path in requested {
+        if resolved
+            .iter()
+            .any(|source| same_path(&source.path, schema_path))
+        {
+            continue;
+        }
+        if overlays
+            .iter()
+            .any(|(overlay_path, _, _)| same_path(overlay_path, schema_path))
+        {
+            continue;
+        }
+
+        warnings.push(format!(
+            "failed to read schema declared by manifest: {}",
+            schema_path.display()
+        ));
+    }
+
+    warnings
 }
 
 fn collect_schema_sources_from_paths(
@@ -367,26 +392,8 @@ fn collect_schema_sources_from_paths(
 
     let mut out = Vec::new();
     for path in paths {
-        if let Some((_, text, uri)) = overlays
-            .iter()
-            .find(|(candidate, _, _)| same_path(candidate, path))
-        {
-            out.push(SchemaSource {
-                uri: uri.clone(),
-                path: path.clone(),
-                text: text.clone(),
-            });
-            continue;
-        }
-
-        if let Ok(text) = fs::read_to_string(path)
-            && let Ok(uri) = Url::from_file_path(path)
-        {
-            out.push(SchemaSource {
-                uri,
-                path: path.clone(),
-                text,
-            });
+        if let Some(source) = read_schema_source(path, &overlays) {
+            out.push(source);
         }
     }
 
@@ -395,7 +402,35 @@ fn collect_schema_sources_from_paths(
     out
 }
 
-fn analyze_schema_sources(sources: &[SchemaSource]) -> Option<SchemaAnalysis> {
+fn read_schema_source(path: &PathBuf, overlays: &[(PathBuf, String, Url)]) -> Option<SchemaSource> {
+    if let Some((_, text, uri)) = overlays
+        .iter()
+        .find(|(candidate, _, _)| same_path(candidate, path))
+    {
+        return Some(SchemaSource {
+            uri: uri.clone(),
+            path: path.clone(),
+            text: text.clone(),
+        });
+    }
+
+    if let Ok(text) = fs::read_to_string(path)
+        && let Ok(uri) = Url::from_file_path(path)
+    {
+        return Some(SchemaSource {
+            uri,
+            path: path.clone(),
+            text,
+        });
+    }
+
+    None
+}
+
+fn analyze_schema_sources_with_warnings(
+    sources: &[SchemaSource],
+    warnings: Vec<String>,
+) -> Option<SchemaAnalysis> {
     if sources.is_empty() {
         return None;
     }
@@ -452,7 +487,12 @@ fn analyze_schema_sources(sources: &[SchemaSource]) -> Option<SchemaAnalysis> {
         analysis,
         uri_base_offsets,
         doc_indexes,
+        warnings,
     })
+}
+
+fn analyze_schema_sources(sources: &[SchemaSource]) -> Option<SchemaAnalysis> {
+    analyze_schema_sources_with_warnings(sources, Vec::new())
 }
 
 fn collect_alias_bindings(sources: &[SchemaSource], symbols: &SymbolTable) -> Vec<AliasBinding> {

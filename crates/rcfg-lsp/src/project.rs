@@ -18,9 +18,16 @@ pub struct ManifestGraph {
 
 #[derive(Debug, Clone)]
 pub enum ValuesSchemaResolution {
-    Manifest { manifest: PathBuf, schemas: Vec<PathBuf> },
-    NearbySchema { schema: PathBuf },
-    OpenSchemaFallback { schemas: Vec<PathBuf> },
+    Manifest {
+        manifest: PathBuf,
+        schemas: Vec<PathBuf>,
+    },
+    NearbySchema {
+        schema: PathBuf,
+    },
+    OpenSchemaFallback {
+        schemas: Vec<PathBuf>,
+    },
     ParseOnly,
 }
 
@@ -137,15 +144,22 @@ fn find_nearby_schema(values_path: &Path) -> Option<PathBuf> {
 }
 
 fn load_manifest(manifest_path: &Path) -> Result<ManifestModel, String> {
-    let manifest_path = fs::canonicalize(manifest_path)
-        .map_err(|err| format!("failed to resolve manifest {}: {err}", manifest_path.display()))?;
+    let manifest_path = fs::canonicalize(manifest_path).map_err(|err| {
+        format!(
+            "failed to resolve manifest {}: {err}",
+            manifest_path.display()
+        )
+    })?;
 
     let text = fs::read_to_string(&manifest_path)
         .map_err(|err| format!("failed to read manifest {}: {err}", manifest_path.display()))?;
 
-    let value = text
-        .parse::<toml::Value>()
-        .map_err(|err| format!("failed to parse manifest {}: {err}", manifest_path.display()))?;
+    let value = text.parse::<toml::Value>().map_err(|err| {
+        format!(
+            "failed to parse manifest {}: {err}",
+            manifest_path.display()
+        )
+    })?;
 
     let package = value
         .get("package")
@@ -170,12 +184,6 @@ fn load_manifest(manifest_path: &Path) -> Result<ManifestModel, String> {
 
     let base = manifest_path.parent().unwrap_or_else(|| Path::new("."));
     let schema_path = base.join(schema);
-    if !schema_path.is_file() {
-        return Err(format!(
-            "manifest entry schema does not exist: {}",
-            schema_path.display()
-        ));
-    }
 
     let dependencies = parse_manifest_dependencies(&value, base)?;
 

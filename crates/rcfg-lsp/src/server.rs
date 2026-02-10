@@ -71,7 +71,17 @@ impl Backend {
         }
 
         if let Some(message) = result.parse_only_notice {
-            let _ = self.client.show_message(MessageType::WARNING, message).await;
+            let _ = self
+                .client
+                .show_message(MessageType::WARNING, message)
+                .await;
+        }
+
+        for warning in result.warnings {
+            let _ = self
+                .client
+                .show_message(MessageType::WARNING, warning)
+                .await;
         }
 
         let mut stale_uris = Vec::new();
