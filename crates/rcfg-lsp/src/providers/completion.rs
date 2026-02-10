@@ -1,17 +1,18 @@
 use rcfg_lang::ast::ValuesStmt;
-use rcfg_lang::{Item, SymbolKind, SymbolOccurrenceRole, parse_schema_with_diagnostics, parse_values_with_diagnostics};
-use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionResponse, Position, Url,
+use rcfg_lang::{
+    Item, SymbolKind, SymbolOccurrenceRole, parse_schema_with_diagnostics,
+    parse_values_with_diagnostics,
 };
+use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, CompletionResponse, Position, Url};
 
 use crate::document::{DocumentKind, ProjectSnapshot};
 use crate::position::lsp_position_to_offset;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompletionMode {
-    SchemaPath,
-    UsePath,
-    ValuesAssignPath,
+    Schema,
+    Use,
+    ValuesAssign,
 }
 
 #[derive(Debug, Clone)]
@@ -44,8 +45,8 @@ pub fn provide(
     }?;
 
     let candidates = match context.mode {
-        CompletionMode::ValuesAssignPath => option_candidates(analysis),
-        CompletionMode::SchemaPath | CompletionMode::UsePath => schema_candidates(analysis),
+        CompletionMode::ValuesAssign => option_candidates(analysis),
+        CompletionMode::Schema | CompletionMode::Use => schema_candidates(analysis),
     };
 
     let mut items = candidates
@@ -111,7 +112,11 @@ fn schema_candidates(analysis: &crate::document::ProjectAnalysis) -> Vec<Candida
             continue;
         }
 
-        push_candidate(&mut candidates, &occurrence.path, CompletionItemKind::ENUM_MEMBER);
+        push_candidate(
+            &mut candidates,
+            &occurrence.path,
+            CompletionItemKind::ENUM_MEMBER,
+        );
     }
 
     candidates
@@ -151,7 +156,7 @@ fn detect_schema_context(text: &str, offset: usize) -> Option<CompletionContext>
 
     if is_offset_in_use_path(&file.items, offset) {
         return Some(CompletionContext {
-            mode: CompletionMode::UsePath,
+            mode: CompletionMode::Use,
             scope,
             raw_prefix,
         });
@@ -159,7 +164,7 @@ fn detect_schema_context(text: &str, offset: usize) -> Option<CompletionContext>
 
     if looks_like_use_context(text, offset) {
         return Some(CompletionContext {
-            mode: CompletionMode::UsePath,
+            mode: CompletionMode::Use,
             scope,
             raw_prefix,
         });
@@ -170,7 +175,7 @@ fn detect_schema_context(text: &str, offset: usize) -> Option<CompletionContext>
     }
 
     Some(CompletionContext {
-        mode: CompletionMode::SchemaPath,
+        mode: CompletionMode::Schema,
         scope,
         raw_prefix,
     })
@@ -182,7 +187,7 @@ fn detect_values_context(text: &str, offset: usize) -> Option<CompletionContext>
 
     if is_offset_in_values_assign_lhs(&values.stmts, offset) {
         return Some(CompletionContext {
-            mode: CompletionMode::ValuesAssignPath,
+            mode: CompletionMode::ValuesAssign,
             scope: Vec::new(),
             raw_prefix,
         });
@@ -190,7 +195,7 @@ fn detect_values_context(text: &str, offset: usize) -> Option<CompletionContext>
 
     if looks_like_values_assign_lhs(text, offset) {
         return Some(CompletionContext {
-            mode: CompletionMode::ValuesAssignPath,
+            mode: CompletionMode::ValuesAssign,
             scope: Vec::new(),
             raw_prefix,
         });
@@ -266,7 +271,8 @@ fn is_offset_in_use_path(items: &[Item], offset: usize) -> bool {
                     continue;
                 }
                 for case in &match_block.cases {
-                    if span_contains(case.span, offset) && is_offset_in_use_path(&case.items, offset)
+                    if span_contains(case.span, offset)
+                        && is_offset_in_use_path(&case.items, offset)
                     {
                         return true;
                     }
@@ -317,8 +323,8 @@ fn insert_text_for_candidate(full_path: &str, scope: &[String], raw_prefix: &str
 
     let typed_tail = raw_prefix.rsplit("::").next().unwrap_or(raw_prefix);
     let candidate_tail = full_path.rsplit("::").next().unwrap_or(full_path);
-    if candidate_tail.starts_with(typed_tail) {
-        return candidate_tail[typed_tail.len()..].to_string();
+    if let Some(stripped) = candidate_tail.strip_prefix(typed_tail) {
+        return stripped.to_string();
     }
 
     if let Some(remaining) = full_path.strip_prefix(raw_prefix)
@@ -419,6 +425,9 @@ fn looks_like_symbol_context(text: &str, offset: usize) -> bool {
 
 fn line_prefix(text: &str, offset: usize) -> (&str, usize) {
     let clamped = offset.min(text.len());
-    let line_start = text[..clamped].rfind('\n').map(|index| index + 1).unwrap_or(0);
+    let line_start = text[..clamped]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0);
     (&text[line_start..clamped], clamped - line_start)
 }
