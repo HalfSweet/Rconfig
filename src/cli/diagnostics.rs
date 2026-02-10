@@ -72,6 +72,9 @@ pub(crate) fn print_diagnostics(
                 } else {
                     println!("{} {} [{}]: {}", level, diag.code, path, message);
                 }
+                if let Some(note) = diag.note.as_ref().filter(|text| !text.trim().is_empty()) {
+                    println!("  note: {}", note);
+                }
             }
         }
         OutputFormat::Json => {

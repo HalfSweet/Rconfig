@@ -936,6 +936,18 @@ app::enabled = false;
             .any(|diag| diag.code == "W_DUPLICATE_ASSIGNMENT"),
         "expected W_DUPLICATE_ASSIGNMENT, got: {semantic_diags:#?}"
     );
+
+    let duplicate = semantic_diags
+        .iter()
+        .find(|diag| diag.code == "W_DUPLICATE_ASSIGNMENT")
+        .expect("missing W_DUPLICATE_ASSIGNMENT");
+    assert!(
+        duplicate
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("fix-it:")),
+        "expected fix-it note in duplicate assignment diagnostic: {duplicate:#?}"
+    );
 }
 
 #[test]
@@ -954,6 +966,12 @@ fn include_expander_reports_not_found() {
     assert!(
         !diag.include_chain.is_empty(),
         "expected include chain in diagnostic"
+    );
+    assert!(
+        diag.note
+            .as_deref()
+            .is_some_and(|note| note.contains("fix-it:")),
+        "expected fix-it note for missing include diagnostic: {diag:#?}"
     );
 }
 

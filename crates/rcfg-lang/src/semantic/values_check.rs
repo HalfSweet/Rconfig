@@ -52,7 +52,10 @@ impl IncludeExpander {
                         Span::default(),
                     )
                     .with_source(file.display().to_string())
-                    .with_include_chain(self.current_chain(&file.to_path_buf())),
+                    .with_include_chain(self.current_chain(&file.to_path_buf()))
+                    .with_note(
+                        "fix-it: verify the include path, or use `@root/...` to include from project root",
+                    ),
                 );
                 return;
             }
@@ -87,7 +90,10 @@ impl IncludeExpander {
                         Span::default(),
                     )
                     .with_source(canonical.display().to_string())
-                    .with_include_chain(self.current_chain(&canonical)),
+                    .with_include_chain(self.current_chain(&canonical))
+                    .with_note(
+                        "fix-it: check file permissions, or ensure the include target is readable",
+                    ),
                 );
                 return;
             }
@@ -210,11 +216,14 @@ impl<'a> ValuesChecker<'a> {
 
     pub(super) fn record_duplicate_assignment(&mut self, target: &str, span: Span) {
         if let Some(previous) = self.assigned.insert(target.to_string(), span) {
-            self.push_diag(Diagnostic::warning(
-                "W_DUPLICATE_ASSIGNMENT",
-                format!("option `{}` is assigned multiple times; last wins", target),
-                span.join(previous),
-            ));
+            self.push_diag(
+                Diagnostic::warning(
+                    "W_DUPLICATE_ASSIGNMENT",
+                    format!("option `{}` is assigned multiple times; last wins", target),
+                    span.join(previous),
+                )
+                .with_note("fix-it: remove earlier assignment and keep only the final value"),
+            );
         }
     }
 
@@ -267,11 +276,14 @@ impl<'a> ValuesChecker<'a> {
 
         let resolved = candidates[0].clone();
         if resolved == "ctx" || resolved.starts_with("ctx::") {
-            self.push_diag(Diagnostic::error(
-                "E_CONTEXT_ASSIGNMENT_NOT_ALLOWED",
-                "assigning values to `ctx` is not allowed",
-                path.span,
-            ));
+            self.push_diag(
+                Diagnostic::error(
+                    "E_CONTEXT_ASSIGNMENT_NOT_ALLOWED",
+                    "assigning values to `ctx` is not allowed",
+                    path.span,
+                )
+                .with_note("fix-it: remove this assignment and pass context values via `--context`"),
+            );
             return None;
         }
 

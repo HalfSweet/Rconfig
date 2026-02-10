@@ -1532,8 +1532,13 @@ impl Parser {
     }
 
     fn push_error(&mut self, code: &'static str, message: impl Into<String>, span: Span) {
-        self.diagnostics
-            .push(Diagnostic::error(code, message, span));
+        let mut diag = Diagnostic::error(code, message, span);
+        if code == "E_PARSE_EXPECTED_TOKEN" {
+            diag = diag.with_note(
+                "fix-it: insert the expected token at this position, or remove the unexpected token",
+            );
+        }
+        self.diagnostics.push(diag);
     }
 }
 

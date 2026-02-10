@@ -182,3 +182,25 @@ patch foo { default x = true; }
     assert_eq!(patch.target.to_string(), "foo");
     assert_eq!(patch.stmts.len(), 1);
 }
+
+#[test]
+fn parse_expected_token_diagnostic_contains_fixit_note() {
+    let src = r#"
+mod app {
+  option enabled: bool = false
+}
+"#;
+
+    let (_file, diags) = parse_schema_with_diagnostics(src);
+    let diag = diags
+        .iter()
+        .find(|diag| diag.code == "E_PARSE_EXPECTED_TOKEN")
+        .expect("expected E_PARSE_EXPECTED_TOKEN");
+
+    assert!(
+        diag.note
+            .as_deref()
+            .is_some_and(|note| note.contains("fix-it:")),
+        "expected fix-it note in parser diagnostic: {diag:#?}"
+    );
+}
