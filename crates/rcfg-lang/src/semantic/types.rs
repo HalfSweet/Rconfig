@@ -244,10 +244,12 @@ pub struct SymbolTable {
     pub(super) option_ranges: BTreeMap<OptionPath, IntRange>,
     pub(super) option_spans: BTreeMap<OptionPath, Span>,
     pub(super) symbol_spans: BTreeMap<SymbolPath, Span>,
+    pub(super) symbol_docs: BTreeMap<SymbolPath, Vec<Spanned<String>>>,
     pub(super) option_secrets: BTreeMap<OptionPath, bool>,
     pub(super) option_always_active: BTreeMap<OptionPath, bool>,
     pub(super) enum_variants: BTreeMap<VariantPath, EnumPath>,
     pub(super) enum_variant_spans: BTreeMap<VariantPath, Span>,
+    pub(super) enum_variant_docs: BTreeMap<VariantPath, Vec<Spanned<String>>>,
     pub(super) schema_items: Vec<Item>,
 }
 
@@ -303,6 +305,13 @@ impl SymbolTable {
         self.symbol_spans.insert(SymbolPath::from(path), span);
     }
 
+    pub(super) fn insert_symbol_docs(&mut self, path: String, docs: Vec<Spanned<String>>) {
+        if docs.is_empty() {
+            return;
+        }
+        self.symbol_docs.insert(SymbolPath::from(path), docs);
+    }
+
     pub(super) fn insert_option_secret(&mut self, path: String, secret: bool) {
         self.option_secrets.insert(OptionPath::from(path), secret);
     }
@@ -328,6 +337,10 @@ impl SymbolTable {
         self.symbol_spans.get(path).copied()
     }
 
+    pub fn symbol_docs(&self, path: &str) -> Option<&[Spanned<String>]> {
+        self.symbol_docs.get(path).map(Vec::as_slice)
+    }
+
     pub fn option_is_secret(&self, path: &str) -> bool {
         self.option_secrets.get(path).copied().unwrap_or(false)
     }
@@ -351,6 +364,22 @@ impl SymbolTable {
 
     pub(super) fn enum_variant_span(&self, variant_path: &str) -> Option<Span> {
         self.enum_variant_spans.get(variant_path).copied()
+    }
+
+    pub(super) fn insert_enum_variant_doc(
+        &mut self,
+        variant_path: String,
+        docs: Vec<Spanned<String>>,
+    ) {
+        if docs.is_empty() {
+            return;
+        }
+        self.enum_variant_docs
+            .insert(VariantPath::from(variant_path), docs);
+    }
+
+    pub fn enum_variant_docs(&self, variant_path: &str) -> Option<&[Spanned<String>]> {
+        self.enum_variant_docs.get(variant_path).map(Vec::as_slice)
     }
 
     pub(super) fn resolve_path_type(&self, scope: &[String], path: &Path) -> ResolvePathResult {

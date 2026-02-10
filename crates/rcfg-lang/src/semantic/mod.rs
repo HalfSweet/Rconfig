@@ -9,7 +9,7 @@ use crate::ast::{
 };
 use crate::error::{Diagnostic, DiagnosticArgValue, Severity};
 use crate::parser::parse_values_with_diagnostics;
-use crate::span::Span;
+use crate::span::{Span, Spanned};
 
 mod types;
 pub use self::types::*;

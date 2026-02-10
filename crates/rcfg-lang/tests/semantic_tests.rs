@@ -60,6 +60,52 @@ mod uart {
 }
 
 #[test]
+fn symbol_table_associates_doc_comments_with_symbols() {
+    let src = r#"
+/// App module summary.
+mod app {
+  /// Mode summary.
+  enum Mode {
+    /// Fast variant summary.
+    Fast,
+  }
+
+  /// Option summary.
+  ///
+  /// Option help.
+  option enabled: bool = false;
+}
+"#;
+
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+
+    let module_docs = report
+        .symbols
+        .symbol_docs("app")
+        .expect("expected module docs in symbol table");
+    assert_eq!(module_docs[0].value, "App module summary.");
+
+    let option_docs = report
+        .symbols
+        .symbol_docs("app::enabled")
+        .expect("expected option docs in symbol table");
+    assert_eq!(option_docs[0].value, "Option summary.");
+    assert_eq!(option_docs[2].value, "Option help.");
+
+    let variant_docs = report
+        .symbols
+        .enum_variant_docs("app::Mode::Fast")
+        .expect("expected enum variant docs in symbol table");
+    assert_eq!(variant_docs[0].value, "Fast variant summary.");
+}
+
+#[test]
 fn symbol_table_tracks_mod_and_enum_declaration_spans() {
     let src = r#"
 mod app {
