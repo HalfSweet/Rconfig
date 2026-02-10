@@ -1,6 +1,7 @@
-use std::io;
 use std::path::PathBuf;
+use std::time::Duration;
 
+use futures_util::StreamExt;
 use serde_json::{Value, json};
 use tower_lsp::jsonrpc::Request;
 use tower_lsp::LspService;
@@ -31,6 +32,22 @@ async fn notify_service(service: &mut LspService<Backend>, method: &str, params:
 async fn initialize(service: &mut LspService<Backend>) {
     let response = call_service(service, "initialize", 1, json!({ "capabilities": {} })).await;
     assert!(response.get("result").is_some(), "{response:#?}");
+}
+
+async fn wait_for_publish(socket: &mut tower_lsp::ClientSocket) -> Value {
+    let request = tokio::time::timeout(Duration::from_secs(2), async {
+        while let Some(message) = socket.next().await {
+            if message.method() == "textDocument/publishDiagnostics" {
+                return Some(message);
+            }
+        }
+        None
+    })
+    .await
+    .expect("timed out waiting diagnostics")
+    .expect("publish diagnostics missing");
+
+    serde_json::to_value(request).expect("request to json")
 }
 
 fn as_file_uri(path: &PathBuf) -> String {
@@ -68,6 +85,83 @@ async fn initialize_reports_capabilities() {
 }
 
 #[tokio::test]
+async fn publishes_diagnostics_on_open_and_change() {
+    let root = fixture_root("lsp_diagnostics_flow");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(
+        &schema_path,
+        r#"
+mod app {
+  option enabled bool = false;
+}
+"#,
+    );
+
+    let bad_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let good_text = r#"
+mod app {
+  option enabled: bool = false;
+}
+"#;
+    let schema_uri = as_file_uri(&schema_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": bad_text,
+            }
+        }),
+    )
+    .await;
+
+    let first_publish = wait_for_publish(&mut socket).await;
+    let first_diags = first_publish["params"]["diagnostics"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(!first_diags.is_empty(), "{first_publish:#?}");
+
+    notify_service(
+        &mut service,
+        "textDocument/didChange",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "version": 2
+            },
+            "contentChanges": [
+                { "text": good_text }
+            ]
+        }),
+    )
+    .await;
+
+    let mut saw_no_error = false;
+    for _ in 0..4 {
+        let publish = wait_for_publish(&mut socket).await;
+        let diagnostics = publish["params"]["diagnostics"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let has_error = diagnostics.iter().any(|diag| diag["severity"] == 1);
+        if !has_error {
+            saw_no_error = true;
+            break;
+        }
+    }
+    assert!(saw_no_error, "expected parse error to disappear after didChange");
+}
+
+#[tokio::test]
 async fn hover_goto_completion_and_symbols_work() {
     let root = fixture_root("lsp_features");
     let schema_path = root.join("schema.rcfg");
@@ -94,7 +188,7 @@ mod app {
     let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
     let schema_uri = as_file_uri(&schema_path);
 
-    let (mut service, _) = LspService::new(Backend::new);
+    let (mut service, mut socket) = LspService::new(Backend::new);
     initialize(&mut service).await;
 
     notify_service(
@@ -111,13 +205,15 @@ mod app {
     )
     .await;
 
+    let _ = wait_for_publish(&mut socket).await;
+
     let hover_response = call_service(
         &mut service,
         "textDocument/hover",
         2,
         json!({
             "textDocument": {"uri": schema_uri},
-            "position": {"line": 2, "character": 10}
+            "position": {"line": 3, "character": 10}
         }),
     )
     .await;
@@ -126,7 +222,7 @@ mod app {
         .as_str()
         .or_else(|| hover_response["result"]["contents"].as_str())
         .unwrap_or_default();
-    assert!(hover_text.contains("option") || hover_text.contains("enabled") || hover_text.contains("mod"), "{hover_response:#?}");
+    assert!(hover_text.contains("option") || hover_text.contains("enabled"), "{hover_response:#?}");
 
     let goto_response = call_service(
         &mut service,
@@ -198,9 +294,4 @@ include ;
         }),
     )
     .await;
-}
-
-#[test]
-fn placeholder() -> io::Result<()> {
-    Ok(())
 }
