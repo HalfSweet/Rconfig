@@ -107,8 +107,9 @@ pub fn generate_exports(
                 ));
             }
             Some(ResolvedValue::Int(value)) => {
-                c_lines.push(format!("#define {} {}", export.name, value));
-                cmake_lines.push(format!("set({} {})", cmake_name, value));
+                let rendered = render_int_export(*value, options.int_export_format);
+                c_lines.push(format!("#define {} {}", export.name, rendered));
+                cmake_lines.push(format!("set({} {})", cmake_name, rendered));
             }
             Some(ResolvedValue::String(value)) => {
                 let escaped = value.replace('"', "\\\"");
@@ -202,6 +203,19 @@ pub fn generate_exports(
         c_header: final_c_lines.join("\n"),
         cmake: final_cmake_lines.join("\n"),
         diagnostics,
+    }
+}
+
+fn render_int_export(value: i128, format: IntExportFormat) -> String {
+    match format {
+        IntExportFormat::Decimal => value.to_string(),
+        IntExportFormat::Hex => {
+            if value < 0 {
+                format!("-0x{:X}", value.unsigned_abs())
+            } else {
+                format!("0x{:X}", value as u128)
+            }
+        }
     }
 }
 

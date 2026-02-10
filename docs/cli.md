@@ -42,6 +42,7 @@ rcfg export \
 - `--cmake-prefix <STR>`：CMake 变量前缀，默认 `CFG_`
 - `--bool-false-style omit|define-0`：bool=false 的 C 导出策略（默认 `omit`）
 - `--enum-export-style one-hot|string`：enum 的 C 导出策略（默认 `one-hot`）
+- `--int-export-format decimal|hex`：整数导出格式（默认 `decimal`）
 
 ## `rcfg dump`
 

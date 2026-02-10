@@ -6,7 +6,7 @@ use rcfg_lang::{
     analyze_values_from_path, analyze_values_from_path_report, analyze_values_strict,
     expand_values_includes_from_path, expand_values_includes_with_origins, generate_exports,
     plan_c_header_exports, resolve_values, BoolFalseExportStyle, DiagnosticArgValue,
-    EnumExportStyle, ExportOptions, Severity, SymbolKind, SymbolTable,
+    EnumExportStyle, ExportOptions, IntExportFormat, Severity, SymbolKind, SymbolTable,
 };
 
 fn symbols_from(src: &str) -> SymbolTable {
@@ -2276,6 +2276,7 @@ mod app {
             cmake_prefix: "MY_".to_string(),
             bool_false_style: BoolFalseExportStyle::Omit,
             enum_export_style: EnumExportStyle::OneHot,
+            int_export_format: IntExportFormat::Decimal,
         },
     );
 
@@ -2287,6 +2288,43 @@ mod app {
     assert!(
         exports.cmake.contains("set(MY_APP_ENABLED ON)"),
         "expected custom cmake prefix, got: {}",
+        exports.cmake
+    );
+}
+
+#[test]
+fn exports_integer_as_hex_when_configured() {
+    let schema_src = r#"
+mod app {
+  option retries: u32 = 31;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
+
+    let resolved = resolve_values(&values, &symbols);
+    let exports = generate_exports(
+        &symbols,
+        &resolved,
+        &ExportOptions {
+            int_export_format: IntExportFormat::Hex,
+            ..ExportOptions::default()
+        },
+    );
+
+    assert!(
+        exports.c_header.contains("#define CONFIG_APP_RETRIES 0x1F"),
+        "expected hex int define, got: {}",
+        exports.c_header
+    );
+    assert!(
+        exports.cmake.contains("set(CFG_APP_RETRIES 0x1F)"),
+        "expected hex int cmake export, got: {}",
         exports.cmake
     );
 }

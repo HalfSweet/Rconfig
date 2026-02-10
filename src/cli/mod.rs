@@ -93,6 +93,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 cmake_prefix,
                 bool_false_style,
                 enum_export_style,
+                int_export_format,
                 format,
             } => {
                 let bool_false_style = match bool_false_style {
@@ -102,6 +103,10 @@ fn run(cli: Cli) -> Result<(), String> {
                 let enum_export_style = match enum_export_style {
                     args::EnumExportStyleArg::OneHot => rcfg_lang::EnumExportStyle::OneHot,
                     args::EnumExportStyleArg::String => rcfg_lang::EnumExportStyle::String,
+                };
+                let int_export_format = match int_export_format {
+                    args::IntExportFormatArg::Decimal => rcfg_lang::IntExportFormat::Decimal,
+                    args::IntExportFormatArg::Hex => rcfg_lang::IntExportFormat::Hex,
                 };
 
                 commands::export::execute(
@@ -113,6 +118,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     cmake_prefix,
                     bool_false_style,
                     enum_export_style,
+                    int_export_format,
                     format,
                     parse_diags,
                     &schema_report.symbols,

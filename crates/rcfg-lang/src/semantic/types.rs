@@ -563,6 +563,12 @@ pub enum EnumExportStyle {
     String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntExportFormat {
+    Decimal,
+    Hex,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportOptions {
     pub include_secrets: bool,
@@ -570,6 +576,7 @@ pub struct ExportOptions {
     pub cmake_prefix: String,
     pub bool_false_style: BoolFalseExportStyle,
     pub enum_export_style: EnumExportStyle,
+    pub int_export_format: IntExportFormat,
 }
 
 impl Default for ExportOptions {
@@ -580,6 +587,7 @@ impl Default for ExportOptions {
             cmake_prefix: "CFG_".to_string(),
             bool_false_style: BoolFalseExportStyle::Omit,
             enum_export_style: EnumExportStyle::OneHot,
+            int_export_format: IntExportFormat::Decimal,
         }
     }
 }

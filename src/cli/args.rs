@@ -58,6 +58,9 @@ pub(crate) enum Commands {
         #[arg(long, value_enum, default_value_t = EnumExportStyleArg::OneHot)]
         enum_export_style: EnumExportStyleArg,
 
+        #[arg(long, value_enum, default_value_t = IntExportFormatArg::Decimal)]
+        int_export_format: IntExportFormatArg,
+
         #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
         format: OutputFormat,
     },
@@ -106,6 +109,12 @@ pub(crate) enum EnumExportStyleArg {
     #[value(name = "one-hot")]
     OneHot,
     String,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum IntExportFormatArg {
+    Decimal,
+    Hex,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
