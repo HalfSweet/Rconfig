@@ -18,6 +18,7 @@ pub struct TuiConfig {
     pub initial_values_path: Option<PathBuf>,
     pub out_path: Option<PathBuf>,
     pub script_path: Option<PathBuf>,
+    pub script_mode: bool,
 }
 
 #[derive(Debug)]
@@ -43,6 +44,12 @@ pub fn run(config: TuiConfig) -> Result<(), TuiError> {
     let mut app = App::new(config.session, save_target);
 
     if let Some(path) = config.initial_values_path.as_deref() {
+        if config.script_mode && !path.exists() {
+            eprintln!(
+                "warning: values file does not exist, starting with empty overrides: {}",
+                path.display()
+            );
+        }
         app.bootstrap_from_values_path(path);
     } else {
         app.recompute();
