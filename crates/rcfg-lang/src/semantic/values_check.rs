@@ -115,8 +115,8 @@ pub(super) struct ValuesChecker<'a> {
     pub(super) diagnostics: Vec<Diagnostic>,
     pub(super) diagnostic_stmt_indexes: Vec<Option<usize>>,
     aliases: HashMap<String, String>,
-    assigned: HashMap<String, Span>,
-    assignments: HashMap<String, ResolvedAssignment>,
+    assigned: BTreeMap<String, Span>,
+    assignments: BTreeMap<String, ResolvedAssignment>,
     resolved: Option<ResolvedConfig>,
     current_stmt_index: Option<usize>,
 }
@@ -143,8 +143,8 @@ impl<'a> ValuesChecker<'a> {
             diagnostics: Vec::new(),
             diagnostic_stmt_indexes: Vec::new(),
             aliases: HashMap::new(),
-            assigned: HashMap::new(),
-            assignments: HashMap::new(),
+            assigned: BTreeMap::new(),
+            assignments: BTreeMap::new(),
             resolved: None,
             current_stmt_index: None,
         }

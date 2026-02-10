@@ -14,10 +14,10 @@ pub use parser::{
     parse_schema, parse_schema_with_diagnostics, parse_values, parse_values_with_diagnostics,
 };
 pub use semantic::{
-    ExportOptions, GeneratedExports, PlannedExport, ResolvedConfig, ResolvedOption, ResolvedValue,
-    SemanticReport, SymbolInfo, SymbolKind, SymbolTable, ValueSource, ValuesAnalysisReport,
-    ValuesStmtOrigin, analyze_schema, analyze_schema_files, analyze_schema_files_strict,
-    analyze_schema_strict, analyze_values, analyze_values_from_path,
+    ExportOptions, GeneratedExports, IntType, PlannedExport, ResolvedConfig, ResolvedOption,
+    ResolvedValue, SemanticReport, SymbolInfo, SymbolKind, SymbolTable, ValueSource, ValueType,
+    ValuesAnalysisReport, ValuesStmtOrigin, analyze_schema, analyze_schema_files,
+    analyze_schema_files_strict, analyze_schema_strict, analyze_values, analyze_values_from_path,
     analyze_values_from_path_report, analyze_values_from_path_report_strict,
     analyze_values_from_path_report_with_context,
     analyze_values_from_path_report_with_context_strict, analyze_values_from_path_strict,

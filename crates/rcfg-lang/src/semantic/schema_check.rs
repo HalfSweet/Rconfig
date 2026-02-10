@@ -172,10 +172,10 @@ pub fn resolve_values_with_context(
         build_resolved_config(
             symbols,
             &RuntimeState {
-                active: HashSet::new(),
-                values: HashMap::new(),
-                sources: HashMap::new(),
-                ctx_references: HashSet::new(),
+                active: BTreeSet::new(),
+                values: BTreeMap::new(),
+                sources: BTreeMap::new(),
+                ctx_references: BTreeSet::new(),
             },
         )
     })

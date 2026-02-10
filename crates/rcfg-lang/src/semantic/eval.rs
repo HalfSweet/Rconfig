@@ -1,11 +1,12 @@
 use super::*;
+use regex::Regex;
 
 pub(super) fn eval_expr_as_bool(
     expr: &Expr,
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
-    ctx_references: &mut HashSet<String>,
+    ctx_references: &mut BTreeSet<String>,
 ) -> Option<bool> {
     eval_expr(expr, symbols, scope, runtime, ctx_references, true).and_then(|value| value.as_bool())
 }
@@ -15,7 +16,7 @@ pub(super) fn eval_expr(
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
-    ctx_references: &mut HashSet<String>,
+    ctx_references: &mut BTreeSet<String>,
     inactive_bool_as_false: bool,
 ) -> Option<ResolvedValue> {
     match expr {
@@ -108,7 +109,7 @@ pub(super) fn eval_binary_expr(
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
-    ctx_references: &mut HashSet<String>,
+    ctx_references: &mut BTreeSet<String>,
 ) -> Option<ResolvedValue> {
     match op {
         BinaryOp::Or => Some(ResolvedValue::Bool(
@@ -160,7 +161,7 @@ pub(super) fn eval_call(
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
-    ctx_references: &mut HashSet<String>,
+    ctx_references: &mut BTreeSet<String>,
 ) -> Option<ResolvedValue> {
     match name {
         "len" => {
@@ -180,7 +181,8 @@ pub(super) fn eval_call(
             let pattern = eval_expr(&args[1], symbols, scope, runtime, ctx_references, true)?;
             let input = input.as_string()?;
             let pattern = pattern.as_string()?;
-            Some(ResolvedValue::Bool(input.contains(pattern)))
+            let regex = Regex::new(pattern).ok()?;
+            Some(ResolvedValue::Bool(regex.is_match(input)))
         }
         _ => None,
     }
@@ -191,7 +193,7 @@ pub(super) fn eval_path_value(
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
-    ctx_references: &mut HashSet<String>,
+    ctx_references: &mut BTreeSet<String>,
     inactive_bool_as_false: bool,
 ) -> Option<ResolvedValue> {
     match symbols.resolve_option_path_in_scope(scope, path) {
@@ -221,7 +223,7 @@ pub(super) fn eval_path_as_enum_variant(
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
-    ctx_references: &mut HashSet<String>,
+    ctx_references: &mut BTreeSet<String>,
 ) -> Option<String> {
     let _ = runtime;
     let _ = ctx_references;

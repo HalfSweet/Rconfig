@@ -84,6 +84,7 @@ pub enum ValueSource {
 pub struct ResolvedOption {
     pub path: String,
     pub active: bool,
+    pub value_type: Option<ValueType>,
     pub value: Option<ResolvedValue>,
     pub source: Option<ValueSource>,
 }
@@ -95,10 +96,10 @@ pub struct ResolvedConfig {
 
 #[derive(Debug, Clone)]
 pub(super) struct RuntimeState {
-    pub(super) active: HashSet<String>,
-    pub(super) values: HashMap<String, ResolvedValue>,
-    pub(super) sources: HashMap<String, ValueSource>,
-    pub(super) ctx_references: HashSet<String>,
+    pub(super) active: BTreeSet<String>,
+    pub(super) values: BTreeMap<String, ResolvedValue>,
+    pub(super) sources: BTreeMap<String, ValueSource>,
+    pub(super) ctx_references: BTreeSet<String>,
 }
 
 impl RuntimeState {
@@ -153,15 +154,15 @@ impl ValueType {
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
-    pub(super) symbols: HashMap<String, SymbolInfo>,
-    pub(super) option_types: HashMap<String, ValueType>,
-    pub(super) option_defaults: HashMap<String, ConstValue>,
-    pub(super) option_ranges: HashMap<String, IntRange>,
-    pub(super) option_spans: HashMap<String, Span>,
-    pub(super) option_secrets: HashMap<String, bool>,
-    pub(super) option_always_active: HashMap<String, bool>,
-    pub(super) enum_variants: HashMap<String, String>,
-    pub(super) enum_variant_spans: HashMap<String, Span>,
+    pub(super) symbols: BTreeMap<String, SymbolInfo>,
+    pub(super) option_types: BTreeMap<String, ValueType>,
+    pub(super) option_defaults: BTreeMap<String, ConstValue>,
+    pub(super) option_ranges: BTreeMap<String, IntRange>,
+    pub(super) option_spans: BTreeMap<String, Span>,
+    pub(super) option_secrets: BTreeMap<String, bool>,
+    pub(super) option_always_active: BTreeMap<String, bool>,
+    pub(super) enum_variants: BTreeMap<String, String>,
+    pub(super) enum_variant_spans: BTreeMap<String, Span>,
     pub(super) schema_items: Vec<Item>,
 }
 

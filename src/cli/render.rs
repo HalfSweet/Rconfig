@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use rcfg_lang::{ResolvedConfig, ResolvedValue, SymbolKind};
+use rcfg_lang::{IntType, ResolvedConfig, ResolvedValue, SymbolKind, ValueType};
 
 pub(crate) fn render_schema_ir_json(
     symbols: &rcfg_lang::SymbolTable,
@@ -188,15 +188,20 @@ pub(crate) fn render_resolved_json(
                     .unwrap_or(serde_json::Value::Null),
             })
         };
-        map.insert(
-            option.path.clone(),
-            serde_json::json!({
-                "active": option.active,
-                "source": option.source.map(|source| match source {
-                    rcfg_lang::ValueSource::User => "user",
-                    rcfg_lang::ValueSource::Default => "default",
-                    rcfg_lang::ValueSource::Context => "context",
-                }),
+    map.insert(
+        option.path.clone(),
+        serde_json::json!({
+            "active": option.active,
+            "type": option
+                .value_type
+                .as_ref()
+                .map(value_type_to_json)
+                .unwrap_or(serde_json::Value::Null),
+            "source": option.source.map(|source| match source {
+                rcfg_lang::ValueSource::User => "user",
+                rcfg_lang::ValueSource::Default => "default",
+                rcfg_lang::ValueSource::Context => "context",
+            }),
                 "data": value,
             }),
         );
@@ -210,5 +215,21 @@ fn resolved_value_to_json(value: &ResolvedValue) -> serde_json::Value {
         ResolvedValue::Int(raw) => serde_json::json!(raw),
         ResolvedValue::String(raw) => serde_json::json!(raw),
         ResolvedValue::EnumVariant(raw) => serde_json::json!(raw),
+    }
+}
+
+fn value_type_to_json(value_type: &ValueType) -> serde_json::Value {
+    match value_type {
+        ValueType::Bool => serde_json::json!("bool"),
+        ValueType::Int(int_type) => serde_json::json!(match int_type {
+            IntType::U8 => "u8",
+            IntType::U16 => "u16",
+            IntType::U32 => "u32",
+            IntType::I32 => "i32",
+        }),
+        ValueType::UntypedInt => serde_json::json!("untyped-int"),
+        ValueType::String => serde_json::json!("string"),
+        ValueType::Enum(name) => serde_json::json!(format!("enum:{name}")),
+        ValueType::Unknown => serde_json::json!("unknown"),
     }
 }

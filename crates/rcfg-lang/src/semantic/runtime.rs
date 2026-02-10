@@ -2,16 +2,16 @@ use super::*;
 
 pub(super) fn evaluate_runtime_state(
     symbols: &SymbolTable,
-    assignments: &HashMap<String, ResolvedAssignment>,
+    assignments: &BTreeMap<String, ResolvedAssignment>,
 ) -> RuntimeState {
     let mut values = assignments
         .iter()
         .map(|(path, assignment)| (path.clone(), assignment.value.clone()))
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     let mut sources = assignments
         .iter()
         .map(|(path, assignment)| (path.clone(), assignment.source))
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
 
     for (path, default) in &symbols.option_defaults {
         if values.contains_key(path) {
@@ -28,8 +28,8 @@ pub(super) fn evaluate_runtime_state(
         .keys()
         .filter(|path| symbols.option_is_always_active(path))
         .cloned()
-        .collect::<HashSet<_>>();
-    let mut ctx_references = HashSet::new();
+        .collect::<BTreeSet<_>>();
+    let mut ctx_references = BTreeSet::new();
 
     let mut changed = true;
     let mut guard = 0usize;
@@ -39,7 +39,7 @@ pub(super) fn evaluate_runtime_state(
             active: active.clone(),
             values: values.clone(),
             sources: sources.clone(),
-            ctx_references: HashSet::new(),
+            ctx_references: BTreeSet::new(),
         };
         let eval = evaluate_activation_once(symbols, &snapshot);
         changed = eval.active != active;
@@ -64,9 +64,9 @@ pub(super) fn evaluate_activation_once(
         .keys()
         .filter(|path| symbols.option_is_always_active(path))
         .cloned()
-        .collect::<HashSet<_>>();
+        .collect::<BTreeSet<_>>();
     let mut scope = Vec::new();
-    let mut ctx_references = HashSet::new();
+    let mut ctx_references = BTreeSet::new();
     collect_active_options(
         symbols,
         symbols.schema_items(),
@@ -91,8 +91,8 @@ pub(super) fn collect_active_options(
     scope: &mut Vec<String>,
     runtime: &RuntimeState,
     guard_active: bool,
-    active: &mut HashSet<String>,
-    ctx_references: &mut HashSet<String>,
+    active: &mut BTreeSet<String>,
+    ctx_references: &mut BTreeSet<String>,
 ) {
     for item in items {
         match item {
@@ -161,7 +161,7 @@ pub(super) fn select_match_case_index(
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
-    ctx_references: &mut HashSet<String>,
+    ctx_references: &mut BTreeSet<String>,
 ) -> Option<usize> {
     let scrutinee = eval_expr(&block.expr, symbols, scope, runtime, ctx_references, true)?;
 
@@ -179,7 +179,7 @@ pub(super) fn select_match_case_index(
 
         if let Some(guard) = &case.guard {
             if !eval_expr_as_bool(guard, symbols, scope, runtime, ctx_references).unwrap_or(false) {
-                continue;
+                return None;
             }
         }
 
@@ -194,7 +194,7 @@ pub(super) fn match_pattern_matches(
     symbols: &SymbolTable,
     scope: &[String],
     runtime: &RuntimeState,
-    ctx_references: &mut HashSet<String>,
+    ctx_references: &mut BTreeSet<String>,
 ) -> bool {
     match pattern {
         MatchPat::Wildcard(_) => true,
@@ -221,6 +221,7 @@ pub(super) fn build_resolved_config(
         .into_iter()
         .map(|path| ResolvedOption {
             active: runtime.active.contains(&path),
+            value_type: symbols.option_type(&path).cloned(),
             value: runtime.values.get(&path).cloned(),
             source: runtime.sources.get(&path).copied(),
             path,
@@ -263,7 +264,7 @@ pub(super) fn collect_runtime_require_diagnostics(
             Item::Require(require) => {
                 let ordinal = next_require_ordinal(require_counters, scope);
                 let require_key = require_message_key(require, scope, ordinal);
-                if !eval_expr_as_bool(&require.expr, symbols, scope, runtime, &mut HashSet::new())
+                if !eval_expr_as_bool(&require.expr, symbols, scope, runtime, &mut BTreeSet::new())
                     .unwrap_or(false)
                 {
                     diagnostics.push((
@@ -287,7 +288,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                             symbols,
                             scope,
                             runtime,
-                            &mut HashSet::new(),
+                            &mut BTreeSet::new(),
                         )
                         .unwrap_or(false)
                         {
@@ -322,7 +323,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                     symbols,
                     scope,
                     runtime,
-                    &mut HashSet::new(),
+                    &mut BTreeSet::new(),
                 )
                 .unwrap_or(false)
                 {
@@ -342,7 +343,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                     symbols,
                     scope,
                     runtime,
-                    &mut HashSet::new(),
+                    &mut BTreeSet::new(),
                 ) {
                     collect_runtime_require_diagnostics(
                         symbols,
