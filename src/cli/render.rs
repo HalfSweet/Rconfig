@@ -172,10 +172,7 @@ pub(crate) fn render_resolved_json(
 ) -> serde_json::Value {
     let mut map = BTreeMap::new();
     for option in &resolved.options {
-        let is_secret = symbols.get(&option.path).is_some_and(|_| {
-            let (planned, _diags) = rcfg_lang::plan_c_header_exports(symbols, false);
-            !planned.iter().any(|entry| entry.path == option.path)
-        });
+        let is_secret = symbols.option_is_secret(&option.path);
         let value = if is_secret && !include_secrets {
             serde_json::json!({"redacted": true, "value": null})
         } else {

@@ -317,7 +317,7 @@ impl SymbolTable {
         self.option_spans.get(path).copied()
     }
 
-    pub(super) fn option_is_secret(&self, path: &str) -> bool {
+    pub fn option_is_secret(&self, path: &str) -> bool {
         self.option_secrets.get(path).copied().unwrap_or(false)
     }
 
