@@ -46,7 +46,7 @@ impl<'a> TypeChecker<'a> {
                 Item::Use(use_stmt) => {
                     self.register_use_alias(use_stmt);
                 }
-                Item::Enum(_) => {}
+                Item::Enum(_) | Item::Patch(_) => {}
                 Item::Mod(module) => {
                     scope.push(module.name.value.clone());
                     self.check_items_with_activation(&module.items, scope, activation_deps);

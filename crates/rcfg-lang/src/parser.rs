@@ -1,8 +1,9 @@
 use crate::ast::{
     AssignStmt, Attr, AttrArg, AttrKind, BinaryOp, ConstValue, ConstraintBlock, ConstraintItem,
     EnumDecl, EnumVariant, Expr, File, InSetElem, IncludeStmt, IntRange, Item, ItemMeta,
-    MatchBlock, MatchCase, MatchPat, ModDecl, OptionAttachedConstraints, OptionDecl, Path,
-    RequireStmt, Type, UnaryOp, UseStmt, ValueExpr, ValuesFile, ValuesStmt, WhenBlock,
+    MatchBlock, MatchCase, MatchPat, ModDecl, OptionAttachedConstraints, OptionDecl, PatchBlock,
+    PatchDefaultStmt, PatchStmt, Path, RequireStmt, Type, UnaryOp, UseStmt, ValueExpr, ValuesFile,
+    ValuesStmt, WhenBlock,
 };
 use crate::error::{Diagnostic, Severity};
 use crate::lexer::{Lexer, Token, TokenKind};
@@ -143,10 +144,7 @@ impl Parser {
             TokenKind::KwConstraint => self.parse_constraint_block(meta).map(Item::Constraint),
             TokenKind::KwWhen => self.parse_when_block(meta).map(Item::When),
             TokenKind::KwMatch => self.parse_match_block(meta).map(Item::Match),
-            TokenKind::KwPatch => {
-                self.parse_patch_stmt();
-                None
-            }
+            TokenKind::KwPatch => self.parse_patch_block(meta).map(Item::Patch),
             TokenKind::KwExport => {
                 self.push_error(
                     "E_FEATURE_NOT_SUPPORTED",
@@ -763,19 +761,88 @@ impl Parser {
         Some(MatchPat::Paths(paths, span))
     }
 
-    fn parse_patch_stmt(&mut self) {
-        self.bump();
-        let _target = self.parse_path();
+    fn parse_patch_block(&mut self, meta: ItemMeta) -> Option<PatchBlock> {
+        let start = self.expect(
+            TokenKind::KwPatch,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `patch`",
+        )?;
+        let target = self.parse_path()?;
+        self.expect(
+            TokenKind::LBrace,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `{` after patch target",
+        )?;
 
-        if !self.at(TokenKind::LBrace) {
-            self.push_error(
-                "E_PARSE_EXPECTED_TOKEN",
-                "expected `{` after patch target",
-                self.peek().span,
-            );
+        let mut stmts = Vec::new();
+        while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+            let mark = self.cursor;
+
+            let leading = self.parse_item_meta();
+            if !leading.doc.is_empty() || !leading.attrs.is_empty() {
+                self.push_error(
+                    "E_PARSE_UNEXPECTED_TOKEN",
+                    "only default statements are allowed in patch block",
+                    self.prev_span(),
+                );
+            }
+
+            if self.at(TokenKind::KwDefault) {
+                if let Some(stmt) = self.parse_patch_default_stmt() {
+                    stmts.push(stmt);
+                }
+            } else {
+                let token = self.bump();
+                self.push_error(
+                    "E_PARSE_UNEXPECTED_TOKEN",
+                    "only default statements are allowed in patch block",
+                    token.span,
+                );
+            }
+
+            if self.cursor == mark {
+                self.synchronize_in_block();
+            }
         }
 
-        self.skip_reserved_item_body();
+        let end = self.expect(
+            TokenKind::RBrace,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `}` to close patch block",
+        )?;
+
+        Some(PatchBlock {
+            meta,
+            target,
+            stmts,
+            span: start.span.join(end.span),
+        })
+    }
+
+    fn parse_patch_default_stmt(&mut self) -> Option<PatchStmt> {
+        let start = self.expect(
+            TokenKind::KwDefault,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `default` in patch block",
+        )?;
+        let path = self.parse_path()?;
+        self.expect(
+            TokenKind::Eq,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `=` in patch default statement",
+        )?;
+        let value = self.parse_const_value()?;
+        let end = self.expect(
+            TokenKind::Semicolon,
+            "E_PARSE_EXPECTED_TOKEN",
+            "expected `;` after patch default statement",
+        )?;
+
+        Some(PatchStmt::Default(PatchDefaultStmt {
+            path,
+            value,
+            span: start.span.join(end.span),
+        }))
     }
 
     fn parse_type(&mut self) -> Option<Type> {

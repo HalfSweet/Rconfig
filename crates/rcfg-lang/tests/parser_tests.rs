@@ -154,11 +154,18 @@ fn parses_patch_reserved_grammar_without_feature_gate_error() {
     let src = r#"
 patch foo { default x = true; }
 "#;
-    let (_file, diags) = parse_schema_with_diagnostics(src);
+    let (file, diags) = parse_schema_with_diagnostics(src);
     assert!(
         diags
             .iter()
             .all(|diag| diag.code != "E_FEATURE_NOT_SUPPORTED"),
         "patch should not be blocked by feature gate, got: {diags:#?}"
     );
+    assert_eq!(file.items.len(), 1);
+
+    let Item::Patch(patch) = &file.items[0] else {
+        panic!("expected patch item");
+    };
+    assert_eq!(patch.target.to_string(), "foo");
+    assert_eq!(patch.stmts.len(), 1);
 }

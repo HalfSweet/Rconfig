@@ -104,7 +104,7 @@ pub(super) fn collect_active_options(
                     aliases.insert(alias.value.clone(), use_stmt.path.to_string());
                 }
             }
-            Item::Require(_) | Item::Constraint(_) | Item::Enum(_) => {}
+            Item::Require(_) | Item::Constraint(_) | Item::Enum(_) | Item::Patch(_) => {}
             Item::Option(option) => {
                 let option_path = build_full_path(scope, &option.name.value);
                 if guard_active {
@@ -300,7 +300,7 @@ pub(super) fn collect_runtime_require_diagnostics(
                     aliases.insert(alias.value.clone(), use_stmt.path.to_string());
                 }
             }
-            Item::Enum(_) | Item::Option(_) => {}
+            Item::Enum(_) | Item::Option(_) | Item::Patch(_) => {}
             Item::Require(require) => {
                 let ordinal = next_require_ordinal(require_counters, scope);
                 let require_key = require_message_key(require, scope, ordinal);

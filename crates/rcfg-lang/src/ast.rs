@@ -11,6 +11,7 @@ pub enum Item {
     Mod(ModDecl),
     Enum(EnumDecl),
     Option(OptionDecl),
+    Patch(PatchBlock),
     Require(RequireStmt),
     Constraint(ConstraintBlock),
     When(WhenBlock),
@@ -70,6 +71,26 @@ pub struct OptionDecl {
     pub ty: Type,
     pub default: Option<ConstValue>,
     pub attached_constraints: Option<OptionAttachedConstraints>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatchBlock {
+    pub meta: ItemMeta,
+    pub target: Path,
+    pub stmts: Vec<PatchStmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PatchStmt {
+    Default(PatchDefaultStmt),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatchDefaultStmt {
+    pub path: Path,
+    pub value: ConstValue,
     pub span: Span,
 }
 

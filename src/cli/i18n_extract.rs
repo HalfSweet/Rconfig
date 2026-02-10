@@ -30,7 +30,7 @@ fn collect_item_i18n_strings(
 ) {
     for item in items {
         match item {
-            rcfg_lang::Item::Use(_) => {}
+            rcfg_lang::Item::Use(_) | rcfg_lang::Item::Patch(_) => {}
             rcfg_lang::Item::Mod(module) => {
                 let path = scoped_path(scope, &module.name.value);
                 push_doc_i18n_strings(&path, &module.meta.doc, package, out);

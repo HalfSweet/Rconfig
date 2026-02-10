@@ -109,7 +109,8 @@ fn collect_item_doc_sections(
             }
             rcfg_lang::Item::Use(_)
             | rcfg_lang::Item::Require(_)
-            | rcfg_lang::Item::Constraint(_) => {}
+            | rcfg_lang::Item::Constraint(_)
+            | rcfg_lang::Item::Patch(_) => {}
         }
     }
 }
