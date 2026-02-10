@@ -251,11 +251,23 @@ impl LanguageServer for Backend {
         let position = text_document_position.position;
 
         let state = self.state.lock().await;
-        let output = state
+        let kind = state
             .documents
-            .projects
-            .values()
-            .find_map(|project| completion::provide(project, &uri, position));
+            .get_document(&uri)
+            .map(|doc| doc.kind)
+            .unwrap_or_else(|| DocumentKind::from_uri(&uri));
+
+        let output = state.documents.projects.values().find_map(|project| {
+            let source = state
+                .documents
+                .get_document(&uri)
+                .map(|doc| doc.text.as_str())
+                .or_else(|| project.schema_docs.get(&uri).map(String::as_str))
+                .or_else(|| project.doc_indexes.get(&uri).map(String::as_str))?;
+
+            completion::provide(project, &uri, position, source, kind)
+        });
+
         Ok(output)
     }
 

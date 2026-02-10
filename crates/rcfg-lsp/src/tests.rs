@@ -413,3 +413,213 @@ async fn hover_and_goto_definition_support_use_alias() {
         "{goto_response:#?}"
     );
 }
+
+fn completion_items(response: &Value) -> Vec<Value> {
+    if let Some(items) = response["result"].as_array() {
+        return items.to_vec();
+    }
+
+    response["result"]["items"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+#[tokio::test]
+async fn completion_for_values_lhs_returns_option_paths_with_incremental_insert() {
+    let root = fixture_root("lsp_completion_values_lhs");
+    let schema_path = root.join("schema.rcfg");
+    let values_path = root.join("values.rcfgv");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  option enabled: bool = false;
+  option mode: bool = false;
+}
+"#,
+    );
+    write_file(&values_path, "app::en = true;\n");
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let values_text = std::fs::read_to_string(&values_path).expect("read values");
+    let schema_uri = as_file_uri(&schema_path);
+    let values_uri = as_file_uri(&values_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+    let _ = wait_for_publish(&mut socket).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": values_uri,
+                "languageId": "rcfgv",
+                "version": 1,
+                "text": values_text,
+            }
+        }),
+    )
+    .await;
+    let _ = wait_for_publish(&mut socket).await;
+
+    let completion_response = call_service(
+        &mut service,
+        "textDocument/completion",
+        31,
+        json!({
+            "textDocument": {"uri": values_uri},
+            "position": {"line": 0, "character": 7}
+        }),
+    )
+    .await;
+
+    let items = completion_items(&completion_response);
+    let enabled_item = items
+        .iter()
+        .find(|item| item["detail"].as_str() == Some("app::enabled"))
+        .expect("should contain app::enabled candidate");
+
+    assert_eq!(enabled_item["kind"], json!(5));
+    assert_eq!(enabled_item["insertText"], json!("abled"));
+}
+
+#[tokio::test]
+async fn completion_respects_scope_and_filters_unreachable_symbols() {
+    let root = fixture_root("lsp_completion_scope_filter");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  option enabled: bool = false;
+
+  when en {
+    require!(en == true);
+  }
+}
+
+mod other {
+  option enabled: bool = false;
+}
+"#,
+    );
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let schema_uri = as_file_uri(&schema_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+    let _ = wait_for_publish(&mut socket).await;
+
+    let completion_response = call_service(
+        &mut service,
+        "textDocument/completion",
+        32,
+        json!({
+            "textDocument": {"uri": schema_uri},
+            "position": {"line": 3, "character": 9}
+        }),
+    )
+    .await;
+
+    let items = completion_items(&completion_response);
+    let app_enabled = items
+        .iter()
+        .find(|item| item["detail"].as_str() == Some("app::enabled"))
+        .expect("should include app::enabled in app scope");
+
+    assert_eq!(app_enabled["insertText"], json!("abled"));
+    assert!(
+        items
+            .iter()
+            .all(|item| item["detail"].as_str() != Some("other::enabled")),
+        "other::enabled should not be visible in app scope"
+    );
+}
+
+#[tokio::test]
+async fn completion_falls_back_to_heuristic_for_incomplete_use_line() {
+    let root = fixture_root("lsp_completion_use_heuristic");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  option enabled: bool = false;
+}
+
+use app::en
+"#,
+    );
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let schema_uri = as_file_uri(&schema_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+    let _ = wait_for_publish(&mut socket).await;
+
+    let completion_response = call_service(
+        &mut service,
+        "textDocument/completion",
+        33,
+        json!({
+            "textDocument": {"uri": schema_uri},
+            "position": {"line": 4, "character": 11}
+        }),
+    )
+    .await;
+
+    let items = completion_items(&completion_response);
+    let enabled = items
+        .iter()
+        .find(|item| item["detail"].as_str() == Some("app::enabled"))
+        .expect("heuristic use completion should still return app::enabled");
+
+    assert_eq!(enabled["insertText"], json!("abled"));
+}
