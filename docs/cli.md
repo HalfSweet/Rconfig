@@ -80,6 +80,44 @@ rcfg i18n extract --schema schema.rcfg --out i18n/zh-CN.toml --locale zh-CN
 - `--out <PATH>`（必填）
 - `--locale <STR>`（默认 `en`）
 
+
+## `rcfg menuconfig`
+
+交互式 TUI 配置编辑（基于 `ratatui + crossterm`）。
+
+```bash
+# 使用已有 values 进入编辑
+rcfg menuconfig --schema schema.rcfg --values profile.rcfgv
+
+# 指定默认保存目标（优先级高于 --values）
+rcfg menuconfig --schema schema.rcfg --values profile.rcfgv --out build/final.rcfgv
+```
+
+关键参数：
+
+- `--values <PATH>`：初始 values 文件（可选）
+- `--out <PATH>`：保存弹窗默认路径（可选，优先级高于 `--values`）
+- `--script <PATH>`：脚本驱动模式（隐藏参数，仅测试）
+
+常用键位：
+
+- `Up/Down`：移动选中项
+- `Enter`：展开/折叠模块；保存弹窗中用于确认保存
+- `Space`：切换 bool 选项
+- `d`：清除当前项用户覆盖
+- `Ctrl+S`：打开保存路径弹窗
+- `F1`：帮助面板（summary/help + i18n key 回退）
+- `Esc`：关闭面板/取消保存弹窗
+- `q`：退出（脏状态需要二次确认）
+
+保存行为：
+
+- 保存前若存在 error 诊断会阻止保存
+- 输出为最小 diff（仅 `source == User` 且与 baseline 不同）
+- 输出路径默认优先级：`--out > --values > ./.config.rcfgv`
+- 输出格式：扁平全路径赋值、按 path 排序、文件末尾换行
+
+
 ## 返回码约定
 
 - `0`：成功（即使有 warning）

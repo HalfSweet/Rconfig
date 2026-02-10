@@ -46,10 +46,22 @@ rcfg i18n extract \
   --out i18n/zh-CN.toml
 ```
 
+
+### 5) 交互式配置编辑（menuconfig）
+
+```bash
+rcfg menuconfig   --schema schema.rcfg   --values profile.rcfgv
+```
+
+默认保存路径优先级：`--out > --values > ./.config.rcfgv`。
+
+
 ## 仓库结构
 
 - `src/`：CLI 主程序与命令实现
+- `crates/rcfg-app/`：CLI/TUI 共享加载与分析层
 - `crates/rcfg-lang/`：语言核心库
+- `crates/rcfg-tui/`：menuconfig TUI 引擎
 - `tests/`：CLI 集成测试
 - `docs/`：用户与开发文档（简体中文）
 - `_prd/`：需求与阶段规划文档（内部）
