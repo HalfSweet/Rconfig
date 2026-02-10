@@ -46,7 +46,10 @@ impl<'a> TypeChecker<'a> {
                 Item::Use(use_stmt) => {
                     self.register_use_alias(use_stmt);
                 }
-                Item::Enum(_) | Item::Patch(_) => {}
+                Item::Enum(_) => {}
+                Item::Patch(patch) => {
+                    self.check_patch_block(patch, scope);
+                }
                 Item::Mod(module) => {
                     scope.push(module.name.value.clone());
                     self.check_items_with_activation(&module.items, scope, activation_deps);
@@ -122,6 +125,205 @@ impl<'a> TypeChecker<'a> {
             let self_ty = option_type_to_value_type(&option.ty);
             for require in &attached.requires {
                 self.check_require_stmt(require, scope, Some(&self_ty));
+            }
+        }
+    }
+
+    fn check_patch_block(&mut self, patch: &crate::ast::PatchBlock, scope: &[String]) {
+        let target_prefix = match self.resolve_patch_target_path(scope, &patch.target) {
+            Some(path) => path,
+            None => return,
+        };
+
+        for stmt in &patch.stmts {
+            match stmt {
+                crate::ast::PatchStmt::Default(default_stmt) => {
+                    self.check_patch_default_stmt(&target_prefix, default_stmt);
+                }
+            }
+        }
+    }
+
+    fn resolve_patch_target_path(&mut self, scope: &[String], target: &Path) -> Option<String> {
+        let expanded = expand_with_aliases(target, &self.aliases);
+        let mut matches = build_candidate_paths(scope, &expanded)
+            .into_iter()
+            .filter(|candidate| self.symbols.get(candidate).is_some())
+            .collect::<Vec<_>>();
+        matches.sort();
+        matches.dedup();
+
+        if matches.is_empty() {
+            self.diagnostics.push(Diagnostic::error(
+                "E_SYMBOL_NOT_FOUND",
+                format!("patch target `{}` cannot be resolved", target.to_string()),
+                target.span,
+            ));
+            return None;
+        }
+
+        if matches.len() > 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E_AMBIGUOUS_PATH",
+                format!(
+                    "patch target `{}` is ambiguous: {}",
+                    target.to_string(),
+                    matches.join(", ")
+                ),
+                target.span,
+            ));
+            return None;
+        }
+
+        Some(matches.remove(0))
+    }
+
+    fn resolve_patch_option_path(&mut self, target_prefix: &str, path: &Path) -> Option<String> {
+        let expanded = expand_with_aliases(path, &self.aliases);
+        let nested_raw = format!("{}::{}", target_prefix, expanded);
+
+        let mut nested = self.symbols.resolve_option_paths(&nested_raw);
+        if nested.len() > 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E_AMBIGUOUS_PATH",
+                format!(
+                    "patch default target `{}` is ambiguous: {}",
+                    path.to_string(),
+                    nested.join(", ")
+                ),
+                path.span,
+            ));
+            return None;
+        }
+        if nested.len() == 1 {
+            return Some(nested.remove(0));
+        }
+
+        let mut direct = self.symbols.resolve_option_paths(&expanded);
+        if direct.len() > 1 {
+            self.diagnostics.push(Diagnostic::error(
+                "E_AMBIGUOUS_PATH",
+                format!(
+                    "patch default target `{}` is ambiguous: {}",
+                    path.to_string(),
+                    direct.join(", ")
+                ),
+                path.span,
+            ));
+            return None;
+        }
+        if direct.len() == 1 {
+            return Some(direct.remove(0));
+        }
+
+        self.diagnostics.push(
+            Diagnostic::error(
+                "E_SYMBOL_NOT_FOUND",
+                format!(
+                    "patch default target `{}` cannot be resolved",
+                    path.to_string()
+                ),
+                path.span,
+            )
+            .with_path(path.to_string()),
+        );
+        None
+    }
+
+    fn check_patch_default_stmt(
+        &mut self,
+        target_prefix: &str,
+        default_stmt: &crate::ast::PatchDefaultStmt,
+    ) {
+        let Some(option_path) = self.resolve_patch_option_path(target_prefix, &default_stmt.path)
+        else {
+            return;
+        };
+
+        if option_path == "ctx" || option_path.starts_with("ctx::") {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_CONTEXT_DEFAULT_NOT_ALLOWED",
+                    "`ctx` option cannot define schema default value",
+                    default_stmt.value.span(),
+                )
+                .with_path(option_path),
+            );
+            return;
+        }
+
+        let mut option_scope = option_path
+            .split("::")
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        option_scope.pop();
+
+        self.mark_default_enum_variant_usage(&default_stmt.value, &option_scope);
+
+        if let ConstValue::EnumPath(path) = &default_stmt.value {
+            if self.symbols.path_resolves_to_option_raw_in_scope(
+                &option_scope,
+                &expand_with_aliases(path, &self.aliases),
+            ) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "E_DEFAULT_NOT_CONSTANT",
+                        format!(
+                            "patch default for option `{}` must be a constant enum variant or literal",
+                            option_path
+                        ),
+                        path.span,
+                    )
+                    .with_path(option_path),
+                );
+                return;
+            }
+        }
+
+        let expected = self
+            .symbols
+            .option_type(&option_path)
+            .cloned()
+            .unwrap_or(ValueType::Unknown);
+        let actual = self.infer_const_type(&default_stmt.value, &option_scope);
+        let type_matches = match (&expected, &actual) {
+            (ValueType::Enum(expected_name), ValueType::Enum(actual_name)) => {
+                enum_name_matches(expected_name, actual_name)
+            }
+            _ => expected.same_as(&actual),
+        };
+
+        if !type_matches {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_PATCH_TYPE_MISMATCH",
+                    format!("patch default type mismatch for option `{}`", option_path),
+                    default_stmt.value.span(),
+                )
+                .with_path(option_path),
+            );
+            return;
+        }
+
+        if let ConstValue::Int(value, span) = &default_stmt.value {
+            if let Some((min, max)) = int_value_type_bounds(&expected) {
+                if *value < min || *value > max {
+                    let is_secret = self.symbols.option_is_secret(&option_path);
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            "E_DEFAULT_OUT_OF_RANGE",
+                            format!(
+                                "patch default value `{}` for option `{}` is out of range [{}..={}]",
+                                value, option_path, min, max
+                            ),
+                            *span,
+                        )
+                        .with_path(option_path)
+                        .with_arg("actual", redacted_int_arg(*value, is_secret))
+                        .with_arg("min", DiagnosticArgValue::Int(min))
+                        .with_arg("max", DiagnosticArgValue::Int(max)),
+                    );
+                }
             }
         }
     }

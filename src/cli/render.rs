@@ -224,6 +224,7 @@ pub(crate) fn render_resolved_json(
                     .unwrap_or(serde_json::Value::Null),
                 "source": option.source.map(|source| match source {
                     rcfg_lang::ValueSource::User => "user",
+                    rcfg_lang::ValueSource::Patch => "patch",
                     rcfg_lang::ValueSource::Default => "default",
                     rcfg_lang::ValueSource::Context => "context",
                 }),

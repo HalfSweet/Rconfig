@@ -2458,3 +2458,235 @@ mod app {
         exports.cmake
     );
 }
+
+#[test]
+fn patch_default_overrides_schema_default_with_patch_source() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+
+patch app {
+  default enabled = true;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
+
+    let resolved = resolve_values(&values, &symbols);
+    let option = resolved
+        .options
+        .iter()
+        .find(|option| option.path == "app::enabled")
+        .expect("expected app::enabled in resolved options");
+
+    assert!(option.active, "expected app::enabled to be active");
+    assert_eq!(
+        option.value.as_ref(),
+        Some(&rcfg_lang::ResolvedValue::Bool(true))
+    );
+    assert_eq!(option.source, Some(rcfg_lang::ValueSource::Patch));
+}
+
+#[test]
+fn user_value_takes_precedence_over_patch_default() {
+    let schema_src = r#"
+mod app {
+  option enabled: bool = false;
+}
+
+patch app {
+  default enabled = true;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("app::enabled = false;");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
+
+    let resolved = resolve_values(&values, &symbols);
+    let option = resolved
+        .options
+        .iter()
+        .find(|option| option.path == "app::enabled")
+        .expect("expected app::enabled in resolved options");
+
+    assert!(option.active, "expected app::enabled to be active");
+    assert_eq!(
+        option.value.as_ref(),
+        Some(&rcfg_lang::ResolvedValue::Bool(false))
+    );
+    assert_eq!(option.source, Some(rcfg_lang::ValueSource::User));
+}
+
+#[test]
+fn patch_default_respects_when_activation() {
+    let schema_src = r#"
+mod app {
+  option gate: bool = false;
+  option enabled: bool = false;
+
+  when gate {
+    patch app {
+      default enabled = true;
+    }
+  }
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values_off, values_off_diags) = parse_values_with_diagnostics("");
+    assert!(
+        values_off_diags.is_empty(),
+        "values parse diagnostics: {values_off_diags:#?}"
+    );
+    let resolved_off = resolve_values(&values_off, &symbols);
+    let enabled_off = resolved_off
+        .options
+        .iter()
+        .find(|option| option.path == "app::enabled")
+        .expect("expected app::enabled");
+    assert_eq!(
+        enabled_off.value.as_ref(),
+        Some(&rcfg_lang::ResolvedValue::Bool(false))
+    );
+    assert_eq!(enabled_off.source, Some(rcfg_lang::ValueSource::Default));
+
+    let (values_on, values_on_diags) = parse_values_with_diagnostics("app::gate = true;");
+    assert!(
+        values_on_diags.is_empty(),
+        "values parse diagnostics: {values_on_diags:#?}"
+    );
+    let resolved_on = resolve_values(&values_on, &symbols);
+    let enabled_on = resolved_on
+        .options
+        .iter()
+        .find(|option| option.path == "app::enabled")
+        .expect("expected app::enabled");
+    assert_eq!(
+        enabled_on.value.as_ref(),
+        Some(&rcfg_lang::ResolvedValue::Bool(true))
+    );
+    assert_eq!(enabled_on.source, Some(rcfg_lang::ValueSource::Patch));
+}
+
+#[test]
+fn patch_default_respects_match_activation() {
+    let schema_src = r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = off;
+  option retries: u32 = 1;
+
+  match mode {
+    case Mode::on => {
+      patch app {
+        default retries = 8;
+      }
+    }
+    case _ => { }
+  }
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values_off, values_off_diags) = parse_values_with_diagnostics("");
+    assert!(
+        values_off_diags.is_empty(),
+        "values parse diagnostics: {values_off_diags:#?}"
+    );
+    let resolved_off = resolve_values(&values_off, &symbols);
+    let retries_off = resolved_off
+        .options
+        .iter()
+        .find(|option| option.path == "app::retries")
+        .expect("expected app::retries");
+    assert_eq!(
+        retries_off.value.as_ref(),
+        Some(&rcfg_lang::ResolvedValue::Int(1))
+    );
+    assert_eq!(retries_off.source, Some(rcfg_lang::ValueSource::Default));
+
+    let (values_on, values_on_diags) = parse_values_with_diagnostics("app::mode = on;");
+    assert!(
+        values_on_diags.is_empty(),
+        "values parse diagnostics: {values_on_diags:#?}"
+    );
+    let resolved_on = resolve_values(&values_on, &symbols);
+    let retries_on = resolved_on
+        .options
+        .iter()
+        .find(|option| option.path == "app::retries")
+        .expect("expected app::retries");
+    assert_eq!(
+        retries_on.value.as_ref(),
+        Some(&rcfg_lang::ResolvedValue::Int(8))
+    );
+    assert_eq!(retries_on.source, Some(rcfg_lang::ValueSource::Patch));
+}
+
+#[test]
+fn patch_default_type_mismatch_reports_error() {
+    let src = r#"
+mod app {
+  option retries: u32 = 1;
+}
+
+patch app {
+  default retries = "oops";
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diag| diag.code == "E_PATCH_TYPE_MISMATCH"),
+        "expected E_PATCH_TYPE_MISMATCH, got: {:#?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn patch_default_target_not_found_reports_error() {
+    let src = r#"
+mod app {
+  option enabled: bool = false;
+}
+
+patch app {
+  default missing = true;
+}
+"#;
+    let (file, parse_diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        parse_diags.is_empty(),
+        "parse diagnostics: {parse_diags:#?}"
+    );
+
+    let report = analyze_schema(&file);
+    assert!(
+        report.diagnostics.iter().any(|diag| {
+            diag.code == "E_SYMBOL_NOT_FOUND"
+                && diag
+                    .message
+                    .contains("patch default target `missing` cannot be resolved")
+        }),
+        "expected patch default target not found diagnostics, got: {:#?}",
+        report.diagnostics
+    );
+}

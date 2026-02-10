@@ -159,6 +159,7 @@ impl ResolvedValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueSource {
     User,
+    Patch,
     Default,
     Context,
 }

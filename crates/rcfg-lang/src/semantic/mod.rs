@@ -4,7 +4,8 @@ use std::path::{Path as FsPath, PathBuf};
 
 use crate::ast::{
     AttrKind, BinaryOp, ConstValue, ConstraintItem, Expr, File, InSetElem, IntRange, Item,
-    MatchBlock, MatchPat, OptionDecl, Path, Type, UnaryOp, ValueExpr, ValuesFile, ValuesStmt,
+    MatchBlock, MatchPat, OptionDecl, PatchStmt, Path, Type, UnaryOp, ValueExpr, ValuesFile,
+    ValuesStmt,
 };
 use crate::error::{Diagnostic, DiagnosticArgValue, Severity};
 use crate::parser::parse_values_with_diagnostics;
