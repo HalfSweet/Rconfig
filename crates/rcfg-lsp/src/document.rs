@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use rcfg_lang::{Diagnostic as RcfgDiagnostic, SymbolPositionIndex, SymbolTable};
+use rcfg_lang::{Diagnostic as RcfgDiagnostic, Span, SymbolPositionIndex, SymbolTable};
 use tower_lsp::lsp_types::Url;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,12 +70,32 @@ impl SchemaFileSnapshot {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AliasBinding {
+    pub uri: Url,
+    pub alias: String,
+    pub raw_path: String,
+    pub alias_span: Span,
+    pub target_path: String,
+}
+
+impl AliasBinding {
+    pub fn contains_local_offset(&self, offset: usize) -> bool {
+        if self.alias_span.start == self.alias_span.end {
+            offset == self.alias_span.start
+        } else {
+            offset >= self.alias_span.start && offset < self.alias_span.end
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProjectAnalysis {
     pub symbols: SymbolTable,
     pub diagnostics: Vec<RcfgDiagnostic>,
     pub position_index: SymbolPositionIndex,
     pub schema_files: Vec<SchemaFileSnapshot>,
+    pub alias_bindings: Vec<AliasBinding>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -116,25 +136,7 @@ impl DocumentStore {
         self.documents.values().filter(|doc| doc.is_open)
     }
 
-    pub fn open_schema_documents(&self) -> impl Iterator<Item = &DocumentState> {
-        self.open_documents()
-            .filter(|doc| doc.kind == DocumentKind::Schema)
-    }
-
     pub fn mark_diagnostics_published(&mut self, uris: impl IntoIterator<Item = Url>) {
         self.published_diagnostic_uris.extend(uris);
-    }
-
-    pub fn take_stale_diagnostic_uris(&mut self, new_uris: &HashSet<Url>) -> Vec<Url> {
-        let mut stale = Vec::new();
-        self.published_diagnostic_uris.retain(|uri| {
-            if new_uris.contains(uri) {
-                true
-            } else {
-                stale.push(uri.clone());
-                false
-            }
-        });
-        stale
     }
 }

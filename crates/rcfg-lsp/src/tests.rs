@@ -3,13 +3,18 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use serde_json::{Value, json};
-use tower_lsp::jsonrpc::Request;
 use tower_lsp::LspService;
+use tower_lsp::jsonrpc::Request;
 use tower_service::Service as TowerService;
 
 use crate::server::Backend;
 
-async fn call_service(service: &mut LspService<Backend>, method: &str, id: i32, params: Value) -> Value {
+async fn call_service(
+    service: &mut LspService<Backend>,
+    method: &str,
+    id: i32,
+    params: Value,
+) -> Value {
     let request = Request::build(method.to_string())
         .id(id as i64)
         .params(params)
@@ -158,7 +163,10 @@ mod app {
             break;
         }
     }
-    assert!(saw_no_error, "expected parse error to disappear after didChange");
+    assert!(
+        saw_no_error,
+        "expected parse error to disappear after didChange"
+    );
 
     notify_service(
         &mut service,
@@ -177,7 +185,10 @@ mod app {
         .cloned()
         .unwrap_or_default();
     let save_has_error = save_diags.iter().any(|diag| diag["severity"] == 1);
-    assert!(!save_has_error, "didSave should not reintroduce parse errors: {save_publish:#?}");
+    assert!(
+        !save_has_error,
+        "didSave should not reintroduce parse errors: {save_publish:#?}"
+    );
 }
 
 #[tokio::test]
@@ -241,7 +252,10 @@ mod app {
         .as_str()
         .or_else(|| hover_response["result"]["contents"].as_str())
         .unwrap_or_default();
-    assert!(hover_text.contains("option") || hover_text.contains("enabled"), "{hover_response:#?}");
+    assert!(
+        hover_text.contains("option") || hover_text.contains("enabled"),
+        "{hover_response:#?}"
+    );
 
     let goto_response = call_service(
         &mut service,
@@ -279,7 +293,10 @@ mod app {
     )
     .await;
 
-    assert!(symbols_response["result"].is_array(), "{symbols_response:#?}");
+    assert!(
+        symbols_response["result"].is_array(),
+        "{symbols_response:#?}"
+    );
 }
 
 #[tokio::test]
@@ -313,4 +330,86 @@ include ;
         }),
     )
     .await;
+}
+
+#[tokio::test]
+async fn hover_and_goto_definition_support_use_alias() {
+    let root = fixture_root("lsp_alias_hover_goto");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(
+        &schema_path,
+        r#"mod app {
+  option enabled: bool = false;
+  use enabled as enabled_alias;
+  when enabled_alias {
+    require!(enabled_alias == true);
+  }
+}
+"#,
+    );
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let schema_uri = as_file_uri(&schema_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+
+    let _ = wait_for_publish(&mut socket).await;
+
+    let hover_response = call_service(
+        &mut service,
+        "textDocument/hover",
+        21,
+        json!({
+            "textDocument": {"uri": schema_uri},
+            "position": {"line": 2, "character": 22}
+        }),
+    )
+    .await;
+
+    let hover_text = hover_response["result"]["contents"]["value"]
+        .as_str()
+        .or_else(|| hover_response["result"]["contents"].as_str())
+        .unwrap_or_default();
+    assert!(hover_text.contains("use alias"), "{hover_response:#?}");
+    assert!(
+        hover_text.contains("raw path: `enabled`"),
+        "{hover_response:#?}"
+    );
+    assert!(
+        hover_text.contains("target: `app::enabled`"),
+        "{hover_response:#?}"
+    );
+
+    let goto_response = call_service(
+        &mut service,
+        "textDocument/definition",
+        22,
+        json!({
+            "textDocument": {"uri": schema_uri},
+            "position": {"line": 2, "character": 22}
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        goto_response["result"]["range"]["start"]["line"],
+        json!(1),
+        "{goto_response:#?}"
+    );
 }

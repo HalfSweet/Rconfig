@@ -3,16 +3,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rcfg_lang::{
-    Diagnostic as RcfgDiagnostic, Severity, analyze_schema_files, analyze_values,
-    analyze_values_from_path_report_with_context_and_root, parse_schema_with_diagnostics,
-    parse_values_with_diagnostics,
+    Diagnostic as RcfgDiagnostic, Item, Severity, SymbolTable, analyze_schema_files,
+    analyze_values, analyze_values_from_path_report_with_context_and_root,
+    parse_schema_with_diagnostics, parse_values_with_diagnostics,
 };
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, NumberOrString, Url,
 };
 
 use crate::document::{
-    DocumentKind, DocumentState, ProjectAnalysis, ProjectSnapshot, SchemaFileSnapshot,
+    AliasBinding, DocumentKind, DocumentState, ProjectAnalysis, ProjectSnapshot, SchemaFileSnapshot,
 };
 use crate::position::span_to_lsp_range;
 use crate::project::{
@@ -187,13 +187,15 @@ fn analyze_values_document(
             }
             ValuesSchemaResolution::NearbySchema { .. }
             | ValuesSchemaResolution::OpenSchemaFallback { .. }
-            | ValuesSchemaResolution::ParseOnly => analyze_values_from_path_report_with_context_and_root(
-                path,
-                &symbols,
-                &HashMap::new(),
-                path.parent().unwrap_or_else(|| Path::new(".")),
-            )
-            .diagnostics,
+            | ValuesSchemaResolution::ParseOnly => {
+                analyze_values_from_path_report_with_context_and_root(
+                    path,
+                    &symbols,
+                    &HashMap::new(),
+                    path.parent().unwrap_or_else(|| Path::new(".")),
+                )
+                .diagnostics
+            }
         };
 
         append_include_aware_values_diagnostics(
@@ -327,7 +329,11 @@ fn collect_schema_sources_for_path(
 
     for (open_path, text, open_uri) in &open_schema_overlays {
         let no_manifest = find_nearest_manifest(open_path).is_none();
-        if no_manifest && !sources.iter().any(|source| same_path(&source.path, open_path)) {
+        if no_manifest
+            && !sources
+                .iter()
+                .any(|source| same_path(&source.path, open_path))
+        {
             sources.push(SchemaSource {
                 uri: open_uri.clone(),
                 path: open_path.clone(),
@@ -344,7 +350,10 @@ fn collect_schema_sources_for_path(
     (key, sources)
 }
 
-fn collect_schema_sources_from_paths(paths: &[PathBuf], open_documents: &[DocumentState]) -> Vec<SchemaSource> {
+fn collect_schema_sources_from_paths(
+    paths: &[PathBuf],
+    open_documents: &[DocumentState],
+) -> Vec<SchemaSource> {
     let overlays = open_documents
         .iter()
         .filter(|doc| doc.kind == DocumentKind::Schema)
@@ -435,6 +444,7 @@ fn analyze_schema_sources(sources: &[SchemaSource]) -> Option<SchemaAnalysis> {
         diagnostics: semantic.diagnostics,
         position_index: semantic.symbols.build_position_index(),
         schema_files,
+        alias_bindings: collect_alias_bindings(sources, &semantic.symbols),
     };
 
     Some(SchemaAnalysis {
@@ -443,6 +453,172 @@ fn analyze_schema_sources(sources: &[SchemaSource]) -> Option<SchemaAnalysis> {
         uri_base_offsets,
         doc_indexes,
     })
+}
+
+fn collect_alias_bindings(sources: &[SchemaSource], symbols: &SymbolTable) -> Vec<AliasBinding> {
+    let mut bindings = Vec::new();
+
+    for source in sources {
+        let (file, _) = parse_schema_with_diagnostics(&source.text);
+        let mut scope = Vec::new();
+        collect_alias_bindings_in_items(
+            &file.items,
+            &mut scope,
+            &source.uri,
+            symbols,
+            &mut bindings,
+        );
+    }
+
+    bindings.sort_by(|left, right| {
+        left.uri
+            .as_str()
+            .cmp(right.uri.as_str())
+            .then(left.alias_span.start.cmp(&right.alias_span.start))
+            .then(left.alias.cmp(&right.alias))
+    });
+    bindings.dedup_by(|left, right| {
+        left.uri == right.uri
+            && left.alias_span == right.alias_span
+            && left.alias == right.alias
+            && left.target_path == right.target_path
+    });
+
+    bindings
+}
+
+fn collect_alias_bindings_in_items(
+    items: &[Item],
+    scope: &mut Vec<String>,
+    uri: &Url,
+    symbols: &SymbolTable,
+    out: &mut Vec<AliasBinding>,
+) {
+    for item in items {
+        match item {
+            Item::Use(use_stmt) => {
+                let Some(alias) = &use_stmt.alias else {
+                    continue;
+                };
+
+                let raw_path = use_stmt.path.to_string();
+                let Some(target_path) = resolve_alias_target_path(symbols, scope, &raw_path) else {
+                    continue;
+                };
+
+                out.push(AliasBinding {
+                    uri: uri.clone(),
+                    alias: alias.value.clone(),
+                    raw_path,
+                    alias_span: alias.span,
+                    target_path,
+                });
+            }
+            Item::Mod(mod_decl) => {
+                scope.push(mod_decl.name.value.clone());
+                collect_alias_bindings_in_items(&mod_decl.items, scope, uri, symbols, out);
+                let _ = scope.pop();
+            }
+            Item::When(when_block) => {
+                collect_alias_bindings_in_items(&when_block.items, scope, uri, symbols, out);
+            }
+            Item::Match(match_block) => {
+                for case in &match_block.cases {
+                    collect_alias_bindings_in_items(&case.items, scope, uri, symbols, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn resolve_alias_target_path(
+    symbols: &SymbolTable,
+    scope: &[String],
+    raw_path: &str,
+) -> Option<String> {
+    let mut matches = build_candidate_paths(scope, raw_path)
+        .into_iter()
+        .filter(|candidate| symbol_path_exists(symbols, candidate))
+        .collect::<Vec<_>>();
+
+    matches.sort();
+    matches.dedup();
+
+    if matches.len() == 1 {
+        return matches.pop();
+    }
+
+    if let Some(exact) = matches
+        .iter()
+        .find(|candidate| candidate.as_str() == raw_path)
+    {
+        return Some(exact.clone());
+    }
+
+    if !matches.is_empty() {
+        return None;
+    }
+
+    if symbol_path_exists(symbols, raw_path) {
+        return Some(raw_path.to_string());
+    }
+
+    let suffix = format!("::{raw_path}");
+    let mut suffix_matches = collect_known_symbol_paths(symbols)
+        .into_iter()
+        .filter(|candidate| candidate.ends_with(&suffix))
+        .collect::<Vec<_>>();
+    suffix_matches.sort();
+    suffix_matches.dedup();
+
+    if suffix_matches.len() == 1 {
+        return suffix_matches.pop();
+    }
+
+    None
+}
+
+fn build_candidate_paths(scope: &[String], raw_path: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    for level in (0..=scope.len()).rev() {
+        let prefix = &scope[..level];
+        if prefix.is_empty() {
+            candidates.push(raw_path.to_string());
+        } else {
+            candidates.push(format!("{}::{raw_path}", prefix.join("::")));
+        }
+    }
+
+    candidates
+}
+
+fn symbol_path_exists(symbols: &SymbolTable, path: &str) -> bool {
+    symbols.get(path).is_some()
+        || symbols.option_span(path).is_some()
+        || symbols.symbol_span(path).is_some()
+        || symbols.enum_variant_span(path).is_some()
+        || symbols.enum_owner_of_variant(path).is_some()
+}
+
+fn collect_known_symbol_paths(symbols: &SymbolTable) -> Vec<String> {
+    let mut paths = symbols
+        .iter()
+        .map(|(path, _)| path.to_string())
+        .collect::<Vec<_>>();
+
+    for occurrence in symbols.build_position_index().occurrences() {
+        if occurrence.role == rcfg_lang::SymbolOccurrenceRole::Definition
+            && symbols.enum_owner_of_variant(&occurrence.path).is_some()
+        {
+            paths.push(occurrence.path.clone());
+        }
+    }
+
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 fn map_schema_diag_to_local<'a>(
@@ -501,7 +677,9 @@ fn append_include_aware_values_diagnostics(
     for diag in diagnostics {
         let (uri, text) = if let Some(source) = &diag.source {
             let source_path = PathBuf::from(source);
-            let uri = Url::from_file_path(&source_path).ok().unwrap_or_else(|| current_uri.clone());
+            let uri = Url::from_file_path(&source_path)
+                .ok()
+                .unwrap_or_else(|| current_uri.clone());
             let text = open_documents
                 .iter()
                 .find(|doc| doc.uri == uri)
@@ -547,12 +725,10 @@ fn rcfg_diag_to_lsp(
                 let location = if let Some(path) = item.path.as_ref() {
                     let maybe_path = PathBuf::from(path);
                     if maybe_path.is_file() {
-                        Url::from_file_path(maybe_path)
-                            .ok()
-                            .map(|uri| Location {
-                                uri,
-                                range: span_to_lsp_range(source_text, item.span),
-                            })
+                        Url::from_file_path(maybe_path).ok().map(|uri| Location {
+                            uri,
+                            range: span_to_lsp_range(source_text, item.span),
+                        })
                     } else {
                         None
                     }
@@ -607,12 +783,7 @@ fn dedup_lsp_diagnostics(diagnostics: &mut Vec<Diagnostic>) {
     diagnostics.retain(|diag| {
         let key = format!(
             "{:?}:{:?}:{:?}:{:?}:{:?}:{:?}",
-            diag.severity,
-            diag.code,
-            diag.range.start,
-            diag.range.end,
-            diag.source,
-            diag.message
+            diag.severity, diag.code, diag.range.start, diag.range.end, diag.source, diag.message
         );
         seen.insert(key)
     });
@@ -622,4 +793,40 @@ fn same_path(left: &Path, right: &Path) -> bool {
     let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
     let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
     left == right
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collects_alias_binding_with_scoped_resolution() {
+        let source = SchemaSource {
+            uri: Url::from_file_path("/tmp/alias_scope_schema.rcfg").expect("uri"),
+            path: PathBuf::from("/tmp/alias_scope_schema.rcfg"),
+            text: r#"
+mod app {
+  option enabled: bool = true;
+  use enabled as enabled_alias;
+
+  when enabled_alias {
+    require!(enabled_alias == true);
+  }
+}
+"#
+            .to_string(),
+        };
+
+        let analysis = analyze_schema_sources(&[source]).expect("analysis");
+        let binding = analysis
+            .analysis
+            .alias_bindings
+            .iter()
+            .find(|binding| binding.alias == "enabled_alias")
+            .expect("alias binding should exist");
+
+        assert_eq!(binding.raw_path, "enabled");
+        assert_eq!(binding.target_path, "app::enabled");
+        assert!(binding.contains_local_offset(binding.alias_span.start));
+    }
 }
