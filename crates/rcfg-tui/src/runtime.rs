@@ -7,6 +7,7 @@ use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use rcfg_lang::ValueType;
 
 use crate::app::App;
 use crate::event::{AppEvent, parse_script_line};
@@ -106,19 +107,45 @@ fn map_key_event(key_event: KeyEvent) -> Option<AppEvent> {
 }
 
 pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
-    match event {
-        AppEvent::Up => app.state.select_prev(),
-        AppEvent::Down => app.state.select_next(),
-        AppEvent::Enter => app.state.toggle_selected_expand(),
-        AppEvent::Esc => app.state.clear_quit_confirmation(),
-        AppEvent::Space => {
-            let selected_path = app
-                .state
-                .tree
-                .node(app.state.selected)
-                .map(|node| node.path.clone())
-                .ok_or_else(|| "no selected node".to_string())?;
+    if app.state.help_visible {
+        match event {
+            AppEvent::Esc | AppEvent::F1 => {
+                app.state.close_help_panel();
+                app.state.clear_status_message();
+            }
+            _ => {}
+        }
+        return Ok(false);
+    }
 
+    match event {
+        AppEvent::Up => {
+            app.state.select_prev();
+            app.state.clear_status_message();
+        }
+        AppEvent::Down => {
+            app.state.select_next();
+            app.state.clear_status_message();
+        }
+        AppEvent::Enter => {
+            app.state.toggle_selected_expand();
+            app.state.clear_status_message();
+        }
+        AppEvent::Esc => {
+            app.state.clear_quit_confirmation();
+            app.state.clear_status_message();
+        }
+        AppEvent::Space => {
+            let Some(selected_node) = app.state.tree.node(app.state.selected) else {
+                return Ok(false);
+            };
+            if selected_node.value_type != Some(ValueType::Bool) {
+                app.state
+                    .set_status_message("selected option is not bool and cannot toggle");
+                return Ok(false);
+            }
+
+            let selected_path = selected_node.path.clone();
             let current = app
                 .session
                 .resolve(&app.state.to_values_file())
@@ -134,35 +161,80 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
 
             app.state.set_bool_value(!current)?;
             app.recompute();
+            app.state.clear_status_message();
         }
-        AppEvent::F1 => {}
+        AppEvent::F1 => {
+            app.state.toggle_help_panel();
+            app.state.clear_status_message();
+        }
         AppEvent::Save => {
             if app.has_blocking_errors() {
+                app.state
+                    .set_status_message("save blocked: resolve diagnostics first");
                 return Ok(false);
             }
 
             let rendered = app.minimal_values_text();
-            let target = app.save_target();
-            fs::write(target, rendered)
+            let target = app.save_target().to_path_buf();
+            fs::write(&target, rendered)
                 .map_err(|err| format!("failed to write {}: {err}", target.display()))?;
             app.state.dirty = false;
             app.state.clear_quit_confirmation();
+            app.state
+                .set_status_message(format!("saved: {}", target.display()));
         }
         AppEvent::Quit => {
             if app.state.request_quit() {
                 return Ok(true);
             }
+            app.state
+                .set_status_message("press q again to confirm quit");
         }
         AppEvent::Reset => {
             app.state.clear_selected_override();
             app.recompute();
+            app.state.clear_status_message();
         }
         AppEvent::Chars(text) => {
-            app.state.set_text_value(text)?;
+            apply_text_override(app, text)?;
             app.recompute();
+            app.state.clear_status_message();
         }
         AppEvent::Resize(_, _) => {}
     }
 
     Ok(false)
+}
+
+fn apply_text_override(app: &mut App, text: String) -> Result<(), String> {
+    let Some(node) = app.state.tree.node(app.state.selected) else {
+        return Err("no selected node".to_string());
+    };
+
+    let Some(value_type) = node.value_type.clone() else {
+        return Err("selected node is not editable option".to_string());
+    };
+
+    match value_type {
+        ValueType::Bool => {
+            let normalized = text.trim().to_lowercase();
+            let value = match normalized.as_str() {
+                "true" | "1" | "yes" | "on" => true,
+                "false" | "0" | "no" | "off" => false,
+                _ => {
+                    return Err("bool option expects true/false".to_string());
+                }
+            };
+            app.state.set_bool_value(value)
+        }
+        ValueType::Int(_) | ValueType::UntypedInt => {
+            let value = text
+                .trim()
+                .parse::<i128>()
+                .map_err(|_| "int option expects integer literal".to_string())?;
+            app.state.set_int_value(value)
+        }
+        ValueType::Enum(_) => app.state.set_enum_value(text.trim().to_string()),
+        ValueType::String | ValueType::Unknown => app.state.set_text_value(text),
+    }
 }

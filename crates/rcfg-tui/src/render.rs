@@ -1,8 +1,8 @@
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::Frame;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
-use ratatui::Frame;
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 
 use rcfg_lang::{ResolvedValue, Severity, ValueType};
 
@@ -28,9 +28,13 @@ pub fn render_frame(frame: &mut Frame<'_>, app: &App) {
     render_detail_panel(frame, app, body[1]);
     render_diagnostics_panel(frame, app, areas[1]);
     render_status_bar(frame, app, areas[2]);
+
+    if app.state.help_visible {
+        render_help_overlay(frame, app);
+    }
 }
 
-fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
+fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let items = app
         .state
         .visible_nodes()
@@ -79,14 +83,12 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Re
         })
         .collect::<Vec<_>>();
 
-    let tree = List::new(items)
-        .block(Block::default().title("Tree").borders(Borders::ALL))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+    let tree = List::new(items).block(Block::default().title("Tree").borders(Borders::ALL));
 
     frame.render_widget(tree, area);
 }
 
-fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
+fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let mut lines = Vec::new();
 
     if let Some(node) = app.state.tree.node(app.state.selected) {
@@ -126,28 +128,21 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::
             Span::raw(override_text),
         ]));
 
+        let (summary, help) = app.localized_docs_for_path(&node.path);
+
         lines.push(Line::default());
         lines.push(Line::styled(
-            "docs:",
+            "summary:",
             Style::default().add_modifier(Modifier::BOLD),
         ));
+        lines.push(Line::from(summary.unwrap_or_else(|| "(none)".to_string())));
 
-        let docs = app
-            .session
-            .symbols()
-            .symbol_docs(&node.path)
-            .unwrap_or_default();
-
-        if docs.is_empty() {
-            lines.push(Line::from("(none)"));
-        } else {
-            for doc in docs.iter().take(8) {
-                lines.push(Line::from(doc.value.clone()));
-            }
-            if docs.len() > 8 {
-                lines.push(Line::from("..."));
-            }
-        }
+        lines.push(Line::default());
+        lines.push(Line::styled(
+            "help:",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+        lines.push(Line::from(help.unwrap_or_else(|| "(none)".to_string())));
     }
 
     let detail = Paragraph::new(lines)
@@ -157,7 +152,7 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::
     frame.render_widget(detail, area);
 }
 
-fn render_diagnostics_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
+fn render_diagnostics_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let mut lines = Vec::new();
 
     if app.state.diagnostics.is_empty() {
@@ -184,7 +179,7 @@ fn render_diagnostics_panel(frame: &mut Frame<'_>, app: &App, area: ratatui::lay
     frame.render_widget(diagnostics, area);
 }
 
-fn render_status_bar(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
+fn render_status_bar(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let mut status = format!(
         "dirty={} | diagnostics={} | q quit | Ctrl+S save | F1 help",
         app.state.dirty,
@@ -195,11 +190,79 @@ fn render_status_bar(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Re
         status.push_str(" | press q again to confirm exit");
     }
 
+    if let Some(message) = &app.state.status_message {
+        status.push_str(" | ");
+        status.push_str(message);
+    }
+
     let bar = Paragraph::new(status)
         .style(Style::default().fg(Color::Cyan))
         .block(Block::default().borders(Borders::ALL));
 
     frame.render_widget(bar, area);
+}
+
+fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {
+    let popup_area = centered_rect(75, 70, frame.area());
+    frame.render_widget(Clear, popup_area);
+
+    let mut lines = Vec::new();
+    lines.push(Line::styled(
+        "Help (F1/Esc close)",
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+    lines.push(Line::default());
+
+    if let Some(node) = app.state.tree.node(app.state.selected) {
+        let (label_key, help_key) = app.doc_keys_for_path(&node.path);
+        let (summary, help) = app.localized_docs_for_path(&node.path);
+
+        lines.push(Line::from(format!("path: {}", node.path)));
+        lines.push(Line::from(format!("label_key: {label_key}")));
+        lines.push(Line::from(format!("help_key:  {help_key}")));
+        lines.push(Line::default());
+
+        lines.push(Line::styled(
+            "summary:",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+        lines.push(Line::from(summary.unwrap_or_else(|| "(none)".to_string())));
+        lines.push(Line::default());
+
+        lines.push(Line::styled(
+            "help:",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+        lines.push(Line::from(help.unwrap_or_else(|| "(none)".to_string())));
+    }
+
+    let panel = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().title("Help").borders(Borders::ALL));
+
+    frame.render_widget(panel, popup_area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+
+    let horizontal = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical[1]);
+
+    horizontal[1]
 }
 
 fn icon(kind: NodeKind) -> &'static str {

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use rcfg_app::AppSession;
 use rcfg_lang::{ResolvedValue, Severity, ValueSource};
 
+use crate::docs::{NodeDocEntry, build_doc_index, i18n_symbol_key};
 use crate::model::ConfigTree;
 use crate::save::{baseline_resolved, build_minimal_overrides, render_values};
 use crate::state::UiState;
@@ -13,17 +14,20 @@ pub struct App {
     pub session: AppSession,
     pub state: UiState,
     save_target: PathBuf,
+    doc_index: BTreeMap<String, NodeDocEntry>,
 }
 
 impl App {
     pub fn new(session: AppSession, save_target: PathBuf) -> Self {
         let tree = ConfigTree::from_schema(session.symbols());
         let state = UiState::new(tree);
+        let doc_index = build_doc_index(session.schema_file());
 
         Self {
             session,
             state,
             save_target,
+            doc_index,
         }
     }
 
@@ -77,6 +81,45 @@ impl App {
         render_values(&minimal)
     }
 
+    pub fn doc_keys_for_path(&self, path: &str) -> (String, String) {
+        let package = self.session.package_name().unwrap_or("main");
+        let label_key = self
+            .doc_index
+            .get(path)
+            .and_then(|entry| entry.label_key.clone())
+            .unwrap_or_else(|| i18n_symbol_key(package, path, "label"));
+        let help_key = self
+            .doc_index
+            .get(path)
+            .and_then(|entry| entry.help_key.clone())
+            .unwrap_or_else(|| i18n_symbol_key(package, path, "help"));
+
+        (label_key, help_key)
+    }
+
+    pub fn localized_docs_for_path(&self, path: &str) -> (Option<String>, Option<String>) {
+        let (label_key, help_key) = self.doc_keys_for_path(path);
+        let fallback = self.doc_index.get(path);
+
+        let summary = self
+            .session
+            .i18n()
+            .and_then(|catalog| catalog.strings.get(&label_key))
+            .filter(|text| !text.trim().is_empty())
+            .cloned()
+            .or_else(|| fallback.and_then(|entry| entry.summary.clone()));
+
+        let help = self
+            .session
+            .i18n()
+            .and_then(|catalog| catalog.strings.get(&help_key))
+            .filter(|text| !text.trim().is_empty())
+            .cloned()
+            .or_else(|| fallback.and_then(|entry| entry.help.clone()));
+
+        (summary, help)
+    }
+
     pub fn script_summary_json(&self) -> serde_json::Value {
         let mut user_values = BTreeMap::new();
         for (path, value) in &self.state.user_values {
@@ -103,12 +146,7 @@ impl App {
             })
             .collect::<Vec<_>>();
 
-        let active_paths = self
-            .state
-            .active_paths
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>();
+        let active_paths = self.state.active_paths.iter().cloned().collect::<Vec<_>>();
 
         serde_json::json!({
             "selected_path": self

@@ -1,4 +1,5 @@
 mod app;
+mod docs;
 mod event;
 mod model;
 mod render;

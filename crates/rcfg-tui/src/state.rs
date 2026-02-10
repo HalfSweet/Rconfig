@@ -17,6 +17,8 @@ pub struct UiState {
     pub active_paths: BTreeSet<String>,
     pub dirty: bool,
     pub pending_quit_confirm: bool,
+    pub help_visible: bool,
+    pub status_message: Option<String>,
 }
 
 impl UiState {
@@ -31,6 +33,8 @@ impl UiState {
             active_paths: BTreeSet::new(),
             dirty: false,
             pending_quit_confirm: false,
+            help_visible: false,
+            status_message: None,
         }
     }
 
@@ -201,6 +205,22 @@ impl UiState {
         self.pending_quit_confirm = false;
     }
 
+    pub fn toggle_help_panel(&mut self) {
+        self.help_visible = !self.help_visible;
+    }
+
+    pub fn close_help_panel(&mut self) {
+        self.help_visible = false;
+    }
+
+    pub fn set_status_message(&mut self, message: impl Into<String>) {
+        self.status_message = Some(message.into());
+    }
+
+    pub fn clear_status_message(&mut self) {
+        self.status_message = None;
+    }
+
     pub fn apply_runtime_result(&mut self, resolved: &ResolvedConfig, diagnostics: Vec<Diagnostic>) {
         self.set_active_from_resolved(resolved);
         self.diagnostics = diagnostics;
@@ -256,7 +276,7 @@ fn resolved_value_to_expr(value: &ResolvedValue) -> ValueExpr {
 
 #[cfg(test)]
 mod tests {
-    use rcfg_lang::{parse_schema, analyze_schema};
+    use rcfg_lang::{analyze_schema, parse_schema};
 
     use super::*;
 
