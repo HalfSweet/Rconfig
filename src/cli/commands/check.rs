@@ -12,10 +12,11 @@ pub(crate) fn execute(
     parse_diags: Vec<Diagnostic>,
     symbols: &SymbolTable,
     context: &HashMap<String, ResolvedValue>,
+    include_root: Option<&Path>,
     strict: bool,
     i18n: Option<&I18nCatalog>,
 ) -> Result<(), String> {
-    let values_report = analyze_values_report(values, symbols, context, strict);
+    let values_report = analyze_values_report(values, symbols, context, include_root, strict);
     let mut all = parse_diags;
     all.extend(values_report.diagnostics);
     print_diagnostics(&all, format, i18n);

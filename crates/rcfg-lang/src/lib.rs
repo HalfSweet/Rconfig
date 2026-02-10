@@ -23,10 +23,13 @@ pub use semantic::{
     analyze_schema_files_strict, analyze_schema_strict, analyze_values, analyze_values_from_path,
     analyze_values_from_path_report, analyze_values_from_path_report_strict,
     analyze_values_from_path_report_with_context,
+    analyze_values_from_path_report_with_context_and_root,
+    analyze_values_from_path_report_with_context_and_root_strict,
     analyze_values_from_path_report_with_context_strict, analyze_values_from_path_strict,
     analyze_values_strict, analyze_values_with_context, analyze_values_with_context_strict,
     builtin_exporter_names, create_builtin_exporter, expand_values_includes_from_path,
-    expand_values_includes_with_origins, generate_exports, plan_c_header_exports,
+    expand_values_includes_from_path_with_root, expand_values_includes_with_origins,
+    expand_values_includes_with_origins_with_root, generate_exports, plan_c_header_exports,
     plan_c_header_exports_with_prefix, resolve_values, resolve_values_with_context,
 };
 pub use span::{Span, Spanned};

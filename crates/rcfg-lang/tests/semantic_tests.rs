@@ -6,7 +6,8 @@ use rcfg_lang::{
     IntExportFormat, Severity, SymbolKind, SymbolTable, analyze_schema, analyze_schema_files,
     analyze_schema_strict, analyze_values, analyze_values_from_path,
     analyze_values_from_path_report, analyze_values_strict, expand_values_includes_from_path,
-    expand_values_includes_with_origins, generate_exports, plan_c_header_exports, resolve_values,
+    expand_values_includes_from_path_with_root, expand_values_includes_with_origins,
+    generate_exports, plan_c_header_exports, resolve_values,
 };
 
 fn symbols_from(src: &str) -> SymbolTable {
@@ -1011,6 +1012,31 @@ fn include_expander_provides_stmt_origins() {
 
     let _ = std::fs::remove_file(&base);
     let _ = std::fs::remove_file(&root);
+    let _ = std::fs::remove_dir(&tmp);
+}
+
+#[test]
+fn include_expander_supports_root_prefixed_paths() {
+    let tmp = std::env::temp_dir().join(format!("rcfg_include_root_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(tmp.join("profiles"));
+
+    let base = tmp.join("base.rcfgv");
+    let profile = tmp.join("profiles/dev.rcfgv");
+    std::fs::write(&base, "app::enabled = true;\n").expect("write base");
+    std::fs::write(&profile, "include \"@root/base.rcfgv\";\n").expect("write profile");
+
+    let (values, diags) = expand_values_includes_from_path_with_root(&profile, &tmp);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:#?}");
+    assert_eq!(values.stmts.len(), 1);
+
+    let rcfg_lang::ast::ValuesStmt::Assign(assign) = &values.stmts[0] else {
+        panic!("expected assignment after include expansion");
+    };
+    assert_eq!(assign.path.to_string(), "app::enabled");
+
+    let _ = std::fs::remove_file(&base);
+    let _ = std::fs::remove_file(&profile);
+    let _ = std::fs::remove_dir_all(tmp.join("profiles"));
     let _ = std::fs::remove_dir(&tmp);
 }
 

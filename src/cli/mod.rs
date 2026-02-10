@@ -7,6 +7,8 @@ use rcfg_lang::parser::parse_schema_with_diagnostics;
 use rcfg_lang::{
     ResolvedConfig, ResolvedValue, ValuesAnalysisReport, analyze_schema, analyze_schema_strict,
     analyze_values_from_path_report_with_context,
+    analyze_values_from_path_report_with_context_and_root,
+    analyze_values_from_path_report_with_context_and_root_strict,
     analyze_values_from_path_report_with_context_strict, resolve_values,
     resolve_values_with_context,
 };
@@ -72,6 +74,10 @@ fn run(cli: Cli) -> Result<(), String> {
         let package_name = root_manifest.map(|model| model.package_name.as_str());
 
         let context = load_context(cli.context.as_deref())?;
+        let include_root = root_manifest
+            .and_then(|manifest| manifest.manifest_path.parent().map(Path::to_path_buf))
+            .or_else(|| std::env::current_dir().ok());
+
         match cli.command {
             Commands::Check { values, format } => {
                 commands::check::execute(
@@ -80,6 +86,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     parse_diags,
                     &schema_report.symbols,
                     &context,
+                    include_root.as_deref(),
                     cli.strict,
                     i18n.as_ref(),
                 )?;
@@ -141,6 +148,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     parse_diags,
                     &schema_report.symbols,
                     &context,
+                    include_root.as_deref(),
                     cli.strict,
                     i18n.as_ref(),
                 )?;
@@ -165,6 +173,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     &schema_file,
                     package_name,
                     &context,
+                    include_root.as_deref(),
                     cli.strict,
                     i18n.as_ref(),
                 )?;
@@ -281,12 +290,18 @@ pub(crate) fn analyze_values_report(
     values: &Path,
     symbols: &rcfg_lang::SymbolTable,
     context: &HashMap<String, ResolvedValue>,
+    include_root: Option<&Path>,
     strict: bool,
 ) -> ValuesAnalysisReport {
-    if strict {
-        analyze_values_from_path_report_with_context_strict(values, symbols, context)
-    } else {
-        analyze_values_from_path_report_with_context(values, symbols, context)
+    match (strict, include_root) {
+        (true, Some(root)) => {
+            analyze_values_from_path_report_with_context_and_root_strict(values, symbols, context, root)
+        }
+        (false, Some(root)) => {
+            analyze_values_from_path_report_with_context_and_root(values, symbols, context, root)
+        }
+        (true, None) => analyze_values_from_path_report_with_context_strict(values, symbols, context),
+        (false, None) => analyze_values_from_path_report_with_context(values, symbols, context),
     }
 }
 

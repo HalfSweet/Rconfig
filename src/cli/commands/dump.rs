@@ -24,10 +24,11 @@ pub(crate) fn execute(
     schema_file: &rcfg_lang::File,
     package_name: Option<&str>,
     context: &HashMap<String, ResolvedValue>,
+    include_root: Option<&Path>,
     strict: bool,
     i18n: Option<&I18nCatalog>,
 ) -> Result<(), String> {
-    let values_report = analyze_values_report(values, symbols, context, strict);
+    let values_report = analyze_values_report(values, symbols, context, include_root, strict);
     let mut all = parse_diags;
     all.extend(values_report.diagnostics.clone());
     write_diagnostics_json(paths.out_diagnostics, &all)?;

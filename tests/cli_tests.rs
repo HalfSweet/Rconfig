@@ -716,6 +716,51 @@ schema = "src/schema.rcfg"
 }
 
 #[test]
+fn rcfg_check_supports_root_prefixed_include_with_manifest_root() {
+    let root = fixture_path("cli_manifest_include_root");
+    let schema = root.join("src/schema.rcfg");
+    let manifest = root.join("Config.toml");
+    let base_values = root.join("profiles/common.rcfgv");
+    let values = root.join("profiles/dev/values.rcfgv");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &manifest,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+    );
+    write_file(&base_values, "app::enabled = true;\n");
+    write_file(&values, "include \"@root/profiles/common.rcfgv\";\n");
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "check",
+            "--manifest",
+            manifest.to_str().expect("manifest path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--format",
+            "json",
+        ])
+        .status()
+        .expect("run rcfg check");
+    assert!(status.success(), "rcfg check should succeed");
+}
+
+#[test]
 fn rcfg_check_manifest_requires_package_version() {
     let root = fixture_path("cli_manifest_missing_version");
     let schema = root.join("src/schema.rcfg");

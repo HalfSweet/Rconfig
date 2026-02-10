@@ -1,9 +1,9 @@
 use super::*;
 
-#[derive(Default)]
 pub(super) struct IncludeExpander {
     pub(super) diagnostics: Vec<Diagnostic>,
     pub(super) stack: Vec<PathBuf>,
+    root_dir: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -13,6 +13,26 @@ pub(super) struct ExpandedValuesStmt {
 }
 
 impl IncludeExpander {
+    pub(super) fn with_root(root_dir: PathBuf) -> Self {
+        Self {
+            diagnostics: Vec::new(),
+            stack: Vec::new(),
+            root_dir,
+        }
+    }
+
+    fn resolve_include_target(&self, base_dir: &FsPath, include_path: &str) -> PathBuf {
+        if include_path == "@root" {
+            return self.root_dir.clone();
+        }
+
+        if let Some(stripped) = include_path.strip_prefix("@root/") {
+            return self.root_dir.join(stripped);
+        }
+
+        base_dir.join(include_path)
+    }
+
     pub(super) fn current_chain(&self, next: &PathBuf) -> Vec<String> {
         self.stack
             .iter()
@@ -93,7 +113,7 @@ impl IncludeExpander {
         for stmt in values.stmts {
             match stmt {
                 ValuesStmt::Include(include) => {
-                    let target = base_dir.join(include.path.value);
+                    let target = self.resolve_include_target(&base_dir, &include.path.value);
                     self.expand_file(&target, output);
                 }
                 other => output.push(ExpandedValuesStmt {
