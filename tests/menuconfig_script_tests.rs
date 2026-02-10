@@ -86,6 +86,8 @@ fn menuconfig_save_writes_minimal_diff_to_values_path() {
     let script = fixture_path("menuconfig_save_values", "script.txt");
     let values = fixture_path("menuconfig_save_values", "profile.rcfgv");
 
+    let _ = fs::remove_file(&values);
+
     write_file(
         &schema,
         r#"
@@ -132,6 +134,8 @@ fn menuconfig_save_defaults_to_dot_config_without_values() {
     let script = test_dir.join("script.txt");
     let default_values = test_dir.join(".config.rcfgv");
 
+    let _ = fs::remove_file(&default_values);
+
     write_file(
         &schema,
         r#"
@@ -174,6 +178,9 @@ fn menuconfig_save_prefers_out_path_over_values_path() {
     let script = fixture_path("menuconfig_save_out_priority", "script.txt");
     let values = fixture_path("menuconfig_save_out_priority", "profile.rcfgv");
     let out = fixture_path("menuconfig_save_out_priority", "final.rcfgv");
+
+    let _ = fs::remove_file(&values);
+    let _ = fs::remove_file(&out);
 
     write_file(
         &schema,
@@ -221,6 +228,8 @@ fn menuconfig_save_escapes_string_values() {
     let schema = fixture_path("menuconfig_save_escape", "schema.rcfg");
     let script = fixture_path("menuconfig_save_escape", "script.txt");
     let values = fixture_path("menuconfig_save_escape", "profile.rcfgv");
+
+    let _ = fs::remove_file(&values);
 
     write_file(
         &schema,
