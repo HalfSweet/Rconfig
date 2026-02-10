@@ -52,6 +52,9 @@ pub(crate) enum Commands {
         #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
         export_secrets: bool,
 
+        #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+        export_context: bool,
+
         #[arg(long, default_value = "CONFIG_")]
         c_prefix: String,
 

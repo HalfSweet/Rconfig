@@ -38,6 +38,7 @@ rcfg export   --schema schema.rcfg   --values profile.rcfgv   --format rust   --
 - `--format c-header|cmake|rust|python` + `--out <PATH>`：导出目标（可重复，按顺序一一对应）
 - `--out-h <PATH>` + `--out-cmake <PATH>`：旧版导出参数，保留兼容
 - `--export-secrets`：允许导出 `#[secret]`
+- `--export-context`：允许导出 `ctx::...` 上下文项（默认不导出）
 - `--c-prefix <STR>`：C 宏前缀，默认 `CONFIG_`
 - `--cmake-prefix <STR>`：CMake 变量前缀，默认 `CFG_`
 - `--bool-false-style omit|define-0`：bool=false 的 C 导出策略（默认 `omit`）

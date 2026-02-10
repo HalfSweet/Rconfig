@@ -76,6 +76,7 @@ pub(crate) fn execute(
     values: &Path,
     targets: &[ExportTarget],
     export_secrets: bool,
+    export_context: bool,
     c_prefix: String,
     cmake_prefix: String,
     bool_false_style: BoolFalseExportStyle,
@@ -98,6 +99,7 @@ pub(crate) fn execute(
 
     let export_options = ExportOptions {
         include_secrets: export_secrets,
+        include_context: export_context,
         c_prefix,
         cmake_prefix,
         bool_false_style,

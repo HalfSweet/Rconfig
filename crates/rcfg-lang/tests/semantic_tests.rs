@@ -2278,6 +2278,72 @@ mod app {
 }
 
 #[test]
+fn exports_context_options_only_when_enabled() {
+    let schema_src = r#"
+mod ctx {
+  option arch: string;
+}
+
+mod app {
+  when ctx::arch == "arm" {
+    option optimized: bool = true;
+  }
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
+
+    let mut context = std::collections::HashMap::new();
+    context.insert(
+        "ctx::arch".to_string(),
+        rcfg_lang::ResolvedValue::String("arm".to_string()),
+    );
+
+    let resolved = rcfg_lang::resolve_values_with_context(&values, &symbols, &context);
+
+    let exports_default = generate_exports(&symbols, &resolved, &ExportOptions::default());
+    assert!(
+        !exports_default.c_header.contains("CONFIG_CTX_ARCH"),
+        "ctx options should be omitted by default: {}",
+        exports_default.c_header
+    );
+    assert!(
+        exports_default.c_header.contains("#define CONFIG_APP_OPTIMIZED 1"),
+        "non-ctx options should still be exported: {}",
+        exports_default.c_header
+    );
+
+    let exports_with_context = generate_exports(
+        &symbols,
+        &resolved,
+        &ExportOptions {
+            include_context: true,
+            ..ExportOptions::default()
+        },
+    );
+
+    assert!(
+        exports_with_context
+            .c_header
+            .contains("#define CONFIG_CTX_ARCH \"arm\""),
+        "expected ctx export in c_header: {}",
+        exports_with_context.c_header
+    );
+    assert!(
+        exports_with_context
+            .cmake
+            .contains("set(CFG_CTX_ARCH \"arm\")"),
+        "expected ctx export in cmake: {}",
+        exports_with_context.cmake
+    );
+}
+
+#[test]
 fn supports_custom_export_prefixes() {
     let schema_src = r#"
 mod app {
@@ -2298,6 +2364,7 @@ mod app {
         &resolved,
         &ExportOptions {
             include_secrets: false,
+            include_context: false,
             c_prefix: "MYCFG_".to_string(),
             cmake_prefix: "MY_".to_string(),
             bool_false_style: BoolFalseExportStyle::Omit,

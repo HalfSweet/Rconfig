@@ -12,12 +12,19 @@ pub fn plan_c_header_exports_with_prefix(
     include_secrets: bool,
     prefix: &str,
 ) -> (Vec<PlannedExport>, Vec<Diagnostic>) {
-    plan_exports_with_options(symbols, include_secrets, prefix, ExportNameRule::PkgPath)
+    plan_exports_with_options(
+        symbols,
+        include_secrets,
+        false,
+        prefix,
+        ExportNameRule::PkgPath,
+    )
 }
 
 fn plan_exports_with_options(
     symbols: &SymbolTable,
     include_secrets: bool,
+    include_context: bool,
     prefix: &str,
     export_name_rule: ExportNameRule,
 ) -> (Vec<PlannedExport>, Vec<Diagnostic>) {
@@ -30,6 +37,9 @@ fn plan_exports_with_options(
 
     for option_path in option_paths {
         let option_path_str = option_path.as_str();
+        if !include_context && (option_path_str == "ctx" || option_path_str.starts_with("ctx::")) {
+            continue;
+        }
         if symbols.option_is_secret(option_path_str) && !include_secrets {
             diagnostics.push(
                 Diagnostic::warning(
@@ -84,6 +94,7 @@ pub fn generate_exports(
     let (planned, mut diagnostics) = plan_exports_with_options(
         symbols,
         options.include_secrets,
+        options.include_context,
         &options.c_prefix,
         options.export_name_rule,
     );
@@ -491,6 +502,7 @@ impl ConfigExporter for RustExporter {
         let (planned, mut diagnostics) = plan_exports_with_options(
             symbols,
             options.include_secrets,
+            options.include_context,
             &options.c_prefix,
             options.export_name_rule,
         );
@@ -661,6 +673,7 @@ impl ConfigExporter for PythonExporter {
         let (planned, diagnostics) = plan_exports_with_options(
             symbols,
             options.include_secrets,
+            options.include_context,
             &options.c_prefix,
             options.export_name_rule,
         );

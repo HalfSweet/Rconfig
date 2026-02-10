@@ -110,6 +110,92 @@ app::retries = 8;
 }
 
 #[test]
+fn rcfg_export_omits_context_by_default_and_can_enable_it() {
+    let schema = fixture_path("cli_export_context/schema.rcfg");
+    let values = fixture_path("cli_export_context/values.rcfgv");
+    let context = fixture_path("cli_export_context/context.json");
+    let out_h_default = fixture_path("cli_export_context/config_default.h");
+    let out_cmake_default = fixture_path("cli_export_context/config_default.cmake");
+    let out_h_ctx = fixture_path("cli_export_context/config_ctx.h");
+    let out_cmake_ctx = fixture_path("cli_export_context/config_ctx.cmake");
+
+    write_file(
+        &schema,
+        r#"
+mod ctx {
+  option arch: string;
+}
+
+mod app {
+  when ctx::arch == "arm" {
+    option optimized: bool = true;
+  }
+}
+"#,
+    );
+    write_file(&values, "");
+    write_file(&context, r#"{"ctx::arch":"arm"}"#);
+
+    let status_default = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "export",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--context",
+            context.to_str().expect("context path"),
+            "--out-h",
+            out_h_default.to_str().expect("default header path"),
+            "--out-cmake",
+            out_cmake_default.to_str().expect("default cmake path"),
+        ])
+        .status()
+        .expect("run rcfg export default");
+    assert!(status_default.success(), "rcfg export default should succeed");
+
+    let header_default = fs::read_to_string(&out_h_default).expect("read default header");
+    assert!(
+        !header_default.contains("CONFIG_CTX_ARCH"),
+        "ctx export should be disabled by default: {header_default}"
+    );
+    assert!(
+        header_default.contains("#define CONFIG_APP_OPTIMIZED 1"),
+        "expected app export in default header: {header_default}"
+    );
+
+    let status_with_ctx = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "export",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--context",
+            context.to_str().expect("context path"),
+            "--out-h",
+            out_h_ctx.to_str().expect("context header path"),
+            "--out-cmake",
+            out_cmake_ctx.to_str().expect("context cmake path"),
+            "--export-context",
+        ])
+        .status()
+        .expect("run rcfg export with context");
+    assert!(status_with_ctx.success(), "rcfg export with context should succeed");
+
+    let header_ctx = fs::read_to_string(&out_h_ctx).expect("read context header");
+    let cmake_ctx = fs::read_to_string(&out_cmake_ctx).expect("read context cmake");
+    assert!(
+        header_ctx.contains("#define CONFIG_CTX_ARCH \"arm\""),
+        "expected ctx define in header: {header_ctx}"
+    );
+    assert!(
+        cmake_ctx.contains("set(CFG_CTX_ARCH \"arm\")"),
+        "expected ctx define in cmake: {cmake_ctx}"
+    );
+}
+
+#[test]
 fn rcfg_export_can_use_path_only_name_rule() {
     let schema = fixture_path("cli_export_name_rule/schema.rcfg");
     let values = fixture_path("cli_export_name_rule/values.rcfgv");
