@@ -12,6 +12,15 @@ pub fn plan_c_header_exports_with_prefix(
     include_secrets: bool,
     prefix: &str,
 ) -> (Vec<PlannedExport>, Vec<Diagnostic>) {
+    plan_c_header_exports_with_options(symbols, include_secrets, prefix, ExportNameRule::PkgPath)
+}
+
+fn plan_c_header_exports_with_options(
+    symbols: &SymbolTable,
+    include_secrets: bool,
+    prefix: &str,
+    export_name_rule: ExportNameRule,
+) -> (Vec<PlannedExport>, Vec<Diagnostic>) {
     let mut diagnostics = Vec::new();
     let mut planned = Vec::new();
     let mut used_names: HashMap<String, String> = HashMap::new();
@@ -36,7 +45,10 @@ pub fn plan_c_header_exports_with_prefix(
             continue;
         }
 
-        let export_name = normalize_export_name_with_prefix(option_path_str, prefix);
+        let export_name = normalize_export_name_with_prefix(
+            &rewrite_export_name_path(option_path_str, export_name_rule),
+            prefix,
+        );
         if let Some(existing) = used_names.get(&export_name) {
             if existing != option_path_str {
                 diagnostics.push(
@@ -69,8 +81,12 @@ pub fn generate_exports(
     resolved: &ResolvedConfig,
     options: &ExportOptions,
 ) -> GeneratedExports {
-    let (planned, mut diagnostics) =
-        plan_c_header_exports_with_prefix(symbols, options.include_secrets, &options.c_prefix);
+    let (planned, mut diagnostics) = plan_c_header_exports_with_options(
+        symbols,
+        options.include_secrets,
+        &options.c_prefix,
+        options.export_name_rule,
+    );
 
     let resolved_map = resolved
         .options
@@ -92,7 +108,9 @@ pub fn generate_exports(
             continue;
         }
 
-        let cmake_name = normalize_export_name_with_prefix(&export.path, &options.cmake_prefix);
+        let export_name_path = rewrite_export_name_path(&export.path, options.export_name_rule);
+        let cmake_name =
+            normalize_export_name_with_prefix(&export_name_path, &options.cmake_prefix);
         match option.value.as_ref() {
             Some(ResolvedValue::Bool(value)) => {
                 if *value {
@@ -149,7 +167,7 @@ pub fn generate_exports(
                             let variant_name = normalize_export_name_with_prefix(
                                 &format!(
                                     "{}::{}",
-                                    export.path,
+                                    export_name_path,
                                     variant.rsplit("::").next().unwrap_or(&variant)
                                 ),
                                 &options.c_prefix,
@@ -203,6 +221,16 @@ pub fn generate_exports(
         c_header: final_c_lines.join("\n"),
         cmake: final_cmake_lines.join("\n"),
         diagnostics,
+    }
+}
+
+fn rewrite_export_name_path(path: &str, rule: ExportNameRule) -> String {
+    match rule {
+        ExportNameRule::PkgPath => path.to_string(),
+        ExportNameRule::PathOnly => path
+            .split_once("::")
+            .map(|(_, rest)| rest.to_string())
+            .unwrap_or_else(|| path.to_string()),
     }
 }
 

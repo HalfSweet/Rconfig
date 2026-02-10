@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use rcfg_lang::parser::{parse_schema_with_diagnostics, parse_values_with_diagnostics};
 use rcfg_lang::{
-    analyze_schema, analyze_schema_files, analyze_schema_strict, analyze_values,
-    analyze_values_from_path, analyze_values_from_path_report, analyze_values_strict,
-    expand_values_includes_from_path, expand_values_includes_with_origins, generate_exports,
-    plan_c_header_exports, resolve_values, BoolFalseExportStyle, DiagnosticArgValue,
-    EnumExportStyle, ExportOptions, IntExportFormat, Severity, SymbolKind, SymbolTable,
+    BoolFalseExportStyle, DiagnosticArgValue, EnumExportStyle, ExportNameRule, ExportOptions,
+    IntExportFormat, Severity, SymbolKind, SymbolTable, analyze_schema, analyze_schema_files,
+    analyze_schema_strict, analyze_values, analyze_values_from_path,
+    analyze_values_from_path_report, analyze_values_strict, expand_values_includes_from_path,
+    expand_values_includes_with_origins, generate_exports, plan_c_header_exports, resolve_values,
 };
 
 fn symbols_from(src: &str) -> SymbolTable {
@@ -2277,6 +2277,7 @@ mod app {
             bool_false_style: BoolFalseExportStyle::Omit,
             enum_export_style: EnumExportStyle::OneHot,
             int_export_format: IntExportFormat::Decimal,
+            export_name_rule: ExportNameRule::PkgPath,
         },
     );
 
@@ -2288,6 +2289,50 @@ mod app {
     assert!(
         exports.cmake.contains("set(MY_APP_ENABLED ON)"),
         "expected custom cmake prefix, got: {}",
+        exports.cmake
+    );
+}
+
+#[test]
+fn exports_name_rule_path_only_strips_leading_segment() {
+    let schema_src = r#"
+mod demo {
+  mod app {
+    option enabled: bool = true;
+  }
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
+
+    let resolved = resolve_values(&values, &symbols);
+    let exports = generate_exports(
+        &symbols,
+        &resolved,
+        &ExportOptions {
+            export_name_rule: ExportNameRule::PathOnly,
+            ..ExportOptions::default()
+        },
+    );
+
+    assert!(
+        exports.c_header.contains("#define CONFIG_APP_ENABLED 1"),
+        "expected path-only c export name, got: {}",
+        exports.c_header
+    );
+    assert!(
+        !exports.c_header.contains("CONFIG_DEMO_APP_ENABLED"),
+        "did not expect package-prefixed c export name, got: {}",
+        exports.c_header
+    );
+    assert!(
+        exports.cmake.contains("set(CFG_APP_ENABLED ON)"),
+        "expected path-only cmake export name, got: {}",
         exports.cmake
     );
 }

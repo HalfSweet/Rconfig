@@ -110,6 +110,51 @@ app::retries = 8;
 }
 
 #[test]
+fn rcfg_export_can_use_path_only_name_rule() {
+    let schema = fixture_path("cli_export_name_rule/schema.rcfg");
+    let values = fixture_path("cli_export_name_rule/values.rcfgv");
+    let out_h = fixture_path("cli_export_name_rule/config.h");
+    let out_cmake = fixture_path("cli_export_name_rule/config.cmake");
+
+    write_file(
+        &schema,
+        r#"
+mod demo {
+  mod app {
+    option enabled: bool = true;
+  }
+}
+"#,
+    );
+    write_file(&values, "");
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "export",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--out-h",
+            out_h.to_str().expect("header path"),
+            "--out-cmake",
+            out_cmake.to_str().expect("cmake path"),
+            "--export-name-rule",
+            "path-only",
+        ])
+        .status()
+        .expect("run rcfg export");
+    assert!(status.success(), "rcfg export should succeed");
+
+    let header = fs::read_to_string(&out_h).expect("read header");
+    let cmake = fs::read_to_string(&out_cmake).expect("read cmake");
+
+    assert!(header.contains("#define CONFIG_APP_ENABLED 1"), "{header}");
+    assert!(!header.contains("CONFIG_DEMO_APP_ENABLED"), "{header}");
+    assert!(cmake.contains("set(CFG_APP_ENABLED ON)"), "{cmake}");
+}
+
+#[test]
 fn rcfg_export_can_use_hex_style_for_integer() {
     let schema = fixture_path("cli_export_int_format/schema.rcfg");
     let values = fixture_path("cli_export_int_format/values.rcfgv");

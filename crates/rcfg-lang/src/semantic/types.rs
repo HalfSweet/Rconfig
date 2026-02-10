@@ -277,7 +277,8 @@ impl SymbolTable {
     }
 
     pub(super) fn insert_symbol(&mut self, symbol: SymbolInfo) {
-        self.symbols.insert(SymbolPath::from(symbol.path.clone()), symbol);
+        self.symbols
+            .insert(SymbolPath::from(symbol.path.clone()), symbol);
     }
 
     pub(super) fn insert_option_type(&mut self, path: String, ty: ValueType) {
@@ -365,7 +366,10 @@ impl SymbolTable {
 
             if let Some(enum_path) = self.enum_variants.get(candidate.as_str()) {
                 if seen.insert(candidate.clone()) {
-                    matches.push((candidate.clone(), ValueType::Enum(enum_path.as_str().to_string())));
+                    matches.push((
+                        candidate.clone(),
+                        ValueType::Enum(enum_path.as_str().to_string()),
+                    ));
                 }
             }
         }
@@ -569,6 +573,12 @@ pub enum IntExportFormat {
     Hex,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportNameRule {
+    PkgPath,
+    PathOnly,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportOptions {
     pub include_secrets: bool,
@@ -577,6 +587,7 @@ pub struct ExportOptions {
     pub bool_false_style: BoolFalseExportStyle,
     pub enum_export_style: EnumExportStyle,
     pub int_export_format: IntExportFormat,
+    pub export_name_rule: ExportNameRule,
 }
 
 impl Default for ExportOptions {
@@ -588,6 +599,7 @@ impl Default for ExportOptions {
             bool_false_style: BoolFalseExportStyle::Omit,
             enum_export_style: EnumExportStyle::OneHot,
             int_export_format: IntExportFormat::Decimal,
+            export_name_rule: ExportNameRule::PkgPath,
         }
     }
 }

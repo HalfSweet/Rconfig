@@ -3,12 +3,12 @@ use std::fs;
 use std::path::Path;
 
 use rcfg_lang::{
-    generate_exports, BoolFalseExportStyle, Diagnostic, EnumExportStyle, ExportOptions,
-    IntExportFormat, ResolvedValue, Severity, SymbolTable,
+    BoolFalseExportStyle, Diagnostic, EnumExportStyle, ExportNameRule, ExportOptions,
+    IntExportFormat, ResolvedValue, Severity, SymbolTable, generate_exports,
 };
 
 use crate::cli::args::OutputFormat;
-use crate::cli::{analyze_values_report, print_diagnostics, resolve_with_context, I18nCatalog};
+use crate::cli::{I18nCatalog, analyze_values_report, print_diagnostics, resolve_with_context};
 
 pub(crate) fn execute(
     values: &Path,
@@ -20,6 +20,7 @@ pub(crate) fn execute(
     bool_false_style: BoolFalseExportStyle,
     enum_export_style: EnumExportStyle,
     int_export_format: IntExportFormat,
+    export_name_rule: ExportNameRule,
     format: OutputFormat,
     parse_diags: Vec<Diagnostic>,
     symbols: &SymbolTable,
@@ -42,6 +43,7 @@ pub(crate) fn execute(
             bool_false_style,
             enum_export_style,
             int_export_format,
+            export_name_rule,
         },
     );
     all.extend(exports.diagnostics.clone());

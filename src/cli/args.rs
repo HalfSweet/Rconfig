@@ -61,6 +61,9 @@ pub(crate) enum Commands {
         #[arg(long, value_enum, default_value_t = IntExportFormatArg::Decimal)]
         int_export_format: IntExportFormatArg,
 
+        #[arg(long, value_enum, default_value_t = ExportNameRuleArg::PkgPath)]
+        export_name_rule: ExportNameRuleArg,
+
         #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
         format: OutputFormat,
     },
@@ -115,6 +118,14 @@ pub(crate) enum EnumExportStyleArg {
 pub(crate) enum IntExportFormatArg {
     Decimal,
     Hex,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum ExportNameRuleArg {
+    #[value(name = "pkg-path")]
+    PkgPath,
+    #[value(name = "path-only")]
+    PathOnly,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

@@ -94,6 +94,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 bool_false_style,
                 enum_export_style,
                 int_export_format,
+                export_name_rule,
                 format,
             } => {
                 let bool_false_style = match bool_false_style {
@@ -108,6 +109,10 @@ fn run(cli: Cli) -> Result<(), String> {
                     args::IntExportFormatArg::Decimal => rcfg_lang::IntExportFormat::Decimal,
                     args::IntExportFormatArg::Hex => rcfg_lang::IntExportFormat::Hex,
                 };
+                let export_name_rule = match export_name_rule {
+                    args::ExportNameRuleArg::PkgPath => rcfg_lang::ExportNameRule::PkgPath,
+                    args::ExportNameRuleArg::PathOnly => rcfg_lang::ExportNameRule::PathOnly,
+                };
 
                 commands::export::execute(
                     &values,
@@ -119,6 +124,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     bool_false_style,
                     enum_export_style,
                     int_export_format,
+                    export_name_rule,
                     format,
                     parse_diags,
                     &schema_report.symbols,
@@ -169,7 +175,9 @@ fn run(cli: Cli) -> Result<(), String> {
     Ok(())
 }
 
-fn load_schema_with_dependencies(graph: &ManifestGraph) -> Result<(rcfg_lang::File, Vec<rcfg_lang::Diagnostic>), String> {
+fn load_schema_with_dependencies(
+    graph: &ManifestGraph,
+) -> Result<(rcfg_lang::File, Vec<rcfg_lang::Diagnostic>), String> {
     let mut all_items = Vec::new();
     let mut all_diags = Vec::new();
 
@@ -192,7 +200,10 @@ fn load_schema_with_dependencies(graph: &ManifestGraph) -> Result<(rcfg_lang::Fi
     Ok((rcfg_lang::File { items: all_items }, all_diags))
 }
 
-fn namespace_schema_items_for_package(items: Vec<rcfg_lang::Item>, package_name: &str) -> Vec<rcfg_lang::Item> {
+fn namespace_schema_items_for_package(
+    items: Vec<rcfg_lang::Item>,
+    package_name: &str,
+) -> Vec<rcfg_lang::Item> {
     let mut first_namespaced_index = None;
     let mut namespaced_items = Vec::new();
 
@@ -220,7 +231,10 @@ fn namespace_schema_items_for_package(items: Vec<rcfg_lang::Item>, package_name:
         );
 
         if !inserted_namespace && first_namespaced_index.is_some_and(|value| value == index) {
-            out.push(make_package_namespace_module(package_name, namespaced_items.clone()));
+            out.push(make_package_namespace_module(
+                package_name,
+                namespaced_items.clone(),
+            ));
             inserted_namespace = true;
         }
 
@@ -230,13 +244,19 @@ fn namespace_schema_items_for_package(items: Vec<rcfg_lang::Item>, package_name:
     }
 
     if !inserted_namespace && !namespaced_items.is_empty() {
-        out.push(make_package_namespace_module(package_name, namespaced_items));
+        out.push(make_package_namespace_module(
+            package_name,
+            namespaced_items,
+        ));
     }
 
     out
 }
 
-fn make_package_namespace_module(package_name: &str, items: Vec<rcfg_lang::Item>) -> rcfg_lang::Item {
+fn make_package_namespace_module(
+    package_name: &str,
+    items: Vec<rcfg_lang::Item>,
+) -> rcfg_lang::Item {
     rcfg_lang::Item::Mod(rcfg_lang::ast::ModDecl {
         meta: rcfg_lang::ast::ItemMeta::empty(),
         name: rcfg_lang::Spanned::new(package_name.to_string(), rcfg_lang::Span::default()),
