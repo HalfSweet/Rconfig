@@ -8,7 +8,11 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::document::{DocumentKind, DocumentStore};
+use crate::providers::completion;
 use crate::providers::diagnostics::{AnalysisTrigger, analyze_document};
+use crate::providers::document_symbol;
+use crate::providers::goto_def;
+use crate::providers::hover;
 
 #[derive(Debug, Default)]
 struct ServerState {
@@ -210,25 +214,64 @@ impl LanguageServer for Backend {
         self.reanalyze_uri(uri, AnalysisTrigger::DidClose).await;
     }
 
-    async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
-        Ok(None)
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let text_document_position = params.text_document_position_params;
+        let uri = text_document_position.text_document.uri;
+        let position = text_document_position.position;
+
+        let state = self.state.lock().await;
+        let output = state
+            .documents
+            .projects
+            .values()
+            .find_map(|project| hover::provide(project, &uri, position));
+        Ok(output)
     }
 
     async fn goto_definition(
         &self,
-        _: GotoDefinitionParams,
+        params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        Ok(None)
+        let text_document_position = params.text_document_position_params;
+        let uri = text_document_position.text_document.uri;
+        let position = text_document_position.position;
+
+        let state = self.state.lock().await;
+        let output = state
+            .documents
+            .projects
+            .values()
+            .find_map(|project| goto_def::provide(project, &uri, position));
+        Ok(output)
     }
 
-    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
-        Ok(None)
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let text_document_position = params.text_document_position;
+        let uri = text_document_position.text_document.uri;
+        let position = text_document_position.position;
+
+        let state = self.state.lock().await;
+        let output = state
+            .documents
+            .projects
+            .values()
+            .find_map(|project| completion::provide(project, &uri, position));
+        Ok(output)
     }
 
     async fn document_symbol(
         &self,
-        _: DocumentSymbolParams,
+        params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
-        Ok(None)
+        let uri = params.text_document.uri;
+
+        let state = self.state.lock().await;
+        let output = state
+            .documents
+            .projects
+            .values()
+            .find_map(|project| document_symbol::provide(project, &uri))
+            .map(DocumentSymbolResponse::Nested);
+        Ok(output)
     }
 }
