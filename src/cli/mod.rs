@@ -124,7 +124,8 @@ fn run(cli: Cli) -> Result<(), String> {
                         args::ExportFormatArg::Python => "python".to_string(),
                     })
                     .collect::<Vec<_>>();
-                let targets = commands::export::build_targets(out_h, out_cmake, export_formats, out)?;
+                let targets =
+                    commands::export::build_targets(out_h, out_cmake, export_formats, out)?;
 
                 commands::export::execute(
                     &values,

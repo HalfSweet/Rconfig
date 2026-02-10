@@ -65,9 +65,9 @@ pub(crate) fn build_targets(
                 out: out_cmake,
             },
         ]),
-        (None, None) => Err(
-            "missing export targets: use `--out-h/--out-cmake` or `--format/--out`".to_string(),
-        ),
+        (None, None) => {
+            Err("missing export targets: use `--out-h/--out-cmake` or `--format/--out`".to_string())
+        }
         _ => Err("`--out-h` and `--out-cmake` must be provided together".to_string()),
     }
 }
