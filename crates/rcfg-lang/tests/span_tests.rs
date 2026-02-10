@@ -12,7 +12,10 @@ fn converts_offset_to_line_col_and_back() {
 
     assert_eq!(index.line_col_to_offset(LineCol::new(1, 1)), Some(0));
     assert_eq!(index.line_col_to_offset(LineCol::new(2, 3)), Some(8));
-    assert_eq!(index.line_col_to_offset(LineCol::new(3, 1)), Some(source.len()));
+    assert_eq!(
+        index.line_col_to_offset(LineCol::new(3, 1)),
+        Some(source.len())
+    );
     assert_eq!(index.line_col_to_offset(LineCol::new(4, 1)), None);
 }
 

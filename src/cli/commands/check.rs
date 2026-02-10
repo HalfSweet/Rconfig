@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use rcfg_lang::{Diagnostic, Severity};
 use rcfg_app::AppSession;
+use rcfg_lang::{Diagnostic, Severity};
 
 use crate::cli::args::OutputFormat;
 use crate::cli::print_diagnostics;

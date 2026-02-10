@@ -45,7 +45,11 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             let node = app.state.tree.node(node_id)?;
             let depth = depth_of(app, node_id);
             let indent = "  ".repeat(depth);
-            let marker = if node_id == app.state.selected { ">" } else { " " };
+            let marker = if node_id == app.state.selected {
+                ">"
+            } else {
+                " "
+            };
             let expand = if node.kind == NodeKind::Module {
                 if app.state.expanded.contains(&node.id) {
                     "▾"
@@ -332,11 +336,7 @@ fn format_value(value: &ResolvedValue) -> String {
 
 fn depth_of(app: &App, node_id: usize) -> usize {
     let mut depth = 0usize;
-    let mut current = app
-        .state
-        .tree
-        .node(node_id)
-        .and_then(|node| node.parent_id);
+    let mut current = app.state.tree.node(node_id).and_then(|node| node.parent_id);
     while let Some(parent_id) = current {
         depth += 1;
         current = app

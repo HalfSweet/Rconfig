@@ -909,11 +909,7 @@ impl Parser {
 
         let span = key.span.join(end.span);
 
-        Some(ExportStmt::Set(ExportSetStmt {
-            key,
-            value,
-            span,
-        }))
+        Some(ExportStmt::Set(ExportSetStmt { key, value, span }))
     }
 
     fn parse_type(&mut self) -> Option<Type> {

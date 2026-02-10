@@ -27,7 +27,11 @@ impl SymbolCollector {
     ) {
         for item in items {
             match item {
-                Item::Use(_) | Item::Require(_) | Item::Constraint(_) | Item::Patch(_) | Item::Export(_) => {}
+                Item::Use(_)
+                | Item::Require(_)
+                | Item::Constraint(_)
+                | Item::Patch(_)
+                | Item::Export(_) => {}
                 Item::Option(option) => {
                     let full_path = build_full_path(scope, &option.name.value);
                     if self.declare(

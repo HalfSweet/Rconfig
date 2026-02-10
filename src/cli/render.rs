@@ -81,19 +81,16 @@ pub(crate) fn i18n_key_overrides_from_attrs(
 }
 
 fn extract_i18n_key_override(attrs: &[rcfg_lang::Attr], name: &str) -> Option<String> {
-    attrs
-        .iter()
-        .find_map(|attr| match &attr.kind {
-            rcfg_lang::AttrKind::Other { name: attr_name, args } if attr_name == name => {
-                args.first().and_then(|arg| match arg {
-                    rcfg_lang::ast::AttrArg::Str(value) if !value.trim().is_empty() => {
-                        Some(value.clone())
-                    }
-                    _ => None,
-                })
-            }
+    attrs.iter().find_map(|attr| match &attr.kind {
+        rcfg_lang::AttrKind::Other {
+            name: attr_name,
+            args,
+        } if attr_name == name => args.first().and_then(|arg| match arg {
+            rcfg_lang::ast::AttrArg::Str(value) if !value.trim().is_empty() => Some(value.clone()),
             _ => None,
-        })
+        }),
+        _ => None,
+    })
 }
 
 fn collect_i18n_key_overrides_index(

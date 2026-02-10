@@ -146,7 +146,11 @@ fn collect_patch_defaults_from_items(
                     aliases.insert(alias.value.clone(), use_stmt.path.to_string());
                 }
             }
-            Item::Require(_) | Item::Constraint(_) | Item::Enum(_) | Item::Option(_) | Item::Export(_) => {}
+            Item::Require(_)
+            | Item::Constraint(_)
+            | Item::Enum(_)
+            | Item::Option(_)
+            | Item::Export(_) => {}
             Item::Patch(patch) => {
                 if !guard_active {
                     continue;
@@ -328,7 +332,11 @@ pub(super) fn collect_active_options(
                     aliases.insert(alias.value.clone(), use_stmt.path.to_string());
                 }
             }
-            Item::Require(_) | Item::Constraint(_) | Item::Enum(_) | Item::Patch(_) | Item::Export(_) => {}
+            Item::Require(_)
+            | Item::Constraint(_)
+            | Item::Enum(_)
+            | Item::Patch(_)
+            | Item::Export(_) => {}
             Item::Option(option) => {
                 let option_path = build_full_path(scope, &option.name.value);
                 if guard_active {

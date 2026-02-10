@@ -4,12 +4,12 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+use rcfg_app::AppSession;
 use rcfg_lang::{
     BoolFalseExportStyle, Diagnostic, DiagnosticArgValue, EnumExportStyle, ExportNameRule,
-    ExportOptions, IntExportFormat, RelatedInfo, Severity,
-    builtin_exporter_names, create_builtin_exporter,
+    ExportOptions, IntExportFormat, RelatedInfo, Severity, builtin_exporter_names,
+    create_builtin_exporter,
 };
-use rcfg_app::AppSession;
 
 use crate::cli::args::OutputFormat;
 use crate::cli::print_diagnostics;
@@ -216,7 +216,11 @@ fn diagnostic_dedup_key(diag: &Diagnostic) -> DiagnosticDedupKey {
     });
 
     DiagnosticDedupKey {
-        severity: if diag.severity == Severity::Error { 1 } else { 0 },
+        severity: if diag.severity == Severity::Error {
+            1
+        } else {
+            0
+        },
         code: diag.code.clone(),
         message: diag.message.clone(),
         span_start: diag.span.start,

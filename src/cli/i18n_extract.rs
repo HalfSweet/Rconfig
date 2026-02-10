@@ -41,7 +41,13 @@ fn collect_item_i18n_strings(
             }
             rcfg_lang::Item::Enum(enum_decl) => {
                 let enum_path = scoped_path(scope, &enum_decl.name.value);
-                push_doc_i18n_strings(&enum_path, &enum_decl.meta.doc, &enum_decl.meta.attrs, package, out);
+                push_doc_i18n_strings(
+                    &enum_path,
+                    &enum_decl.meta.doc,
+                    &enum_decl.meta.attrs,
+                    package,
+                    out,
+                );
 
                 for variant in &enum_decl.variants {
                     let variant_path = format!("{}::{}", enum_path, variant.name.value);

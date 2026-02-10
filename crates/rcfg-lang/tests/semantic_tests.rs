@@ -142,10 +142,8 @@ mod app {
     assert_eq!(definition.path, "app::enabled");
     assert_eq!(definition.role, rcfg_lang::SymbolOccurrenceRole::Definition);
 
-    let reference_offset = src
-        .find("when enabled")
-        .expect("missing reference snippet")
-        + "when ".len();
+    let reference_offset =
+        src.find("when enabled").expect("missing reference snippet") + "when ".len();
     let reference = index
         .find_symbol_at_offset(reference_offset)
         .expect("expected symbol at reference offset");
@@ -210,10 +208,22 @@ mod app {
         .symbol_span("app::enabled")
         .expect("expected option declaration span");
 
-    assert!(mod_span.start <= enum_span.start, "{mod_span:#?} {enum_span:#?}");
-    assert!(mod_span.end >= enum_span.end, "{mod_span:#?} {enum_span:#?}");
-    assert!(mod_span.start <= option_span.start, "{mod_span:#?} {option_span:#?}");
-    assert!(mod_span.end >= option_span.end, "{mod_span:#?} {option_span:#?}");
+    assert!(
+        mod_span.start <= enum_span.start,
+        "{mod_span:#?} {enum_span:#?}"
+    );
+    assert!(
+        mod_span.end >= enum_span.end,
+        "{mod_span:#?} {enum_span:#?}"
+    );
+    assert!(
+        mod_span.start <= option_span.start,
+        "{mod_span:#?} {option_span:#?}"
+    );
+    assert!(
+        mod_span.end >= option_span.end,
+        "{mod_span:#?} {option_span:#?}"
+    );
 }
 
 #[test]
@@ -2488,7 +2498,9 @@ mod app {
         exports_default.c_header
     );
     assert!(
-        exports_default.c_header.contains("#define CONFIG_APP_OPTIMIZED 1"),
+        exports_default
+            .c_header
+            .contains("#define CONFIG_APP_OPTIMIZED 1"),
         "non-ctx options should still be exported: {}",
         exports_default.c_header
     );

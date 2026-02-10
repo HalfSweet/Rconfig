@@ -1,12 +1,10 @@
 use std::fs;
 
-use rcfg_lang::{Diagnostic, Severity};
 use rcfg_app::AppSession;
+use rcfg_lang::{Diagnostic, Severity};
 
 use crate::cli::args::{I18nCommand, OutputFormat};
-use crate::cli::{
-    collect_i18n_template_strings, print_diagnostics, render_i18n_template_toml,
-};
+use crate::cli::{collect_i18n_template_strings, print_diagnostics, render_i18n_template_toml};
 
 pub(crate) fn execute(
     session: &AppSession,

@@ -152,7 +152,10 @@ mod app {
         ])
         .status()
         .expect("run rcfg export default");
-    assert!(status_default.success(), "rcfg export default should succeed");
+    assert!(
+        status_default.success(),
+        "rcfg export default should succeed"
+    );
 
     let header_default = fs::read_to_string(&out_h_default).expect("read default header");
     assert!(
@@ -181,7 +184,10 @@ mod app {
         ])
         .status()
         .expect("run rcfg export with context");
-    assert!(status_with_ctx.success(), "rcfg export with context should succeed");
+    assert!(
+        status_with_ctx.success(),
+        "rcfg export with context should succeed"
+    );
 
     let header_ctx = fs::read_to_string(&out_h_ctx).expect("read context header");
     let cmake_ctx = fs::read_to_string(&out_cmake_ctx).expect("read context cmake");

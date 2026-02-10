@@ -35,7 +35,10 @@ fn run(cli: Cli) -> Result<(), String> {
 
     let parse_diags = session.parse_diagnostics().to_vec();
 
-    if session.symbols().is_empty() && parse_diags.iter().any(|diag| diag.severity == rcfg_lang::Severity::Error)
+    if session.symbols().is_empty()
+        && parse_diags
+            .iter()
+            .any(|diag| diag.severity == rcfg_lang::Severity::Error)
     {
         print_diagnostics(&parse_diags, OutputFormat::Human, session.i18n());
         return Err("schema parse failed".to_string());
@@ -43,12 +46,7 @@ fn run(cli: Cli) -> Result<(), String> {
 
     match cli.command {
         Commands::Check { values, format } => {
-            commands::check::execute(
-                &session,
-                &values,
-                format,
-                parse_diags,
-            )?;
+            commands::check::execute(&session, &values, format, parse_diags)?;
         }
         Commands::Export {
             values,
@@ -129,11 +127,7 @@ fn run(cli: Cli) -> Result<(), String> {
             )?;
         }
         Commands::I18n { command } => {
-            commands::i18n::execute(
-                &session,
-                command,
-                parse_diags,
-            )?;
+            commands::i18n::execute(&session, command, parse_diags)?;
         }
         Commands::Menuconfig {
             values,

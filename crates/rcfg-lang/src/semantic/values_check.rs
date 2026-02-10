@@ -282,7 +282,9 @@ impl<'a> ValuesChecker<'a> {
                     "assigning values to `ctx` is not allowed",
                     path.span,
                 )
-                .with_note("fix-it: remove this assignment and pass context values via `--context`"),
+                .with_note(
+                    "fix-it: remove this assignment and pass context values via `--context`",
+                ),
             );
             return None;
         }

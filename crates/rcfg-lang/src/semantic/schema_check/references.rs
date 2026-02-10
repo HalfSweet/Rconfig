@@ -183,18 +183,17 @@ impl<'a> ReferenceCollector<'a> {
     fn record_path_reference(&mut self, path: &Path, scope: &[String]) {
         let expanded = expand_with_aliases(path, &self.aliases);
 
-        if let ResolveOptionPathResult::Resolved(option_path, _) =
-            self.symbols
-                .resolve_option_path_raw_in_scope(scope, &expanded)
+        if let ResolveOptionPathResult::Resolved(option_path, _) = self
+            .symbols
+            .resolve_option_path_raw_in_scope(scope, &expanded)
         {
-            self.symbols
-                .insert_symbol_reference(option_path, path.span);
+            self.symbols.insert_symbol_reference(option_path, path.span);
             return;
         }
 
-        if let ResolveEnumVariantPathResult::Resolved(variant_path, _) =
-            self.symbols
-                .resolve_enum_variant_path_raw_in_scope(scope, &expanded)
+        if let ResolveEnumVariantPathResult::Resolved(variant_path, _) = self
+            .symbols
+            .resolve_enum_variant_path_raw_in_scope(scope, &expanded)
         {
             self.symbols
                 .insert_symbol_reference(variant_path, path.span);
@@ -202,19 +201,17 @@ impl<'a> ReferenceCollector<'a> {
         }
 
         if let Some(symbol_path) = self.resolve_symbol_path_raw_in_scope(scope, &expanded) {
-            self.symbols
-                .insert_symbol_reference(symbol_path, path.span);
+            self.symbols.insert_symbol_reference(symbol_path, path.span);
         }
     }
 
     fn record_option_path_reference(&mut self, path: &Path, scope: &[String]) {
         let expanded = expand_with_aliases(path, &self.aliases);
-        if let ResolveOptionPathResult::Resolved(option_path, _) =
-            self.symbols
-                .resolve_option_path_raw_in_scope(scope, &expanded)
+        if let ResolveOptionPathResult::Resolved(option_path, _) = self
+            .symbols
+            .resolve_option_path_raw_in_scope(scope, &expanded)
         {
-            self.symbols
-                .insert_symbol_reference(option_path, path.span);
+            self.symbols.insert_symbol_reference(option_path, path.span);
         }
     }
 
@@ -243,8 +240,7 @@ impl<'a> ReferenceCollector<'a> {
     fn record_symbol_path_reference(&mut self, path: &Path, scope: &[String]) {
         let expanded = expand_with_aliases(path, &self.aliases);
         if let Some(symbol_path) = self.resolve_symbol_path_raw_in_scope(scope, &expanded) {
-            self.symbols
-                .insert_symbol_reference(symbol_path, path.span);
+            self.symbols.insert_symbol_reference(symbol_path, path.span);
         }
     }
 

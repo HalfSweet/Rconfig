@@ -55,7 +55,11 @@ impl Backend {
                 .get_document(&uri)
                 .map(|doc| doc.kind)
                 .unwrap_or_else(|| DocumentKind::from_uri(&uri));
-            let open_documents = state.documents.open_documents().cloned().collect::<Vec<_>>();
+            let open_documents = state
+                .documents
+                .open_documents()
+                .cloned()
+                .collect::<Vec<_>>();
             (kind, open_documents)
         };
 
@@ -178,7 +182,9 @@ impl LanguageServer for Backend {
 
         {
             let mut state = self.state.lock().await;
-            state.documents.upsert_document(uri.clone(), version, text, kind);
+            state
+                .documents
+                .upsert_document(uri.clone(), version, text, kind);
         }
 
         self.reanalyze_uri(uri, AnalysisTrigger::DidOpen).await;

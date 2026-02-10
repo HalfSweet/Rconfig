@@ -14,7 +14,9 @@ fn line_starts(text: &str) -> Vec<usize> {
 pub fn offset_to_lsp_position(text: &str, offset: usize) -> Position {
     let starts = line_starts(text);
     let clamped = offset.min(text.len());
-    let line = starts.partition_point(|start| *start <= clamped).saturating_sub(1);
+    let line = starts
+        .partition_point(|start| *start <= clamped)
+        .saturating_sub(1);
     let line_start = starts[line];
 
     let utf16_col = text[line_start..clamped]
@@ -29,10 +31,7 @@ pub fn lsp_position_to_offset(text: &str, position: Position) -> usize {
     let starts = line_starts(text);
     let line = (position.line as usize).min(starts.len().saturating_sub(1));
     let line_start = starts[line];
-    let line_end = starts
-        .get(line + 1)
-        .copied()
-        .unwrap_or(text.len());
+    let line_end = starts.get(line + 1).copied().unwrap_or(text.len());
 
     let target_utf16 = position.character;
     let mut current_utf16 = 0u32;
@@ -76,14 +75,20 @@ mod tests {
         assert_eq!(offset_to_lsp_position(text, 0), Position::new(0, 0));
         assert_eq!(offset_to_lsp_position(text, 2), Position::new(0, 2));
         assert_eq!(offset_to_lsp_position(text, 4), Position::new(1, 0));
-        assert_eq!(offset_to_lsp_position(text, text.len()), Position::new(2, 0));
+        assert_eq!(
+            offset_to_lsp_position(text, text.len()),
+            Position::new(2, 0)
+        );
     }
 
     #[test]
     fn offset_to_position_handles_utf16_characters() {
         let text = "中🙂a\n";
         assert_eq!(offset_to_lsp_position(text, 0), Position::new(0, 0));
-        assert_eq!(offset_to_lsp_position(text, "中".len()), Position::new(0, 1));
+        assert_eq!(
+            offset_to_lsp_position(text, "中".len()),
+            Position::new(0, 1)
+        );
         assert_eq!(
             offset_to_lsp_position(text, "中🙂".len()),
             Position::new(0, 3)
@@ -116,7 +121,10 @@ mod tests {
     fn position_to_offset_clamps_out_of_range() {
         let text = "abc\n";
         assert_eq!(lsp_position_to_offset(text, Position::new(0, 999)), 4);
-        assert_eq!(lsp_position_to_offset(text, Position::new(999, 0)), text.len());
+        assert_eq!(
+            lsp_position_to_offset(text, Position::new(999, 0)),
+            text.len()
+        );
     }
 
     #[test]

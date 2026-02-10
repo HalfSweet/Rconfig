@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use rcfg_lang::{Diagnostic, Severity};
 use rcfg_app::AppSession;
+use rcfg_lang::{Diagnostic, Severity};
 
 use crate::cli::{
     print_diagnostics, render_resolved_json, render_schema_ir_json, write_diagnostics_json,
@@ -26,11 +26,7 @@ pub(crate) fn execute(
     all.extend(values_report.diagnostics.clone());
     write_diagnostics_json(paths.out_diagnostics, &all)?;
     if all.iter().any(|diag| diag.severity == Severity::Error) {
-        print_diagnostics(
-            &all,
-            crate::cli::args::OutputFormat::Human,
-            session.i18n(),
-        );
+        print_diagnostics(&all, crate::cli::args::OutputFormat::Human, session.i18n());
         return Err("dump blocked by diagnostics".to_string());
     }
 
