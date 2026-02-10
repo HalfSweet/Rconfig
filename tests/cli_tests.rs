@@ -1051,3 +1051,82 @@ dep_a = "../dep_a"
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("E_PACKAGE_CYCLE"), "{stderr}");
 }
+
+#[test]
+fn rcfg_export_skips_rewrite_when_output_unchanged() {
+    let schema = fixture_path("cli_export_no_rewrite/schema.rcfg");
+    let values = fixture_path("cli_export_no_rewrite/values.rcfgv");
+    let out_h = fixture_path("cli_export_no_rewrite/config.h");
+    let out_cmake = fixture_path("cli_export_no_rewrite/config.cmake");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = true;
+}
+"#,
+    );
+    write_file(&values, "");
+
+    let first = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "export",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--out-h",
+            out_h.to_str().expect("header path"),
+            "--out-cmake",
+            out_cmake.to_str().expect("cmake path"),
+        ])
+        .status()
+        .expect("run first rcfg export");
+    assert!(first.success(), "first rcfg export should succeed");
+
+    let first_h_mtime = fs::metadata(&out_h)
+        .expect("stat header")
+        .modified()
+        .expect("header mtime");
+    let first_cmake_mtime = fs::metadata(&out_cmake)
+        .expect("stat cmake")
+        .modified()
+        .expect("cmake mtime");
+
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+
+    let second = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "export",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--out-h",
+            out_h.to_str().expect("header path"),
+            "--out-cmake",
+            out_cmake.to_str().expect("cmake path"),
+        ])
+        .status()
+        .expect("run second rcfg export");
+    assert!(second.success(), "second rcfg export should succeed");
+
+    let second_h_mtime = fs::metadata(&out_h)
+        .expect("stat header again")
+        .modified()
+        .expect("header mtime again");
+    let second_cmake_mtime = fs::metadata(&out_cmake)
+        .expect("stat cmake again")
+        .modified()
+        .expect("cmake mtime again");
+
+    assert_eq!(
+        first_h_mtime, second_h_mtime,
+        "header should not be rewritten"
+    );
+    assert_eq!(
+        first_cmake_mtime, second_cmake_mtime,
+        "cmake should not be rewritten"
+    );
+}

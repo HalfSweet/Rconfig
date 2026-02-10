@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use rcfg_lang::{
@@ -53,10 +55,29 @@ pub(crate) fn execute(
         return Err("export blocked by diagnostics".to_string());
     }
 
-    fs::write(out_h, exports.c_header)
-        .map_err(|err| format!("failed to write {}: {err}", out_h.display()))?;
-    fs::write(out_cmake, exports.cmake)
-        .map_err(|err| format!("failed to write {}: {err}", out_cmake.display()))?;
+    write_if_changed(out_h, &exports.c_header)?;
+    write_if_changed(out_cmake, &exports.cmake)?;
 
     Ok(())
+}
+
+fn write_if_changed(path: &Path, next_content: &str) -> Result<(), String> {
+    let next_hash = content_hash(next_content);
+
+    if let Ok(existing_content) = fs::read_to_string(path)
+        && existing_content.len() == next_content.len()
+        && content_hash(&existing_content) == next_hash
+        && existing_content == next_content
+    {
+        return Ok(());
+    }
+
+    fs::write(path, next_content)
+        .map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+fn content_hash(content: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
 }
