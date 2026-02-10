@@ -262,6 +262,139 @@ fn c_header_include_guard(c_prefix: &str) -> String {
     }
 }
 
+#[derive(Debug, Clone)]
+struct RustEnumSpec {
+    type_name: String,
+    ordered_variants: Vec<String>,
+    variant_by_path: HashMap<String, String>,
+}
+
+fn to_rust_pascal_identifier(raw: &str) -> String {
+    let mut output = String::new();
+
+    for segment in raw.split(|ch: char| !ch.is_ascii_alphanumeric()) {
+        if segment.is_empty() {
+            continue;
+        }
+
+        let mut chars = segment.chars();
+        let Some(first) = chars.next() else {
+            continue;
+        };
+
+        if output.is_empty() && first.is_ascii_digit() {
+            output.push('X');
+        }
+
+        output.push(first.to_ascii_uppercase());
+        for ch in chars {
+            output.push(ch.to_ascii_lowercase());
+        }
+    }
+
+    if output.is_empty() {
+        "X".to_string()
+    } else {
+        output
+    }
+}
+
+fn build_rust_enum_specs(symbols: &SymbolTable) -> BTreeMap<String, RustEnumSpec> {
+    let mut owners = symbols
+        .enum_variants
+        .values()
+        .map(|owner| owner.as_str().to_string())
+        .collect::<Vec<_>>();
+    owners.sort();
+    owners.dedup();
+
+    let mut type_name_counters: HashMap<String, usize> = HashMap::new();
+    let mut enum_specs = BTreeMap::new();
+
+    for owner_path in owners {
+        let base_type_name = to_rust_pascal_identifier(&owner_path);
+        let next_index = type_name_counters
+            .entry(base_type_name.clone())
+            .or_insert(0);
+        *next_index += 1;
+
+        let type_name = if *next_index == 1 {
+            base_type_name
+        } else {
+            format!("{}{}", base_type_name, next_index)
+        };
+
+        let mut variant_paths = symbols
+            .enum_variants
+            .iter()
+            .filter(|(_, owner)| owner.as_str() == owner_path)
+            .map(|(variant_path, _)| variant_path.as_str().to_string())
+            .collect::<Vec<_>>();
+        variant_paths.sort();
+
+        let mut variant_name_counters: HashMap<String, usize> = HashMap::new();
+        let mut ordered_variants = Vec::new();
+        let mut variant_by_path = HashMap::new();
+
+        for variant_path in variant_paths {
+            let raw_variant = variant_path
+                .rsplit("::")
+                .next()
+                .unwrap_or(variant_path.as_str());
+            let base_variant_name = to_rust_pascal_identifier(raw_variant);
+
+            let next_variant_index = variant_name_counters
+                .entry(base_variant_name.clone())
+                .or_insert(0);
+            *next_variant_index += 1;
+
+            let variant_name = if *next_variant_index == 1 {
+                base_variant_name
+            } else {
+                format!("{}{}", base_variant_name, next_variant_index)
+            };
+
+            ordered_variants.push(variant_name.clone());
+            variant_by_path.insert(variant_path, variant_name);
+        }
+
+        enum_specs.insert(
+            owner_path,
+            RustEnumSpec {
+                type_name,
+                ordered_variants,
+                variant_by_path,
+            },
+        );
+    }
+
+    enum_specs
+}
+
+fn rust_int_type_name(value_type: Option<&ValueType>) -> &'static str {
+    match value_type {
+        Some(ValueType::Int(IntType::U8)) => "u8",
+        Some(ValueType::Int(IntType::U16)) => "u16",
+        Some(ValueType::Int(IntType::U32)) => "u32",
+        Some(ValueType::Int(IntType::I32)) => "i32",
+        _ => "i128",
+    }
+}
+
+fn rust_int_fits_type(value: i128, rust_type: &str) -> bool {
+    match rust_type {
+        "u8" => u8::try_from(value).is_ok(),
+        "u16" => u16::try_from(value).is_ok(),
+        "u32" => u32::try_from(value).is_ok(),
+        "i32" => i32::try_from(value).is_ok(),
+        _ => true,
+    }
+}
+
+fn escape_rust_string_literal(value: &str) -> String {
+    value.chars().flat_map(|ch| ch.escape_default()).collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportRenderResult {
     pub format: String,
@@ -326,14 +459,185 @@ impl ConfigExporter for CmakeExporter {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RustExporter;
+
+impl ConfigExporter for RustExporter {
+    fn format_name(&self) -> &'static str {
+        "rust"
+    }
+
+    fn render(
+        &self,
+        symbols: &SymbolTable,
+        resolved: &ResolvedConfig,
+        options: &ExportOptions,
+    ) -> ExportRenderResult {
+        let (planned, mut diagnostics) = plan_c_header_exports_with_options(
+            symbols,
+            options.include_secrets,
+            &options.c_prefix,
+            options.export_name_rule,
+        );
+
+        let enum_specs = build_rust_enum_specs(symbols);
+        let resolved_map = resolved
+            .options
+            .iter()
+            .map(|option| (option.path.clone(), option.clone()))
+            .collect::<HashMap<_, _>>();
+
+        let mut const_lines = Vec::new();
+        let mut used_enum_owners = BTreeSet::new();
+
+        for export in planned {
+            let Some(option) = resolved_map.get(&export.path) else {
+                continue;
+            };
+            if !option.active {
+                continue;
+            }
+            if symbols.option_is_secret(&export.path) && !options.include_secrets {
+                continue;
+            }
+
+            match option.value.as_ref() {
+                Some(ResolvedValue::Bool(value)) => {
+                    const_lines.push(format!(
+                        "pub const {}: bool = {};",
+                        export.name,
+                        if *value { "true" } else { "false" }
+                    ));
+                }
+                Some(ResolvedValue::Int(value)) => {
+                    let rust_type = rust_int_type_name(symbols.option_type(&export.path));
+                    if !rust_int_fits_type(*value, rust_type) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E_EXPORT_VALUE_OUT_OF_RANGE",
+                                format!(
+                                    "resolved integer value `{}` for `{}` cannot be represented as `{}`",
+                                    value, export.path, rust_type
+                                ),
+                                symbols.option_span(&export.path).unwrap_or_default(),
+                            )
+                            .with_path(export.path.clone()),
+                        );
+                        continue;
+                    }
+
+                    const_lines.push(format!(
+                        "pub const {}: {} = {};",
+                        export.name, rust_type, value
+                    ));
+                }
+                Some(ResolvedValue::String(value)) => {
+                    let escaped = escape_rust_string_literal(value);
+                    const_lines.push(format!(
+                        "pub const {}: &str = \"{}\";",
+                        export.name, escaped
+                    ));
+                }
+                Some(ResolvedValue::EnumVariant(selected_variant)) => {
+                    let Some(enum_owner) = symbols.enum_owner_of_variant(selected_variant) else {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E_VALUE_PATH_NOT_ENUM_VARIANT",
+                                format!(
+                                    "resolved enum variant `{}` for `{}` cannot be resolved",
+                                    selected_variant, export.path
+                                ),
+                                symbols.option_span(&export.path).unwrap_or_default(),
+                            )
+                            .with_path(export.path.clone()),
+                        );
+                        continue;
+                    };
+
+                    let Some(enum_spec) = enum_specs.get(enum_owner) else {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E_VALUE_PATH_NOT_ENUM_VARIANT",
+                                format!(
+                                    "resolved enum variant `{}` for `{}` cannot be resolved",
+                                    selected_variant, export.path
+                                ),
+                                symbols.option_span(&export.path).unwrap_or_default(),
+                            )
+                            .with_path(export.path.clone()),
+                        );
+                        continue;
+                    };
+
+                    let Some(variant_name) = enum_spec.variant_by_path.get(selected_variant) else {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E_VALUE_PATH_NOT_ENUM_VARIANT",
+                                format!(
+                                    "resolved enum variant `{}` for `{}` cannot be resolved",
+                                    selected_variant, export.path
+                                ),
+                                symbols.option_span(&export.path).unwrap_or_default(),
+                            )
+                            .with_path(export.path.clone()),
+                        );
+                        continue;
+                    };
+
+                    used_enum_owners.insert(enum_owner.to_string());
+                    const_lines.push(format!(
+                        "pub const {}: {} = {}::{};",
+                        export.name, enum_spec.type_name, enum_spec.type_name, variant_name
+                    ));
+                }
+                None => {}
+            }
+        }
+
+        const_lines.sort();
+
+        let mut rust_lines = vec![format!(
+            "// Auto-generated by rcfg {} — do not edit",
+            env!("CARGO_PKG_VERSION")
+        )];
+
+        if !used_enum_owners.is_empty() || !const_lines.is_empty() {
+            rust_lines.push(String::new());
+        }
+
+        for enum_owner in used_enum_owners {
+            let Some(enum_spec) = enum_specs.get(&enum_owner) else {
+                continue;
+            };
+
+            rust_lines.push("#[derive(Debug, Clone, Copy, PartialEq, Eq)]".to_string());
+            rust_lines.push(format!("pub enum {} {{", enum_spec.type_name));
+            for variant in &enum_spec.ordered_variants {
+                rust_lines.push(format!("    {},", variant));
+            }
+            rust_lines.push("}".to_string());
+            rust_lines.push(String::new());
+        }
+
+        rust_lines.extend(const_lines);
+
+        ExportRenderResult {
+            format: self.format_name().to_string(),
+            content: rust_lines.join("\n"),
+            diagnostics,
+        }
+    }
+}
+
 pub fn builtin_exporter_names() -> Vec<&'static str> {
-    vec!["c-header", "cmake"]
+    vec!["c-header", "cmake", "rust"]
 }
 
 pub fn create_builtin_exporter(name: &str) -> Option<Box<dyn ConfigExporter>> {
     match name {
         "c-header" => Some(Box::new(CHeaderExporter)),
         "cmake" => Some(Box::new(CmakeExporter)),
+        "rust" => Some(Box::new(RustExporter)),
         _ => None,
     }
 }
