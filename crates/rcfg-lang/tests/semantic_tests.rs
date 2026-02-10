@@ -2690,3 +2690,18 @@ patch app {
         report.diagnostics
     );
 }
+
+#[test]
+fn builtin_exporter_registry_lists_c_and_cmake() {
+    let mut names = rcfg_lang::builtin_exporter_names();
+    names.sort();
+    assert_eq!(names, vec!["c-header", "cmake"]);
+
+    let c = rcfg_lang::create_builtin_exporter("c-header").expect("c exporter should exist");
+    assert_eq!(c.format_name(), "c-header");
+
+    let cmake = rcfg_lang::create_builtin_exporter("cmake").expect("cmake exporter should exist");
+    assert_eq!(cmake.format_name(), "cmake");
+
+    assert!(rcfg_lang::create_builtin_exporter("unknown").is_none());
+}

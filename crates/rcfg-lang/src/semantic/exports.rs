@@ -261,3 +261,79 @@ fn c_header_include_guard(c_prefix: &str) -> String {
         format!("RCFG_{}_H", normalized)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportRenderResult {
+    pub format: String,
+    pub content: String,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+pub trait ConfigExporter {
+    fn format_name(&self) -> &'static str;
+
+    fn render(
+        &self,
+        symbols: &SymbolTable,
+        resolved: &ResolvedConfig,
+        options: &ExportOptions,
+    ) -> ExportRenderResult;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CHeaderExporter;
+
+impl ConfigExporter for CHeaderExporter {
+    fn format_name(&self) -> &'static str {
+        "c-header"
+    }
+
+    fn render(
+        &self,
+        symbols: &SymbolTable,
+        resolved: &ResolvedConfig,
+        options: &ExportOptions,
+    ) -> ExportRenderResult {
+        let generated = generate_exports(symbols, resolved, options);
+        ExportRenderResult {
+            format: self.format_name().to_string(),
+            content: generated.c_header,
+            diagnostics: generated.diagnostics,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CmakeExporter;
+
+impl ConfigExporter for CmakeExporter {
+    fn format_name(&self) -> &'static str {
+        "cmake"
+    }
+
+    fn render(
+        &self,
+        symbols: &SymbolTable,
+        resolved: &ResolvedConfig,
+        options: &ExportOptions,
+    ) -> ExportRenderResult {
+        let generated = generate_exports(symbols, resolved, options);
+        ExportRenderResult {
+            format: self.format_name().to_string(),
+            content: generated.cmake,
+            diagnostics: generated.diagnostics,
+        }
+    }
+}
+
+pub fn builtin_exporter_names() -> Vec<&'static str> {
+    vec!["c-header", "cmake"]
+}
+
+pub fn create_builtin_exporter(name: &str) -> Option<Box<dyn ConfigExporter>> {
+    match name {
+        "c-header" => Some(Box::new(CHeaderExporter)),
+        "cmake" => Some(Box::new(CmakeExporter)),
+        _ => None,
+    }
+}
