@@ -6,9 +6,9 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use rcfg_lang::{
-    BoolFalseExportStyle, Diagnostic, EnumExportStyle, ExportNameRule, ExportOptions,
-    IntExportFormat, ResolvedValue, Severity, SymbolTable, builtin_exporter_names,
-    create_builtin_exporter,
+    BoolFalseExportStyle, Diagnostic, DiagnosticArgValue, EnumExportStyle, ExportNameRule,
+    ExportOptions, IntExportFormat, RelatedInfo, ResolvedValue, Severity, SymbolTable,
+    builtin_exporter_names, create_builtin_exporter,
 };
 
 use crate::cli::args::OutputFormat;
@@ -136,22 +136,105 @@ pub(crate) fn execute(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum DiagnosticArgDedupValue {
+    Bool(bool),
+    Int(i128),
+    String(String),
+}
+
+impl From<&DiagnosticArgValue> for DiagnosticArgDedupValue {
+    fn from(value: &DiagnosticArgValue) -> Self {
+        match value {
+            DiagnosticArgValue::Bool(raw) => Self::Bool(*raw),
+            DiagnosticArgValue::Int(raw) => Self::Int(*raw),
+            DiagnosticArgValue::String(raw) => Self::String(raw.clone()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RelatedInfoDedupKey {
+    span_start: usize,
+    span_end: usize,
+    path: Option<String>,
+    message: String,
+}
+
+impl From<&RelatedInfo> for RelatedInfoDedupKey {
+    fn from(value: &RelatedInfo) -> Self {
+        Self {
+            span_start: value.span.start,
+            span_end: value.span.end,
+            path: value.path.clone(),
+            message: value.message.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct DiagnosticDedupKey {
+    severity: u8,
+    code: String,
+    message: String,
+    span_start: usize,
+    span_end: usize,
+    path: Option<String>,
+    source: Option<String>,
+    include_chain: Vec<String>,
+    args: Vec<(String, DiagnosticArgDedupValue)>,
+    message_key: Option<String>,
+    note: Option<String>,
+    related: Vec<RelatedInfoDedupKey>,
+}
+
+fn diagnostic_dedup_key(diag: &Diagnostic) -> DiagnosticDedupKey {
+    let mut args = diag
+        .args
+        .iter()
+        .map(|(key, value)| (key.clone(), DiagnosticArgDedupValue::from(value)))
+        .collect::<Vec<_>>();
+    args.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut related = diag
+        .related
+        .iter()
+        .map(RelatedInfoDedupKey::from)
+        .collect::<Vec<_>>();
+    related.sort_by(|left, right| {
+        (
+            left.span_start,
+            left.span_end,
+            left.path.as_deref(),
+            left.message.as_str(),
+        )
+            .cmp(&(
+                right.span_start,
+                right.span_end,
+                right.path.as_deref(),
+                right.message.as_str(),
+            ))
+    });
+
+    DiagnosticDedupKey {
+        severity: if diag.severity == Severity::Error { 1 } else { 0 },
+        code: diag.code.clone(),
+        message: diag.message.clone(),
+        span_start: diag.span.start,
+        span_end: diag.span.end,
+        path: diag.path.clone(),
+        source: diag.source.clone(),
+        include_chain: diag.include_chain.clone(),
+        args,
+        message_key: diag.message_key.clone(),
+        note: diag.note.clone(),
+        related,
+    }
+}
+
 fn dedup_diagnostics(diagnostics: &mut Vec<Diagnostic>) {
     let mut seen = HashSet::new();
-    diagnostics.retain(|diag| {
-        let key = format!(
-            "{:?}|{}|{}|{}|{:?}|{:?}|{}|{}",
-            diag.severity,
-            diag.code,
-            diag.message,
-            diag.span.start,
-            diag.path,
-            diag.source,
-            diag.include_chain.join(">"),
-            diag.span.end
-        );
-        seen.insert(key)
-    });
+    diagnostics.retain(|diag| seen.insert(diagnostic_dedup_key(diag)));
 }
 
 fn write_if_changed(path: &Path, next_content: &str) -> Result<(), String> {
