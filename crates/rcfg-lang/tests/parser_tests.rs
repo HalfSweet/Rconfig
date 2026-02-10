@@ -97,6 +97,8 @@ when true {
 }
 
 patch foo { default x = true; }
+
+export c "config.h" { prefix = "CONFIG_"; }
 "#;
     let (_file, diags) = parse_schema_with_diagnostics(src);
     assert!(
@@ -144,5 +146,19 @@ mod app {
             .iter()
             .any(|diag| diag.code == "E_INT_LITERAL_OUT_OF_RANGE"),
         "expected E_INT_LITERAL_OUT_OF_RANGE, got: {diags:#?}"
+    );
+}
+
+#[test]
+fn parses_patch_reserved_grammar_without_feature_gate_error() {
+    let src = r#"
+patch foo { default x = true; }
+"#;
+    let (_file, diags) = parse_schema_with_diagnostics(src);
+    assert!(
+        diags
+            .iter()
+            .all(|diag| diag.code != "E_FEATURE_NOT_SUPPORTED"),
+        "patch should not be blocked by feature gate, got: {diags:#?}"
     );
 }

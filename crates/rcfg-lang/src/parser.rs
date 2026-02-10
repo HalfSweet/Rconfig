@@ -143,7 +143,11 @@ impl Parser {
             TokenKind::KwConstraint => self.parse_constraint_block(meta).map(Item::Constraint),
             TokenKind::KwWhen => self.parse_when_block(meta).map(Item::When),
             TokenKind::KwMatch => self.parse_match_block(meta).map(Item::Match),
-            TokenKind::KwPatch | TokenKind::KwExport => {
+            TokenKind::KwPatch => {
+                self.parse_patch_stmt();
+                None
+            }
+            TokenKind::KwExport => {
                 self.push_error(
                     "E_FEATURE_NOT_SUPPORTED",
                     format!(
@@ -757,6 +761,21 @@ impl Parser {
         }
 
         Some(MatchPat::Paths(paths, span))
+    }
+
+    fn parse_patch_stmt(&mut self) {
+        self.bump();
+        let _target = self.parse_path();
+
+        if !self.at(TokenKind::LBrace) {
+            self.push_error(
+                "E_PARSE_EXPECTED_TOKEN",
+                "expected `{` after patch target",
+                self.peek().span,
+            );
+        }
+
+        self.skip_reserved_item_body();
     }
 
     fn parse_type(&mut self) -> Option<Type> {
