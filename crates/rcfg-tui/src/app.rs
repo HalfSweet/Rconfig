@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use rcfg_app::AppSession;
-use rcfg_lang::{ResolvedValue, Severity};
+use rcfg_lang::{ResolvedValue, Severity, ValueSource};
 
 use crate::model::ConfigTree;
 use crate::save::{baseline_resolved, build_minimal_overrides, render_values};
@@ -11,14 +12,47 @@ use crate::state::UiState;
 pub struct App {
     pub session: AppSession,
     pub state: UiState,
+    save_target: PathBuf,
 }
 
 impl App {
-    pub fn new(session: AppSession) -> Self {
+    pub fn new(session: AppSession, save_target: PathBuf) -> Self {
         let tree = ConfigTree::from_schema(session.symbols());
         let state = UiState::new(tree);
 
-        Self { session, state }
+        Self {
+            session,
+            state,
+            save_target,
+        }
+    }
+
+    pub fn bootstrap_from_values_path(&mut self, path: &Path) {
+        if !path.exists() {
+            self.recompute();
+            return;
+        }
+
+        let report = self.session.analyze_values_from_path(path);
+        self.state.diagnostics = report.diagnostics.clone();
+        self.state.set_active_from_resolved(&report.resolved);
+        self.state.user_values = report
+            .resolved
+            .options
+            .iter()
+            .filter_map(|option| {
+                if option.source == Some(ValueSource::User) {
+                    option
+                        .value
+                        .as_ref()
+                        .map(|value| (option.path.clone(), value.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect::<BTreeMap<_, _>>();
+        self.state.dirty = false;
+        self.state.clear_quit_confirmation();
     }
 
     pub fn recompute(&mut self) {
@@ -87,5 +121,9 @@ impl App {
             "active_paths": active_paths,
             "diagnostics": diagnostics,
         })
+    }
+
+    pub fn save_target(&self) -> &Path {
+        self.save_target.as_path()
     }
 }

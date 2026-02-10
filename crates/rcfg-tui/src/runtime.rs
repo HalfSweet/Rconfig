@@ -29,8 +29,6 @@ pub fn run_script_mode(app: &mut App, path: &std::path::Path) -> Result<(), Stri
 }
 
 pub fn run_terminal_mode(app: &mut App) -> Result<(), String> {
-    app.recompute();
-
     let mut stdout = io::stdout();
     render_text(&app.state, &mut stdout)?;
     stdout.flush().map_err(|err| err.to_string())?;
@@ -63,6 +61,13 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
             if app.has_blocking_errors() {
                 return Ok(false);
             }
+
+            let rendered = app.minimal_values_text();
+            let target = app.save_target();
+            fs::write(target, rendered)
+                .map_err(|err| format!("failed to write {}: {err}", target.display()))?;
+            app.state.dirty = false;
+            app.state.clear_quit_confirmation();
         }
         AppEvent::Quit => {
             if app.state.request_quit() {

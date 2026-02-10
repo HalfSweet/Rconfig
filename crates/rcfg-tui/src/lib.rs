@@ -33,7 +33,18 @@ impl std::fmt::Display for TuiError {
 impl std::error::Error for TuiError {}
 
 pub fn run(config: TuiConfig) -> Result<(), TuiError> {
-    let mut app = App::new(config.session);
+    let save_target = config
+        .initial_values_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(".config.rcfgv"));
+
+    let mut app = App::new(config.session, save_target);
+
+    if let Some(path) = config.initial_values_path.as_deref() {
+        app.bootstrap_from_values_path(path);
+    } else {
+        app.recompute();
+    }
 
     if let Some(script) = config.script_path.as_deref() {
         runtime::run_script_mode(&mut app, script).map_err(|message| TuiError { message })?;
