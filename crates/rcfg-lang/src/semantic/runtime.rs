@@ -57,7 +57,7 @@ fn compose_runtime_values(
     let mut sources = BTreeMap::new();
 
     for (path, default) in &symbols.option_defaults {
-        if let Some(value) = resolve_const_value(default, symbols) {
+        if let Some(value) = resolve_const_value(default, symbols, Some(path.as_str())) {
             values.insert(path.as_str().to_string(), value);
             sources.insert(path.as_str().to_string(), ValueSource::Default);
         }
@@ -174,7 +174,9 @@ fn collect_patch_defaults_from_items(
                                 continue;
                             };
 
-                            if let Some(value) = resolve_const_value(&default_stmt.value, symbols) {
+                            if let Some(value) =
+                                resolve_const_value(&default_stmt.value, symbols, Some(&option_path))
+                            {
                                 patch_defaults.insert(option_path, value);
                             }
                         }
@@ -500,6 +502,7 @@ pub(super) fn build_resolved_config(
 pub(super) fn resolve_const_value(
     value: &ConstValue,
     symbols: &SymbolTable,
+    option_path: Option<&str>,
 ) -> Option<ResolvedValue> {
     match value {
         ConstValue::Bool(raw, _) => Some(ResolvedValue::Bool(*raw)),
@@ -510,7 +513,40 @@ pub(super) fn resolve_const_value(
             if resolved.len() == 1 {
                 Some(ResolvedValue::EnumVariant(resolved[0].clone()))
             } else {
-                None
+                let expected_enum = option_path
+                    .and_then(|raw| symbols.option_type(raw))
+                    .and_then(|value_type| {
+                        if let ValueType::Enum(name) = value_type {
+                            Some(name.as_str())
+                        } else {
+                            None
+                        }
+                    });
+
+                expected_enum
+                    .and_then(|enum_name| {
+                        let variant_name =
+                            path.segments.last().map(|segment| segment.value.as_str())?;
+
+                        let mut matches = symbols
+                            .resolve_enum_variant_paths(variant_name)
+                            .into_iter()
+                            .filter(|candidate| {
+                                symbols
+                                    .enum_owner_of_variant(candidate)
+                                    .is_some_and(|owner| enum_name_matches(enum_name, owner))
+                            })
+                            .collect::<Vec<_>>();
+
+                        matches.sort();
+                        matches.dedup();
+                        if matches.len() == 1 {
+                            matches.into_iter().next()
+                        } else {
+                            None
+                        }
+                    })
+                    .map(ResolvedValue::EnumVariant)
             }
         }
     }

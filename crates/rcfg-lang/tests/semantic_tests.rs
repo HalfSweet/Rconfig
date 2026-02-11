@@ -2914,6 +2914,75 @@ mod app {
 }
 
 #[test]
+fn alias_enum_defaults_are_resolved_at_runtime() {
+    let schema_src = r#"
+mod baz {
+  enum Lane { alpha, beta }
+}
+
+mod qux {
+  enum Format { json, text }
+}
+
+use baz as baz_cfg;
+use qux as qux_cfg;
+
+mod foo {
+  option lane: baz_cfg::Lane = baz_cfg::Lane::beta;
+  option format: qux_cfg::Format = qux_cfg::Format::json;
+}
+
+patch foo {
+  default lane = baz_cfg::Lane::alpha;
+}
+"#;
+    let symbols = symbols_from(schema_src);
+
+    let (values, values_diags) = parse_values_with_diagnostics("");
+    assert!(
+        values_diags.is_empty(),
+        "values parse diagnostics: {values_diags:#?}"
+    );
+
+    let diagnostics = analyze_values(&values, &symbols);
+    assert!(
+        diagnostics.iter().all(|diag| {
+            !(diag.code == "E_MISSING_VALUE"
+                && matches!(diag.path.as_deref(), Some("foo::lane" | "foo::format")))
+        }),
+        "unexpected missing value diagnostics: {diagnostics:#?}"
+    );
+
+    let resolved = resolve_values(&values, &symbols);
+
+    let lane = resolved
+        .options
+        .iter()
+        .find(|option| option.path == "foo::lane")
+        .expect("expected foo::lane");
+    assert_eq!(
+        lane.value.as_ref(),
+        Some(&rcfg_lang::ResolvedValue::EnumVariant(
+            "baz::Lane::alpha".to_string()
+        ))
+    );
+    assert_eq!(lane.source, Some(rcfg_lang::ValueSource::Patch));
+
+    let format = resolved
+        .options
+        .iter()
+        .find(|option| option.path == "foo::format")
+        .expect("expected foo::format");
+    assert_eq!(
+        format.value.as_ref(),
+        Some(&rcfg_lang::ResolvedValue::EnumVariant(
+            "qux::Format::json".to_string()
+        ))
+    );
+    assert_eq!(format.source, Some(rcfg_lang::ValueSource::Default));
+}
+
+#[test]
 fn patch_default_type_mismatch_reports_error() {
     let src = r#"
 mod app {
