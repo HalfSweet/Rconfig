@@ -120,13 +120,18 @@ fn map_key_event(key_event: KeyEvent, mode: &UiMode) -> Option<AppEvent> {
 }
 
 pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
-    match app.state.mode.clone() {
-        UiMode::Normal => apply_event_normal(app, event),
-        UiMode::Editing(_) => apply_event_editing(app, event),
-        UiMode::SavePrompt(_) => apply_event_save_prompt(app, event),
-        UiMode::Help => apply_event_help(app, event),
-        UiMode::EnumPicker(_) => apply_event_enum_picker(app, event),
-        UiMode::DiagnosticsFocus(_) => apply_event_diagnostics_focus(app, event),
+    if matches!(&app.state.mode, UiMode::Normal) {
+        apply_event_normal(app, event)
+    } else if matches!(&app.state.mode, UiMode::Editing(_)) {
+        apply_event_editing(app, event)
+    } else if matches!(&app.state.mode, UiMode::SavePrompt(_)) {
+        apply_event_save_prompt(app, event)
+    } else if matches!(&app.state.mode, UiMode::Help) {
+        apply_event_help(app, event)
+    } else if matches!(&app.state.mode, UiMode::EnumPicker(_)) {
+        apply_event_enum_picker(app, event)
+    } else {
+        apply_event_diagnostics_focus(app, event)
     }
 }
 
