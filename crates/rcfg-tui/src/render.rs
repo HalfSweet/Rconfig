@@ -80,14 +80,30 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             } else {
                 ""
             };
+            let value_summary = if node.kind == NodeKind::Option {
+                app.state
+                    .resolved_values
+                    .get(&node.path)
+                    .map(|(value, source)| {
+                        format!(
+                            " = {} [{}]",
+                            format_value(value),
+                            format_value_source(*source)
+                        )
+                    })
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
             let text = format!(
-                "{}{}{} {} {}{}",
+                "{}{}{} {} {}{}{}",
                 marker,
                 indent,
                 expand,
                 icon(node.kind.clone()),
                 node.name,
-                status
+                status,
+                value_summary
             );
             let mut style = Style::default();
             if node.kind == NodeKind::Option && !app.state.active_paths.contains(&node.path) {
@@ -144,6 +160,21 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
         lines.push(Line::from(vec![
             Span::styled("override: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(override_text),
+        ]));
+
+        let (resolved_text, source_text) = app
+            .state
+            .resolved_values
+            .get(&node.path)
+            .map(|(value, source)| (format_value(value), format_value_source(*source)))
+            .unwrap_or_else(|| ("<none>".to_string(), "-".to_string()));
+        lines.push(Line::from(vec![
+            Span::styled("resolved: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(resolved_text),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("source: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(source_text),
         ]));
 
         let (summary, help) = app.localized_docs_for_path(&node.path);
@@ -383,6 +414,15 @@ fn format_value(value: &ResolvedValue) -> String {
         ResolvedValue::Int(raw) => raw.to_string(),
         ResolvedValue::String(raw) => raw.clone(),
         ResolvedValue::EnumVariant(raw) => raw.clone(),
+    }
+}
+
+fn format_value_source(source: rcfg_lang::ValueSource) -> String {
+    match source {
+        rcfg_lang::ValueSource::User => "user".to_string(),
+        rcfg_lang::ValueSource::Patch => "patch".to_string(),
+        rcfg_lang::ValueSource::Default => "default".to_string(),
+        rcfg_lang::ValueSource::Context => "context".to_string(),
     }
 }
 

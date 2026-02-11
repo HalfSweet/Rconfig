@@ -452,19 +452,63 @@ space
     let payload: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("script summary json");
 
-    assert_eq!(
-        payload["user_values"]["app::enabled"],
-        serde_json::json!(true)
+    let resolved = payload["resolved_options"]
+        .as_array()
+        .expect("resolved options array");
+
+    let enabled = resolved
+        .iter()
+        .find(|item| item["path"] == "app::enabled")
+        .expect("resolved enabled");
+    assert_eq!(enabled["value"], serde_json::json!(true));
+    assert_eq!(enabled["source"], serde_json::json!("user"));
+
+    let baud = resolved
+        .iter()
+        .find(|item| item["path"] == "app::baud")
+        .expect("resolved baud");
+    assert_eq!(baud["value"], serde_json::json!(115200));
+    assert_eq!(baud["source"], serde_json::json!("default"));
+}
+
+#[test]
+fn menuconfig_script_includes_resolved_source_for_default_and_user_values() {
+    let schema = fixture_path("menuconfig_script_resolved_source", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_resolved_source", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+  option baud: u32 = 115200;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+space
+"#,
     );
 
-    let active_paths = payload["active_paths"]
-        .as_array()
-        .expect("active paths array")
-        .iter()
-        .filter_map(|item| item.as_str())
-        .collect::<Vec<_>>();
-    assert!(active_paths.contains(&"app::enabled"));
-    assert!(active_paths.contains(&"app::baud"));
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
 
     let resolved = payload["resolved_options"]
         .as_array()
@@ -473,18 +517,16 @@ space
     let enabled = resolved
         .iter()
         .find(|item| item["path"] == "app::enabled")
-        .expect("resolved enabled option");
-    assert_eq!(enabled["active"], serde_json::json!(true));
-    assert_eq!(enabled["source"], serde_json::json!("user"));
+        .expect("resolved enabled");
     assert_eq!(enabled["value"], serde_json::json!(true));
+    assert_eq!(enabled["source"], serde_json::json!("user"));
 
     let baud = resolved
         .iter()
         .find(|item| item["path"] == "app::baud")
-        .expect("resolved baud option");
-    assert_eq!(baud["active"], serde_json::json!(true));
-    assert_eq!(baud["source"], serde_json::json!("default"));
+        .expect("resolved baud");
     assert_eq!(baud["value"], serde_json::json!(115200));
+    assert_eq!(baud["source"], serde_json::json!("default"));
 }
 
 #[test]

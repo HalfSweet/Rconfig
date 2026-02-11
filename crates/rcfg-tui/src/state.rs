@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rcfg_lang::ast::{AssignStmt, ValuesStmt};
 use rcfg_lang::{
-    Diagnostic, Path, ResolvedConfig, ResolvedValue, Span, Spanned, ValueExpr, ValuesFile,
+    Diagnostic, Path, ResolvedConfig, ResolvedValue, Span, Spanned, ValueExpr, ValueSource,
+    ValuesFile,
 };
 
 use crate::model::{ConfigTree, NodeKind};
@@ -166,6 +167,7 @@ pub struct UiState {
     pub scroll_offset: usize,
     pub tree_viewport_height: u16,
     pub user_values: BTreeMap<String, ResolvedValue>,
+    pub resolved_values: BTreeMap<String, (ResolvedValue, ValueSource)>,
     pub diagnostics: Vec<Diagnostic>,
     pub active_paths: BTreeSet<String>,
     pub dirty: bool,
@@ -184,6 +186,7 @@ impl UiState {
             scroll_offset: 0,
             tree_viewport_height: 0,
             user_values: BTreeMap::new(),
+            resolved_values: BTreeMap::new(),
             diagnostics: Vec::new(),
             active_paths: BTreeSet::new(),
             dirty: false,
@@ -460,6 +463,15 @@ impl UiState {
         diagnostics: Vec<Diagnostic>,
     ) {
         self.set_active_from_resolved(resolved);
+        self.resolved_values = resolved
+            .options
+            .iter()
+            .filter_map(|option| {
+                let value = option.value.as_ref()?.clone();
+                let source = option.source?;
+                Some((option.path.clone(), (value, source)))
+            })
+            .collect::<BTreeMap<_, _>>();
         self.diagnostics = diagnostics;
     }
 

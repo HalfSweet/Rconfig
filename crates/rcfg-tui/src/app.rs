@@ -40,6 +40,16 @@ impl App {
         let report = self.session.analyze_values_from_path(path);
         self.state.diagnostics = report.diagnostics.clone();
         self.state.set_active_from_resolved(&report.resolved);
+        self.state.resolved_values = report
+            .resolved
+            .options
+            .iter()
+            .filter_map(|option| {
+                let value = option.value.as_ref()?.clone();
+                let source = option.source?;
+                Some((option.path.clone(), (value, source)))
+            })
+            .collect::<BTreeMap<_, _>>();
         self.state.user_values = report
             .resolved
             .options
