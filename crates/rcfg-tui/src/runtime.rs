@@ -758,18 +758,10 @@ fn diag_focus_selected(mode: &UiMode) -> Option<usize> {
 }
 
 fn resolved_text_for_option(app: &App, path: &str) -> Option<String> {
-    app.session
-        .resolve(&app.state.to_values_file())
-        .options
-        .into_iter()
-        .find(|option| option.path == path)
-        .and_then(|option| option.value)
-        .map(|value| match value {
-            rcfg_lang::ResolvedValue::Bool(raw) => raw.to_string(),
-            rcfg_lang::ResolvedValue::Int(raw) => raw.to_string(),
-            rcfg_lang::ResolvedValue::String(raw) => raw,
-            rcfg_lang::ResolvedValue::EnumVariant(raw) => raw,
-        })
+    app.state
+        .resolved_values
+        .get(path)
+        .map(|(value, _)| format_user_value(value))
 }
 
 fn format_user_value(value: &rcfg_lang::ResolvedValue) -> String {
