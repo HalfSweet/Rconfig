@@ -278,13 +278,19 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
         }
 
         if node.kind == NodeKind::Option && !node.guard.is_empty() {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    "guarded by: ",
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format_guard_chain(&node.guard)),
-            ]));
+            let guard_lines = guard_chain_lines(&node.guard);
+            if let Some(first) = guard_lines.first() {
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        "guarded by: ",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(first.clone()),
+                ]));
+                for extra in guard_lines.iter().skip(1) {
+                    lines.push(Line::from(format!("            -> {extra}")));
+                }
+            }
         }
 
         let (summary, help) = app.localized_docs_for_path(&node.path);
@@ -392,7 +398,7 @@ fn render_status_bar(frame: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 fn render_save_overlay(frame: &mut Frame<'_>, app: &App) {
-    let popup_area = centered_rect(70, 30, frame.area());
+    let popup_area = centered_rect(75, 45, frame.area());
     frame.render_widget(Clear, popup_area);
 
     let mut lines = Vec::new();
@@ -400,7 +406,9 @@ fn render_save_overlay(frame: &mut Frame<'_>, app: &App) {
         "Save",
         Style::default().add_modifier(Modifier::BOLD),
     ));
-    lines.push(Line::from("Edit path and press Enter (Esc cancel)"));
+    lines.push(Line::from(
+        "Edit path and press Enter to save (Esc cancel, c copy last path)",
+    ));
     lines.push(Line::default());
 
     let (path, cursor_pos) = match &app.state.mode {
@@ -421,6 +429,27 @@ fn render_save_overlay(frame: &mut Frame<'_>, app: &App) {
         ),
         Span::raw(right.to_string()),
     ]));
+
+    lines.push(Line::default());
+    lines.push(Line::styled(
+        "changes preview:",
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+
+    let preview = app.minimal_overrides_for_save();
+    if preview.is_empty() {
+        lines.push(Line::from("(no user overrides to save)"));
+    } else {
+        for (path, value) in preview {
+            let is_secret = app.session.symbols().option_is_secret(&path);
+            let value_text = if is_secret {
+                "***".to_string()
+            } else {
+                format_value(&value)
+            };
+            lines.push(Line::from(format!("{path} = {value_text}")));
+        }
+    }
 
     let panel = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
@@ -449,6 +478,7 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {
         ),
         ("F1", "Toggle help overlay"),
         ("Ctrl+S", "Open save prompt"),
+        ("c", "Copy last saved path (SavePrompt mode only)"),
         ("d", "Clear selected user override (Normal mode only)"),
         (
             "q",
@@ -498,6 +528,12 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {
         lines.push(Line::from(format!("path: {}", node.path)));
         lines.push(Line::from(format!("label_key: {label_key}")));
         lines.push(Line::from(format!("help_key:  {help_key}")));
+        if !node.guard.is_empty() {
+            lines.push(Line::from(format!(
+                "guard:     {}",
+                guard_chain_lines(&node.guard).join("\n           -> ")
+            )));
+        }
         lines.push(Line::default());
 
         lines.push(Line::styled(
@@ -664,7 +700,7 @@ fn format_value_source(source: rcfg_lang::ValueSource) -> String {
     }
 }
 
-fn format_guard_chain(guard: &[GuardClause]) -> String {
+fn guard_chain_lines(guard: &[GuardClause]) -> Vec<String> {
     guard
         .iter()
         .map(|clause| match clause {
@@ -682,5 +718,4 @@ fn format_guard_chain(guard: &[GuardClause]) -> String {
             }
         })
         .collect::<Vec<_>>()
-        .join(" -> ")
 }

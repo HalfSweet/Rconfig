@@ -96,6 +96,13 @@ impl App {
         render_values(&minimal)
     }
 
+    pub fn minimal_overrides_for_save(&self) -> BTreeMap<String, ResolvedValue> {
+        let values = self.state.to_values_file();
+        let current = self.session.resolve(&values);
+        let baseline = baseline_resolved(&self.session);
+        build_minimal_overrides(&baseline, &current, &self.state.user_values)
+    }
+
     pub fn doc_keys_for_path(&self, path: &str) -> (String, String) {
         let package = self.session.package_name().unwrap_or("main");
         let label_key = self
@@ -205,6 +212,20 @@ impl App {
             "diagnostics": diagnostics,
             "resolved_options": resolved_options,
             "status_message": self.state.status_message,
+            "save_preview": self
+                .minimal_overrides_for_save()
+                .iter()
+                .map(|(path, value)| {
+                    serde_json::json!({
+                        "path": path,
+                        "value": mask_resolved_value(
+                            value,
+                            self.session.symbols().option_is_secret(path)
+                        ),
+                    })
+                })
+                .collect::<Vec<_>>(),
+            "last_saved_path": self.state.last_saved_path,
         })
     }
 

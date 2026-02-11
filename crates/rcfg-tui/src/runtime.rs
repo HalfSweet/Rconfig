@@ -177,6 +177,13 @@ fn map_key_event_text_input(key_event: KeyEvent, include_save: bool) -> Option<A
         {
             Some(AppEvent::Save)
         }
+        (KeyCode::Char('c'), modifiers)
+            if include_save
+                && !modifiers.contains(KeyModifiers::CONTROL)
+                && !modifiers.contains(KeyModifiers::ALT) =>
+        {
+            Some(AppEvent::CopyPath)
+        }
         (KeyCode::Char(ch), modifiers)
             if !modifiers.contains(KeyModifiers::CONTROL)
                 && !modifiers.contains(KeyModifiers::ALT) =>
@@ -379,6 +386,7 @@ fn apply_event_normal(app: &mut App, event: AppEvent) -> Result<bool, String> {
             app.recompute();
             app.state.clear_status_message();
         }
+        AppEvent::CopyPath => {}
         AppEvent::Chars(text) => {
             apply_text_override(app, text)?;
             app.recompute();
@@ -439,6 +447,7 @@ fn apply_event_help(app: &mut App, event: AppEvent) -> Result<bool, String> {
         | AppEvent::InputChar(_)
         | AppEvent::Backspace
         | AppEvent::Delete
+        | AppEvent::CopyPath
         | AppEvent::Paste(_) => {}
     }
 
@@ -460,6 +469,15 @@ fn apply_event_save_prompt(app: &mut App, event: AppEvent) -> Result<bool, Strin
                 .map(PathBuf::from)
                 .unwrap_or_else(|| app.save_target().to_path_buf());
             perform_save(app, target)?;
+        }
+        AppEvent::CopyPath => {
+            if let Some(path) = app.state.last_saved_path.clone() {
+                app.state.set_save_prompt_text(path);
+                app.state
+                    .set_status_message("copied last saved path into prompt");
+            } else {
+                app.state.set_status_message("no previous saved path yet");
+            }
         }
         AppEvent::Esc => {
             app.state.close_save_prompt();
@@ -619,6 +637,7 @@ fn apply_event_editing(app: &mut App, event: AppEvent) -> Result<bool, String> {
         | AppEvent::F1
         | AppEvent::Save
         | AppEvent::Quit
+        | AppEvent::CopyPath
         | AppEvent::Reset => {}
     }
 
@@ -677,6 +696,7 @@ fn apply_event_enum_picker(app: &mut App, event: AppEvent) -> Result<bool, Strin
         | AppEvent::F1
         | AppEvent::Save
         | AppEvent::Quit
+        | AppEvent::CopyPath
         | AppEvent::Reset
         | AppEvent::Chars(_)
         | AppEvent::InputChar(_)
@@ -742,6 +762,7 @@ fn apply_event_diagnostics_focus(app: &mut App, event: AppEvent) -> Result<bool,
         | AppEvent::F1
         | AppEvent::Save
         | AppEvent::Quit
+        | AppEvent::CopyPath
         | AppEvent::Reset
         | AppEvent::Chars(_)
         | AppEvent::InputChar(_)
@@ -817,6 +838,7 @@ fn perform_save(app: &mut App, target: PathBuf) -> Result<(), String> {
 
     app.state.dirty = false;
     app.state.clear_quit_confirmation();
+    app.state.last_saved_path = Some(target.display().to_string());
     app.state.close_save_prompt();
     app.state
         .set_status_message(format!("saved: {}", target.display()));

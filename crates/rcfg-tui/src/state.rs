@@ -165,6 +165,7 @@ pub struct UiState {
     pub active_paths: BTreeSet<String>,
     pub dirty: bool,
     pub pending_quit_confirm: bool,
+    pub last_saved_path: Option<String>,
     pub mode: UiMode,
     pub status_message: Option<String>,
 }
@@ -192,6 +193,7 @@ impl UiState {
             active_paths: BTreeSet::new(),
             dirty: false,
             pending_quit_confirm: false,
+            last_saved_path: None,
             mode: UiMode::Normal,
             status_message: None,
         }
@@ -484,6 +486,13 @@ impl UiState {
     pub fn close_save_prompt(&mut self) {
         if matches!(self.mode, UiMode::SavePrompt(_)) {
             self.exit_mode();
+        }
+    }
+
+    pub fn set_save_prompt_text(&mut self, text: String) {
+        if let UiMode::SavePrompt(prompt) = &mut self.mode {
+            prompt.buffer = text;
+            prompt.cursor_pos = prompt.buffer.len();
         }
     }
 

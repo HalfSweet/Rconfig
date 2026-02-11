@@ -79,6 +79,8 @@ down
     assert!(payload.get("active_paths").is_some(), "{payload}");
     assert!(payload.get("diagnostics").is_some(), "{payload}");
     assert!(payload.get("status_message").is_some(), "{payload}");
+    assert!(payload.get("save_preview").is_some(), "{payload}");
+    assert!(payload.get("last_saved_path").is_some(), "{payload}");
 }
 
 #[test]
@@ -412,6 +414,119 @@ mod app {
 
     let saved = fs::read_to_string(&values).expect("read saved values");
     assert_eq!(saved, "app::note = \"a\\\"b\\\\c\";\n");
+}
+
+#[test]
+fn menuconfig_script_save_prompt_preview_lists_user_overrides() {
+    let schema = fixture_path("menuconfig_save_preview", "schema.rcfg");
+    let script = fixture_path("menuconfig_save_preview", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+space
+save
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+    assert_eq!(payload["ui_mode"], serde_json::json!("save_prompt"));
+
+    let preview = payload["save_preview"]
+        .as_array()
+        .expect("save preview array");
+    assert_eq!(
+        preview.len(),
+        1,
+        "preview should contain one override: {payload}"
+    );
+    assert_eq!(preview[0]["path"], serde_json::json!("app::enabled"));
+    assert_eq!(preview[0]["value"], serde_json::json!(true));
+}
+
+#[test]
+fn menuconfig_script_copy_path_reuses_last_saved_path() {
+    let schema = fixture_path("menuconfig_save_copy_path", "schema.rcfg");
+    let script = fixture_path("menuconfig_save_copy_path", "script.txt");
+    let out = fixture_path("menuconfig_save_copy_path", "saved.rcfgv");
+
+    let _ = fs::remove_file(&out);
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+space
+save
+enter
+save
+copy_path
+enter
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--out",
+            out.to_str().expect("out path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let saved = fs::read_to_string(&out).expect("read saved output");
+    assert_eq!(saved, "app::enabled = true;\n");
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+    assert_eq!(
+        payload["last_saved_path"],
+        serde_json::json!(out.display().to_string())
+    );
+    let status = payload["status_message"].as_str().unwrap_or_default();
+    assert!(
+        status.contains("saved:"),
+        "expected successful save status after copy_path: {payload}"
+    );
 }
 
 #[test]
