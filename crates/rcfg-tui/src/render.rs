@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -66,7 +68,11 @@ pub fn render_frame(frame: &mut Frame<'_>, app: &App) {
 }
 
 fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let visible = app.state.visible_nodes();
+    let visible: Cow<'_, [usize]> = app
+        .state
+        .cached_visible_nodes()
+        .map(Cow::Borrowed)
+        .unwrap_or_else(|| Cow::Owned(app.state.visible_nodes()));
     let viewport = usize::from(app.state.tree_viewport_height);
     let start = app
         .state

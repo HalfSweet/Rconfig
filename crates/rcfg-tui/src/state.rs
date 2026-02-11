@@ -218,39 +218,53 @@ impl UiState {
             .expect("visible node cache must be initialized")
     }
 
-    pub fn select_next(&mut self) {
-        let visible = self.visible_nodes_cached().clone();
-        if visible.is_empty() {
-            self.scroll_offset = 0;
-            return;
-        }
+    pub fn cached_visible_nodes(&self) -> Option<&[usize]> {
+        self.cached_visible.as_deref()
+    }
 
-        let index = visible
-            .iter()
-            .position(|id| *id == self.selected)
-            .unwrap_or(0);
-        let next_index = (index + 1).min(visible.len().saturating_sub(1));
-        self.selected = visible[next_index];
+    pub fn select_next(&mut self) {
+        let (next_node, next_index, visible_len) = {
+            let selected = self.selected;
+            let visible = self.visible_nodes_cached();
+            if visible.is_empty() {
+                self.scroll_offset = 0;
+                return;
+            }
+
+            let index = visible
+                .iter()
+                .position(|id| *id == selected)
+                .unwrap_or(0);
+            let next_index = (index + 1).min(visible.len().saturating_sub(1));
+            (visible[next_index], next_index, visible.len())
+        };
+
+        self.selected = next_node;
         self.detail_scroll_offset = 0;
-        self.ensure_selected_in_view(&visible);
+        self.ensure_selected_index_in_view(next_index, visible_len);
         self.pending_quit_confirm = false;
     }
 
     pub fn select_prev(&mut self) {
-        let visible = self.visible_nodes_cached().clone();
-        if visible.is_empty() {
-            self.scroll_offset = 0;
-            return;
-        }
+        let (prev_node, prev_index, visible_len) = {
+            let selected = self.selected;
+            let visible = self.visible_nodes_cached();
+            if visible.is_empty() {
+                self.scroll_offset = 0;
+                return;
+            }
 
-        let index = visible
-            .iter()
-            .position(|id| *id == self.selected)
-            .unwrap_or(0);
-        let prev_index = index.saturating_sub(1);
-        self.selected = visible[prev_index];
+            let index = visible
+                .iter()
+                .position(|id| *id == selected)
+                .unwrap_or(0);
+            let prev_index = index.saturating_sub(1);
+            (visible[prev_index], prev_index, visible.len())
+        };
+
+        self.selected = prev_node;
         self.detail_scroll_offset = 0;
-        self.ensure_selected_in_view(&visible);
+        self.ensure_selected_index_in_view(prev_index, visible_len);
         self.pending_quit_confirm = false;
     }
 
@@ -300,13 +314,28 @@ impl UiState {
     }
 
     pub fn calibrate_scroll_offset(&mut self) {
-        let visible = self.visible_nodes_cached().clone();
-        if visible.is_empty() {
-            self.scroll_offset = 0;
-            return;
-        }
+        let (selected_index, first_visible, visible_len) = {
+            let selected = self.selected;
+            let visible = self.visible_nodes_cached();
+            if visible.is_empty() {
+                self.scroll_offset = 0;
+                return;
+            }
 
-        self.ensure_selected_in_view(&visible);
+            (
+                visible.iter().position(|id| *id == selected),
+                visible[0],
+                visible.len(),
+            )
+        };
+
+        let selected_index = selected_index.unwrap_or_else(|| {
+            self.selected = first_visible;
+            self.detail_scroll_offset = 0;
+            0
+        });
+
+        self.ensure_selected_index_in_view(selected_index, visible_len);
     }
 
     pub fn set_active_from_resolved(&mut self, resolved: &ResolvedConfig) {
@@ -552,20 +581,11 @@ impl UiState {
         }
     }
 
-    fn ensure_selected_in_view(&mut self, visible: &[usize]) {
-        if visible.is_empty() {
+    fn ensure_selected_index_in_view(&mut self, selected_index: usize, visible_len: usize) {
+        if visible_len == 0 {
             self.scroll_offset = 0;
             return;
         }
-
-        let selected_index = visible
-            .iter()
-            .position(|id| *id == self.selected)
-            .unwrap_or_else(|| {
-                self.selected = visible[0];
-                self.detail_scroll_offset = 0;
-                0
-            });
 
         let viewport = usize::from(self.tree_viewport_height);
         if viewport == 0 {
@@ -573,7 +593,7 @@ impl UiState {
             return;
         }
 
-        let max_offset = visible.len().saturating_sub(viewport);
+        let max_offset = visible_len.saturating_sub(viewport);
         let margin = 2usize.min(viewport.saturating_sub(1));
         let mut offset = self.scroll_offset.min(max_offset);
 
