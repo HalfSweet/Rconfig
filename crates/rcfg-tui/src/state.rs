@@ -6,7 +6,7 @@ use rcfg_lang::{
     ValuesFile,
 };
 
-use crate::model::{ConfigTree, NodeKind};
+use crate::model::{ConfigNode, ConfigTree, NodeKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextInput {
@@ -382,7 +382,7 @@ impl UiState {
             .unwrap_or(false)
     }
 
-    pub fn set_bool_value(&mut self, value: bool) -> Result<(), String> {
+    fn validate_selected_editable(&self) -> Result<&ConfigNode, String> {
         let Some(node) = self.tree.node(self.selected) else {
             return Err("no selected node".to_string());
         };
@@ -393,62 +393,40 @@ impl UiState {
             return Err("inactive option is not editable".to_string());
         }
 
-        self.user_values
-            .insert(node.path.clone(), ResolvedValue::Bool(value));
+        Ok(node)
+    }
+
+    pub fn set_bool_value(&mut self, value: bool) -> Result<(), String> {
+        let path = self.validate_selected_editable()?.path.clone();
+
+        self.user_values.insert(path, ResolvedValue::Bool(value));
         self.dirty = true;
         self.pending_quit_confirm = false;
         Ok(())
     }
 
     pub fn set_text_value(&mut self, value: String) -> Result<(), String> {
-        let Some(node) = self.tree.node(self.selected) else {
-            return Err("no selected node".to_string());
-        };
-        if node.kind != NodeKind::Option {
-            return Err("selected node is not option".to_string());
-        }
-        if !self.active_paths.contains(&node.path) {
-            return Err("inactive option is not editable".to_string());
-        }
+        let path = self.validate_selected_editable()?.path.clone();
 
-        self.user_values
-            .insert(node.path.clone(), ResolvedValue::String(value));
+        self.user_values.insert(path, ResolvedValue::String(value));
         self.dirty = true;
         self.pending_quit_confirm = false;
         Ok(())
     }
 
     pub fn set_int_value(&mut self, value: i128) -> Result<(), String> {
-        let Some(node) = self.tree.node(self.selected) else {
-            return Err("no selected node".to_string());
-        };
-        if node.kind != NodeKind::Option {
-            return Err("selected node is not option".to_string());
-        }
-        if !self.active_paths.contains(&node.path) {
-            return Err("inactive option is not editable".to_string());
-        }
+        let path = self.validate_selected_editable()?.path.clone();
 
-        self.user_values
-            .insert(node.path.clone(), ResolvedValue::Int(value));
+        self.user_values.insert(path, ResolvedValue::Int(value));
         self.dirty = true;
         self.pending_quit_confirm = false;
         Ok(())
     }
 
     pub fn set_enum_value(&mut self, value: String) -> Result<(), String> {
-        let Some(node) = self.tree.node(self.selected) else {
-            return Err("no selected node".to_string());
-        };
-        if node.kind != NodeKind::Option {
-            return Err("selected node is not option".to_string());
-        }
-        if !self.active_paths.contains(&node.path) {
-            return Err("inactive option is not editable".to_string());
-        }
+        let path = self.validate_selected_editable()?.path.clone();
 
-        self.user_values
-            .insert(node.path.clone(), ResolvedValue::EnumVariant(value));
+        self.user_values.insert(path, ResolvedValue::EnumVariant(value));
         self.dirty = true;
         self.pending_quit_confirm = false;
         Ok(())
