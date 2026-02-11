@@ -86,7 +86,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 indent,
                 expand,
                 icon(node.kind.clone()),
-                node.path,
+                node.name,
                 status
             );
             let mut style = Style::default();
