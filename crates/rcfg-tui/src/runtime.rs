@@ -329,14 +329,11 @@ fn apply_event_normal(app: &mut App, event: AppEvent) -> Result<bool, String> {
 
             let selected_path = selected_node.path.clone();
             let current = app
-                .session
-                .resolve(&app.state.to_values_file())
-                .options
-                .into_iter()
-                .find(|option| option.path == selected_path)
-                .and_then(|option| option.value)
-                .and_then(|value| match value {
-                    rcfg_lang::ResolvedValue::Bool(raw) => Some(raw),
+                .state
+                .resolved_values
+                .get(&selected_path)
+                .and_then(|(value, _)| match value {
+                    rcfg_lang::ResolvedValue::Bool(raw) => Some(*raw),
                     _ => None,
                 })
                 .unwrap_or(false);
