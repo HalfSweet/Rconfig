@@ -169,7 +169,12 @@ fn map_key_event_text_input(key_event: KeyEvent, include_save: bool) -> Option<A
         {
             Some(AppEvent::Save)
         }
-        (KeyCode::Char(ch), modifiers) if modifiers.is_empty() => Some(AppEvent::InputChar(ch)),
+        (KeyCode::Char(ch), modifiers)
+            if !modifiers.contains(KeyModifiers::CONTROL)
+                && !modifiers.contains(KeyModifiers::ALT) =>
+        {
+            Some(AppEvent::InputChar(ch))
+        }
         _ => None,
     }
 }
