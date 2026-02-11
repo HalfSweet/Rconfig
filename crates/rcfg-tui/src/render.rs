@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -9,7 +10,9 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use rcfg_lang::{ResolvedValue, Severity, ValueType};
 
 use crate::app::App;
-use crate::model::{GuardClause, NodeKind, first_guard_clause, summarize_guard_clauses};
+use crate::model::{
+    ConfigNode, ConfigTree, GuardClause, NodeKind, first_guard_clause, summarize_guard_clauses,
+};
 use crate::state::UiMode;
 
 #[derive(Debug, Clone, Copy)]
@@ -73,6 +76,12 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .cached_visible_nodes()
         .map(Cow::Borrowed)
         .unwrap_or_else(|| Cow::Owned(app.state.visible_nodes()));
+    let mut last_visible_child = HashMap::new();
+    for node_id in visible.iter() {
+        if let Some(node) = app.state.tree.node(*node_id) {
+            last_visible_child.insert(node.parent_id, node.id);
+        }
+    }
     let viewport = usize::from(app.state.tree_viewport_height);
     let start = app
         .state
@@ -85,10 +94,10 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
     };
 
     let items = visible[start..end]
-        .into_iter()
+        .iter()
         .filter_map(|node_id| {
             let node = app.state.tree.node(*node_id)?;
-            let indent = "  ".repeat(node.depth);
+            let prefix = tree_prefix(node, &app.state.tree, &last_visible_child);
             let marker = if *node_id == app.state.selected {
                 ">"
             } else {
@@ -142,7 +151,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             let text = format!(
                 "{}{}{}{} {} {}{}{}{}",
                 marker,
-                indent,
+                prefix,
                 override_mark,
                 expand,
                 icon(node.kind),
@@ -376,7 +385,7 @@ fn render_diagnostics_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
 fn render_status_bar(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let mut status = format!(
-        "dirty={} | diagnostics={} | q quit | Ctrl+S save | F1 help",
+        "dirty={} | diagnostics={}",
         app.state.dirty,
         app.state.diagnostics.len()
     );
@@ -390,9 +399,11 @@ fn render_status_bar(frame: &mut Frame<'_>, app: &App, area: Rect) {
         status.push_str(message);
     }
 
-    let bar = Paragraph::new(status)
-        .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL));
+    let hints = mode_key_hints(&app.state.mode);
+
+    let lines = vec![Line::from(status), Line::from(hints)];
+
+    let bar = Paragraph::new(lines).style(Style::default().fg(Color::Cyan));
 
     frame.render_widget(bar, area);
 }
@@ -652,6 +663,66 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         .split(vertical[1]);
 
     horizontal[1]
+}
+
+fn mode_key_hints(mode: &UiMode) -> &'static str {
+    match mode {
+        UiMode::Normal => {
+            "↑↓ navigate  Enter edit  Space toggle  d clear  Tab diag  Ctrl+S save  q quit  F1 help"
+        }
+        UiMode::Editing(_) => "Enter submit  Esc cancel",
+        UiMode::EnumPicker(_) => "↑↓ select  Enter confirm  Esc cancel",
+        UiMode::SavePrompt(_) => "Enter save  Esc cancel  c copy path",
+        UiMode::DiagnosticsFocus(_) => "↑↓ navigate  Enter jump  Tab/Esc back",
+        UiMode::Help => "↑↓ scroll  Esc/F1 close",
+    }
+}
+
+fn tree_prefix(
+    node: &ConfigNode,
+    tree: &ConfigTree,
+    last_visible_child: &HashMap<Option<usize>, usize>,
+) -> String {
+    let mut lineage = Vec::new();
+    let mut current = Some(node.id);
+    while let Some(node_id) = current {
+        let Some(current_node) = tree.node(node_id) else {
+            break;
+        };
+        lineage.push(current_node.id);
+        current = current_node.parent_id;
+    }
+    lineage.reverse();
+
+    if lineage.is_empty() {
+        return String::new();
+    }
+
+    let mut prefix = String::new();
+    for ancestor_id in lineage.iter().take(lineage.len().saturating_sub(1)) {
+        let Some(ancestor) = tree.node(*ancestor_id) else {
+            continue;
+        };
+        let is_last = last_visible_child
+            .get(&ancestor.parent_id)
+            .is_none_or(|last_id| *last_id == ancestor.id);
+        if is_last {
+            prefix.push_str("   ");
+        } else {
+            prefix.push_str("│  ");
+        }
+    }
+
+    let is_last = last_visible_child
+        .get(&node.parent_id)
+        .is_none_or(|last_id| *last_id == node.id);
+    if is_last {
+        prefix.push_str("└─ ");
+    } else {
+        prefix.push_str("├─ ");
+    }
+
+    prefix
 }
 
 fn icon(kind: NodeKind) -> &'static str {
