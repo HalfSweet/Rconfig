@@ -174,9 +174,11 @@ fn collect_patch_defaults_from_items(
                                 continue;
                             };
 
-                            if let Some(value) =
-                                resolve_const_value(&default_stmt.value, symbols, Some(&option_path))
-                            {
+                            if let Some(value) = resolve_const_value(
+                                &default_stmt.value,
+                                symbols,
+                                Some(&option_path),
+                            ) {
                                 patch_defaults.insert(option_path, value);
                             }
                         }

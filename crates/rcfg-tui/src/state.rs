@@ -236,10 +236,7 @@ impl UiState {
                 return;
             }
 
-            let index = visible
-                .iter()
-                .position(|id| *id == selected)
-                .unwrap_or(0);
+            let index = visible.iter().position(|id| *id == selected).unwrap_or(0);
             let next_index = (index + 1).min(visible.len().saturating_sub(1));
             (visible[next_index], next_index, visible.len())
         };
@@ -259,10 +256,7 @@ impl UiState {
                 return;
             }
 
-            let index = visible
-                .iter()
-                .position(|id| *id == selected)
-                .unwrap_or(0);
+            let index = visible.iter().position(|id| *id == selected).unwrap_or(0);
             let prev_index = index.saturating_sub(1);
             (visible[prev_index], prev_index, visible.len())
         };
@@ -409,7 +403,8 @@ impl UiState {
     pub fn set_enum_value(&mut self, value: String) -> Result<(), String> {
         let path = self.validate_selected_editable()?.path.clone();
 
-        self.user_values.insert(path, ResolvedValue::EnumVariant(value));
+        self.user_values
+            .insert(path, ResolvedValue::EnumVariant(value));
         self.dirty = true;
         self.pending_quit_confirm = false;
         Ok(())

@@ -129,7 +129,10 @@ enter
     let payload: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("script summary json");
 
-    assert_eq!(payload["user_values"]["app::note"], serde_json::json!("hello"));
+    assert_eq!(
+        payload["user_values"]["app::note"],
+        serde_json::json!("hello")
+    );
     assert_eq!(payload["ui_mode"], serde_json::json!("normal"));
 }
 
@@ -759,7 +762,10 @@ enter
     let payload: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("script summary json");
 
-    assert_eq!(payload["user_values"]["app::token"], serde_json::json!("***"));
+    assert_eq!(
+        payload["user_values"]["app::token"],
+        serde_json::json!("***")
+    );
 
     let resolved = payload["resolved_options"]
         .as_array()
