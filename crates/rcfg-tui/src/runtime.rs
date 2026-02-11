@@ -130,8 +130,10 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
         apply_event_help(app, event)
     } else if matches!(&app.state.mode, UiMode::EnumPicker(_)) {
         apply_event_enum_picker(app, event)
-    } else {
+    } else if matches!(&app.state.mode, UiMode::DiagnosticsFocus(_)) {
         apply_event_diagnostics_focus(app, event)
+    } else {
+        unreachable!("unhandled UiMode variant in apply_event");
     }
 }
 
