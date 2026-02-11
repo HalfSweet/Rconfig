@@ -10,6 +10,32 @@ use crate::app::App;
 use crate::model::NodeKind;
 use crate::state::UiMode;
 
+#[derive(Debug, Clone, Copy)]
+struct ScrollableParagraph {
+    scroll_offset: usize,
+    viewport_height: usize,
+}
+
+impl ScrollableParagraph {
+    fn from_area(scroll_offset: usize, area: Rect) -> Self {
+        Self {
+            scroll_offset,
+            viewport_height: usize::from(area.height.saturating_sub(2)).max(1),
+        }
+    }
+
+    fn visible_lines<'a>(&self, lines: &[Line<'a>]) -> Vec<Line<'a>> {
+        if lines.is_empty() {
+            return Vec::new();
+        }
+
+        let max_offset = lines.len().saturating_sub(self.viewport_height);
+        let start = self.scroll_offset.min(max_offset);
+        let end = (start + self.viewport_height).min(lines.len());
+        lines[start..end].to_vec()
+    }
+}
+
 pub fn render_frame(frame: &mut Frame<'_>, app: &App) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
@@ -62,7 +88,8 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             } else {
                 " "
             };
-            let overridden = node.kind == NodeKind::Option && app.state.user_values.contains_key(&node.path);
+            let overridden =
+                node.kind == NodeKind::Option && app.state.user_values.contains_key(&node.path);
             let override_mark = if overridden { "*" } else { " " };
             let expand = if node.kind == NodeKind::Module {
                 if app.state.expanded.contains(&node.id) {
@@ -92,11 +119,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
                         } else {
                             format_value(value)
                         };
-                        format!(
-                            " = {} [{}]",
-                            display_value,
-                            format_value_source(*source)
-                        )
+                        format!(" = {} [{}]", display_value, format_value_source(*source))
                     })
                     .unwrap_or_default()
             } else {
@@ -242,7 +265,8 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
         lines.push(Line::from(help.unwrap_or_else(|| "(none)".to_string())));
     }
 
-    let detail = Paragraph::new(lines)
+    let scroller = ScrollableParagraph::from_area(app.state.detail_scroll_offset, area);
+    let detail = Paragraph::new(scroller.visible_lines(&lines))
         .wrap(Wrap { trim: false })
         .block(Block::default().title("Details").borders(Borders::ALL));
 
@@ -340,12 +364,23 @@ fn render_save_overlay(frame: &mut Frame<'_>, app: &App) {
     lines.push(Line::from("Edit path and press Enter (Esc cancel)"));
     lines.push(Line::default());
 
-    let path = app
-        .state
-        .save_prompt_path()
-        .map(str::to_string)
-        .unwrap_or_else(|| app.save_target().display().to_string());
-    lines.push(Line::from(path));
+    let (path, cursor_pos) = match &app.state.mode {
+        UiMode::SavePrompt(prompt) => (prompt.buffer().to_string(), prompt.cursor_pos()),
+        _ => (app.save_target().display().to_string(), 0),
+    };
+    let cursor = cursor_pos.min(path.len());
+    let (left, right) = path.split_at(cursor);
+    lines.push(Line::from(vec![
+        Span::raw(left.to_string()),
+        Span::styled(
+            " ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(right.to_string()),
+    ]));
 
     let panel = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
@@ -375,7 +410,10 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {
         ("F1", "Toggle help overlay"),
         ("Ctrl+S", "Open save prompt"),
         ("d", "Clear selected user override (Normal mode only)"),
-        ("q", "Quit (dirty state requires double confirm, Normal mode only)"),
+        (
+            "q",
+            "Quit (dirty state requires double confirm, Normal mode only)",
+        ),
         ("Tab", "Switch focus between Tree and Diagnostics"),
         (
             "Shift+Up / Shift+Down",
@@ -438,7 +476,8 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {
         lines.push(Line::from("(no selected node)"));
     }
 
-    let panel = Paragraph::new(lines)
+    let scroller = ScrollableParagraph::from_area(app.state.help_scroll_offset, popup_area);
+    let panel = Paragraph::new(scroller.visible_lines(&lines))
         .wrap(Wrap { trim: false })
         .block(Block::default().title("Help").borders(Borders::ALL));
 
@@ -453,8 +492,8 @@ fn render_editing_overlay(frame: &mut Frame<'_>, app: &App) {
     let popup_area = centered_rect(75, 30, frame.area());
     frame.render_widget(Clear, popup_area);
 
-    let cursor = editing.cursor_pos.min(editing.buffer.len());
-    let (left, right) = editing.buffer.split_at(cursor);
+    let cursor = editing.cursor_pos().min(editing.buffer().len());
+    let (left, right) = editing.buffer().split_at(cursor);
 
     let mut lines = Vec::new();
     lines.push(Line::styled(

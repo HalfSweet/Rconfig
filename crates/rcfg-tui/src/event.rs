@@ -2,6 +2,8 @@
 pub enum AppEvent {
     Up,
     Down,
+    ShiftUp,
+    ShiftDown,
     Left,
     Right,
     Home,
@@ -35,6 +37,8 @@ pub fn parse_script_line(line: &str) -> Result<Option<AppEvent>, String> {
     let event = match command {
         "up" => AppEvent::Up,
         "down" => AppEvent::Down,
+        "shift_up" => AppEvent::ShiftUp,
+        "shift_down" => AppEvent::ShiftDown,
         "left" => AppEvent::Left,
         "right" => AppEvent::Right,
         "home" => AppEvent::Home,

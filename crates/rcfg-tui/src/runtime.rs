@@ -132,6 +132,12 @@ pub fn apply_event(app: &mut App, event: AppEvent) -> Result<bool, String> {
 
 fn map_key_event_normal(key_event: KeyEvent) -> Option<AppEvent> {
     match (key_event.code, key_event.modifiers) {
+        (KeyCode::Up, modifiers) if modifiers.contains(KeyModifiers::SHIFT) => {
+            Some(AppEvent::ShiftUp)
+        }
+        (KeyCode::Down, modifiers) if modifiers.contains(KeyModifiers::SHIFT) => {
+            Some(AppEvent::ShiftDown)
+        }
         (KeyCode::Up, _) => Some(AppEvent::Up),
         (KeyCode::Down, _) => Some(AppEvent::Down),
         (KeyCode::Enter, _) => Some(AppEvent::Enter),
@@ -216,6 +222,14 @@ fn apply_event_normal(app: &mut App, event: AppEvent) -> Result<bool, String> {
             app.state.select_next();
             app.state.clear_status_message();
         }
+        AppEvent::ShiftUp => {
+            app.state.scroll_detail_up();
+            app.state.clear_status_message();
+        }
+        AppEvent::ShiftDown => {
+            app.state.scroll_detail_down();
+            app.state.clear_status_message();
+        }
         AppEvent::Enter => {
             let Some(selected_node) = app.state.tree.node(app.state.selected).cloned() else {
                 return Ok(false);
@@ -240,16 +254,14 @@ fn apply_event_normal(app: &mut App, event: AppEvent) -> Result<bool, String> {
                             return Ok(false);
                         }
 
-                        let current = app
-                            .state
-                            .resolved_values
-                            .get(&selected_node.path)
-                            .and_then(|(value, _)| match value {
+                        let current = app.state.resolved_values.get(&selected_node.path).and_then(
+                            |(value, _)| match value {
                                 rcfg_lang::ResolvedValue::EnumVariant(raw) => {
                                     raw.rsplit("::").next().map(str::to_string)
                                 }
                                 _ => None,
-                            });
+                            },
+                        );
 
                         let selected_index = current
                             .as_deref()
@@ -386,8 +398,14 @@ fn apply_event_help(app: &mut App, event: AppEvent) -> Result<bool, String> {
             app.state.close_help_panel();
             app.state.clear_status_message();
         }
-        AppEvent::Up
-        | AppEvent::Down
+        AppEvent::Up => {
+            app.state.scroll_help_up();
+        }
+        AppEvent::Down => {
+            app.state.scroll_help_down();
+        }
+        AppEvent::ShiftUp
+        | AppEvent::ShiftDown
         | AppEvent::Left
         | AppEvent::Right
         | AppEvent::Home
@@ -462,7 +480,9 @@ fn apply_event_save_prompt(app: &mut App, event: AppEvent) -> Result<bool, Strin
                 prompt.delete();
             }
         }
-        AppEvent::Up
+        AppEvent::ShiftUp
+        | AppEvent::ShiftDown
+        | AppEvent::Up
         | AppEvent::Down
         | AppEvent::Tab
         | AppEvent::Space
@@ -571,7 +591,9 @@ fn apply_event_editing(app: &mut App, event: AppEvent) -> Result<bool, String> {
                 editing.move_end();
             }
         }
-        AppEvent::Up
+        AppEvent::ShiftUp
+        | AppEvent::ShiftDown
+        | AppEvent::Up
         | AppEvent::Down
         | AppEvent::Tab
         | AppEvent::Space
@@ -616,7 +638,8 @@ fn apply_event_enum_picker(app: &mut App, event: AppEvent) -> Result<bool, Strin
                     app.state.clear_status_message();
                 }
                 Err(err) => {
-                    app.state.set_status_message(format!("{}: {err}", target_path));
+                    app.state
+                        .set_status_message(format!("{}: {err}", target_path));
                 }
             }
         }
@@ -624,7 +647,9 @@ fn apply_event_enum_picker(app: &mut App, event: AppEvent) -> Result<bool, Strin
             app.state.exit_mode();
             app.state.clear_status_message();
         }
-        AppEvent::Left
+        AppEvent::ShiftUp
+        | AppEvent::ShiftDown
+        | AppEvent::Left
         | AppEvent::Right
         | AppEvent::Home
         | AppEvent::End
@@ -688,7 +713,9 @@ fn apply_event_diagnostics_focus(app: &mut App, event: AppEvent) -> Result<bool,
                     .set_status_message(format!("diagnostic target not found: {path}"));
             }
         }
-        AppEvent::Left
+        AppEvent::ShiftUp
+        | AppEvent::ShiftDown
+        | AppEvent::Left
         | AppEvent::Right
         | AppEvent::Home
         | AppEvent::End
@@ -708,7 +735,7 @@ fn apply_event_diagnostics_focus(app: &mut App, event: AppEvent) -> Result<bool,
 
 fn editing_buffer(mode: &UiMode) -> Option<String> {
     match mode {
-        UiMode::Editing(editing) => Some(editing.buffer.clone()),
+        UiMode::Editing(editing) => Some(editing.buffer().to_string()),
         _ => None,
     }
 }

@@ -9,86 +9,12 @@ use rcfg_lang::{
 use crate::model::{ConfigTree, NodeKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EditingState {
-    pub buffer: String,
-    pub cursor_pos: usize,
-    pub target_path: String,
-}
-
-impl EditingState {
-    pub fn new(buffer: String, target_path: String) -> Self {
-        let cursor_pos = buffer.len();
-        Self {
-            buffer,
-            cursor_pos,
-            target_path,
-        }
-    }
-
-    pub fn insert_char(&mut self, ch: char) {
-        self.buffer.insert(self.cursor_pos, ch);
-        self.cursor_pos += ch.len_utf8();
-    }
-
-    pub fn insert_str(&mut self, text: &str) {
-        self.buffer.insert_str(self.cursor_pos, text);
-        self.cursor_pos += text.len();
-    }
-
-    pub fn backspace(&mut self) -> bool {
-        if self.cursor_pos == 0 {
-            return false;
-        }
-        let prev = previous_char_boundary(&self.buffer, self.cursor_pos);
-        self.buffer.drain(prev..self.cursor_pos);
-        self.cursor_pos = prev;
-        true
-    }
-
-    pub fn delete(&mut self) -> bool {
-        if self.cursor_pos >= self.buffer.len() {
-            return false;
-        }
-        let next = next_char_boundary(&self.buffer, self.cursor_pos);
-        self.buffer.drain(self.cursor_pos..next);
-        true
-    }
-
-    pub fn move_left(&mut self) {
-        if self.cursor_pos > 0 {
-            self.cursor_pos = previous_char_boundary(&self.buffer, self.cursor_pos);
-        }
-    }
-
-    pub fn move_right(&mut self) {
-        if self.cursor_pos < self.buffer.len() {
-            self.cursor_pos = next_char_boundary(&self.buffer, self.cursor_pos);
-        }
-    }
-
-    pub fn move_home(&mut self) {
-        self.cursor_pos = 0;
-    }
-
-    pub fn move_end(&mut self) {
-        self.cursor_pos = self.buffer.len();
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PickerState {
-    pub variants: Vec<String>,
-    pub selected: usize,
-    pub target_path: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PromptState {
+pub struct TextInput {
     pub buffer: String,
     pub cursor_pos: usize,
 }
 
-impl PromptState {
+impl TextInput {
     pub fn new(buffer: String) -> Self {
         let cursor_pos = buffer.len();
         Self { buffer, cursor_pos }
@@ -145,6 +71,121 @@ impl PromptState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditingState {
+    pub input: TextInput,
+    pub target_path: String,
+}
+
+impl EditingState {
+    pub fn new(buffer: String, target_path: String) -> Self {
+        Self {
+            input: TextInput::new(buffer),
+            target_path,
+        }
+    }
+
+    pub fn buffer(&self) -> &str {
+        &self.input.buffer
+    }
+
+    pub fn cursor_pos(&self) -> usize {
+        self.input.cursor_pos
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        self.input.insert_char(ch);
+    }
+
+    pub fn insert_str(&mut self, text: &str) {
+        self.input.insert_str(text);
+    }
+
+    pub fn backspace(&mut self) -> bool {
+        self.input.backspace()
+    }
+
+    pub fn delete(&mut self) -> bool {
+        self.input.delete()
+    }
+
+    pub fn move_left(&mut self) {
+        self.input.move_left();
+    }
+
+    pub fn move_right(&mut self) {
+        self.input.move_right();
+    }
+
+    pub fn move_home(&mut self) {
+        self.input.move_home();
+    }
+
+    pub fn move_end(&mut self) {
+        self.input.move_end();
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PickerState {
+    pub variants: Vec<String>,
+    pub selected: usize,
+    pub target_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptState {
+    pub input: TextInput,
+}
+
+impl PromptState {
+    pub fn new(buffer: String) -> Self {
+        Self {
+            input: TextInput::new(buffer),
+        }
+    }
+
+    pub fn buffer(&self) -> &str {
+        &self.input.buffer
+    }
+
+    pub fn cursor_pos(&self) -> usize {
+        self.input.cursor_pos
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        self.input.insert_char(ch);
+    }
+
+    pub fn insert_str(&mut self, text: &str) {
+        self.input.insert_str(text);
+    }
+
+    pub fn backspace(&mut self) -> bool {
+        self.input.backspace()
+    }
+
+    pub fn delete(&mut self) -> bool {
+        self.input.delete()
+    }
+
+    pub fn move_left(&mut self) {
+        self.input.move_left();
+    }
+
+    pub fn move_right(&mut self) {
+        self.input.move_right();
+    }
+
+    pub fn move_home(&mut self) {
+        self.input.move_home();
+    }
+
+    pub fn move_end(&mut self) {
+        self.input.move_end();
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagFocusState {
     pub selected: usize,
 }
@@ -167,6 +208,8 @@ pub struct UiState {
     pub cached_visible: Option<Vec<usize>>,
     pub scroll_offset: usize,
     pub tree_viewport_height: u16,
+    pub detail_scroll_offset: usize,
+    pub help_scroll_offset: usize,
     pub user_values: BTreeMap<String, ResolvedValue>,
     pub resolved_values: BTreeMap<String, (ResolvedValue, ValueSource)>,
     pub diagnostics: Vec<Diagnostic>,
@@ -187,6 +230,8 @@ impl UiState {
             cached_visible: None,
             scroll_offset: 0,
             tree_viewport_height: 0,
+            detail_scroll_offset: 0,
+            help_scroll_offset: 0,
             user_values: BTreeMap::new(),
             resolved_values: BTreeMap::new(),
             diagnostics: Vec::new(),
@@ -237,6 +282,7 @@ impl UiState {
             .unwrap_or(0);
         let next_index = (index + 1).min(visible.len().saturating_sub(1));
         self.selected = visible[next_index];
+        self.detail_scroll_offset = 0;
         self.ensure_selected_in_view(&visible);
         self.pending_quit_confirm = false;
     }
@@ -254,6 +300,7 @@ impl UiState {
             .unwrap_or(0);
         let prev_index = index.saturating_sub(1);
         self.selected = visible[prev_index];
+        self.detail_scroll_offset = 0;
         self.ensure_selected_in_view(&visible);
         self.pending_quit_confirm = false;
     }
@@ -298,6 +345,7 @@ impl UiState {
         }
 
         self.selected = node_id;
+        self.detail_scroll_offset = 0;
         self.calibrate_scroll_offset();
         self.pending_quit_confirm = false;
     }
@@ -439,6 +487,7 @@ impl UiState {
             return;
         }
 
+        self.help_scroll_offset = 0;
         self.enter_mode(UiMode::Help);
     }
 
@@ -446,6 +495,22 @@ impl UiState {
         if matches!(self.mode, UiMode::Help) {
             self.exit_mode();
         }
+    }
+
+    pub fn scroll_detail_up(&mut self) {
+        self.detail_scroll_offset = self.detail_scroll_offset.saturating_sub(1);
+    }
+
+    pub fn scroll_detail_down(&mut self) {
+        self.detail_scroll_offset = self.detail_scroll_offset.saturating_add(1);
+    }
+
+    pub fn scroll_help_up(&mut self) {
+        self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+    }
+
+    pub fn scroll_help_down(&mut self) {
+        self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
     }
 
     pub fn set_status_message(&mut self, message: impl Into<String>) {
@@ -468,7 +533,7 @@ impl UiState {
 
     pub fn save_prompt_path(&self) -> Option<&str> {
         match &self.mode {
-            UiMode::SavePrompt(prompt) => Some(prompt.buffer.as_str()),
+            UiMode::SavePrompt(prompt) => Some(prompt.buffer()),
             _ => None,
         }
     }
@@ -571,6 +636,7 @@ impl UiState {
             .position(|id| *id == self.selected)
             .unwrap_or_else(|| {
                 self.selected = visible[0];
+                self.detail_scroll_offset = 0;
                 0
             });
 
@@ -744,11 +810,37 @@ mod app {
         let mut prompt = PromptState::new("ab你".to_string());
         prompt.move_left();
         prompt.backspace();
-        assert_eq!(prompt.buffer, "a你");
+        assert_eq!(prompt.buffer(), "a你");
 
         prompt.move_home();
         prompt.insert_char('文');
-        assert_eq!(prompt.buffer, "文a你");
+        assert_eq!(prompt.buffer(), "文a你");
+    }
+
+    #[test]
+    fn text_input_cursor_insert_delete_and_backspace_work() {
+        let mut input = TextInput::new("ab你d".to_string());
+
+        input.move_left();
+        input.move_left();
+        input.insert_char('X');
+        assert_eq!(input.buffer, "abX你d");
+
+        input.move_right();
+        input.delete();
+        assert_eq!(input.buffer, "abX你");
+
+        input.move_left();
+        input.backspace();
+        assert_eq!(input.buffer, "ab你");
+
+        input.move_home();
+        input.delete();
+        assert_eq!(input.buffer, "b你");
+
+        input.move_end();
+        input.backspace();
+        assert_eq!(input.buffer, "b");
     }
 
     #[test]
