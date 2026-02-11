@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use rcfg_lang::{IntRange, Item, SymbolKind, SymbolTable, ValueType};
+use rcfg_lang::{IntRange, Item, SymbolTable, ValueType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
@@ -55,7 +55,6 @@ pub struct ConfigNode {
     pub path: String,
     pub name: String,
     pub kind: NodeKind,
-    pub depth: usize,
     pub value_type: Option<ValueType>,
     pub enum_variants: Vec<String>,
     pub is_secret: bool,
@@ -127,7 +126,6 @@ fn collect_items(
                     path,
                     module.name.value.clone(),
                     NodeKind::Module,
-                    scope.len(),
                     None,
                     Vec::new(),
                     false,
@@ -177,7 +175,6 @@ fn collect_items(
                     path,
                     option.name.value.clone(),
                     NodeKind::Option,
-                    scope.len(),
                     value_type,
                     option_variants,
                     is_secret,
@@ -194,7 +191,6 @@ fn collect_items(
                     path,
                     enum_decl.name.value.clone(),
                     NodeKind::Enum,
-                    scope.len(),
                     None,
                     Vec::new(),
                     false,
@@ -252,7 +248,6 @@ fn push_node(
     path: String,
     name: String,
     kind: NodeKind,
-    depth: usize,
     value_type: Option<ValueType>,
     enum_variants: Vec<String>,
     is_secret: bool,
@@ -270,7 +265,6 @@ fn push_node(
         path,
         name,
         kind,
-        depth,
         value_type,
         enum_variants,
         is_secret,
@@ -343,14 +337,6 @@ fn collect_enum_variants(
             | Item::Patch(_)
             | Item::Export(_) => {}
         }
-    }
-}
-
-pub fn kind_from_symbol(symbol_kind: SymbolKind) -> NodeKind {
-    match symbol_kind {
-        SymbolKind::Mod => NodeKind::Module,
-        SymbolKind::Enum => NodeKind::Enum,
-        SymbolKind::Option => NodeKind::Option,
     }
 }
 
