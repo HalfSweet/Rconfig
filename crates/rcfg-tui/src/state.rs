@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::{Deref, DerefMut};
 
 use rcfg_lang::ast::{AssignStmt, ValuesStmt};
 use rcfg_lang::{
@@ -83,45 +84,19 @@ impl EditingState {
             target_path,
         }
     }
+}
 
-    pub fn buffer(&self) -> &str {
-        &self.input.buffer
+impl Deref for EditingState {
+    type Target = TextInput;
+
+    fn deref(&self) -> &Self::Target {
+        &self.input
     }
+}
 
-    pub fn cursor_pos(&self) -> usize {
-        self.input.cursor_pos
-    }
-
-    pub fn insert_char(&mut self, ch: char) {
-        self.input.insert_char(ch);
-    }
-
-    pub fn insert_str(&mut self, text: &str) {
-        self.input.insert_str(text);
-    }
-
-    pub fn backspace(&mut self) -> bool {
-        self.input.backspace()
-    }
-
-    pub fn delete(&mut self) -> bool {
-        self.input.delete()
-    }
-
-    pub fn move_left(&mut self) {
-        self.input.move_left();
-    }
-
-    pub fn move_right(&mut self) {
-        self.input.move_right();
-    }
-
-    pub fn move_home(&mut self) {
-        self.input.move_home();
-    }
-
-    pub fn move_end(&mut self) {
-        self.input.move_end();
+impl DerefMut for EditingState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.input
     }
 }
 
@@ -143,45 +118,19 @@ impl PromptState {
             input: TextInput::new(buffer),
         }
     }
+}
 
-    pub fn buffer(&self) -> &str {
-        &self.input.buffer
+impl Deref for PromptState {
+    type Target = TextInput;
+
+    fn deref(&self) -> &Self::Target {
+        &self.input
     }
+}
 
-    pub fn cursor_pos(&self) -> usize {
-        self.input.cursor_pos
-    }
-
-    pub fn insert_char(&mut self, ch: char) {
-        self.input.insert_char(ch);
-    }
-
-    pub fn insert_str(&mut self, text: &str) {
-        self.input.insert_str(text);
-    }
-
-    pub fn backspace(&mut self) -> bool {
-        self.input.backspace()
-    }
-
-    pub fn delete(&mut self) -> bool {
-        self.input.delete()
-    }
-
-    pub fn move_left(&mut self) {
-        self.input.move_left();
-    }
-
-    pub fn move_right(&mut self) {
-        self.input.move_right();
-    }
-
-    pub fn move_home(&mut self) {
-        self.input.move_home();
-    }
-
-    pub fn move_end(&mut self) {
-        self.input.move_end();
+impl DerefMut for PromptState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.input
     }
 }
 
@@ -511,7 +460,7 @@ impl UiState {
 
     pub fn save_prompt_path(&self) -> Option<&str> {
         match &self.mode {
-            UiMode::SavePrompt(prompt) => Some(prompt.buffer()),
+            UiMode::SavePrompt(prompt) => Some(prompt.buffer.as_str()),
             _ => None,
         }
     }
@@ -788,11 +737,11 @@ mod app {
         let mut prompt = PromptState::new("ab你".to_string());
         prompt.move_left();
         prompt.backspace();
-        assert_eq!(prompt.buffer(), "a你");
+        assert_eq!(prompt.buffer, "a你");
 
         prompt.move_home();
         prompt.insert_char('文');
-        assert_eq!(prompt.buffer(), "文a你");
+        assert_eq!(prompt.buffer, "文a你");
     }
 
     #[test]

@@ -365,7 +365,7 @@ fn render_save_overlay(frame: &mut Frame<'_>, app: &App) {
     lines.push(Line::default());
 
     let (path, cursor_pos) = match &app.state.mode {
-        UiMode::SavePrompt(prompt) => (prompt.buffer().to_string(), prompt.cursor_pos()),
+        UiMode::SavePrompt(prompt) => (prompt.buffer.to_string(), prompt.cursor_pos),
         _ => (app.save_target().display().to_string(), 0),
     };
     let cursor = cursor_pos.min(path.len());
@@ -492,8 +492,8 @@ fn render_editing_overlay(frame: &mut Frame<'_>, app: &App) {
     let popup_area = centered_rect(75, 30, frame.area());
     frame.render_widget(Clear, popup_area);
 
-    let cursor = editing.cursor_pos().min(editing.buffer().len());
-    let (left, right) = editing.buffer().split_at(cursor);
+    let cursor = editing.cursor_pos.min(editing.buffer.len());
+    let (left, right) = editing.buffer.split_at(cursor);
 
     let mut lines = Vec::new();
     lines.push(Line::styled(

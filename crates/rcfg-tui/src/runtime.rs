@@ -740,7 +740,7 @@ fn apply_event_diagnostics_focus(app: &mut App, event: AppEvent) -> Result<bool,
 
 fn editing_buffer(mode: &UiMode) -> Option<String> {
     match mode {
-        UiMode::Editing(editing) => Some(editing.buffer().to_string()),
+        UiMode::Editing(editing) => Some(editing.buffer.to_string()),
         _ => None,
     }
 }
