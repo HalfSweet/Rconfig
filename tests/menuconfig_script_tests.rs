@@ -78,6 +78,157 @@ down
     assert!(payload.get("user_values").is_some(), "{payload}");
     assert!(payload.get("active_paths").is_some(), "{payload}");
     assert!(payload.get("diagnostics").is_some(), "{payload}");
+    assert!(payload.get("status_message").is_some(), "{payload}");
+}
+
+#[test]
+fn menuconfig_script_enter_chars_enter_commits_editing_flow() {
+    let schema = fixture_path("menuconfig_script_editing_enter", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_editing_enter", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option note: string = "default";
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+enter
+home
+delete
+delete
+delete
+delete
+delete
+delete
+delete
+chars hello
+enter
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(payload["user_values"]["app::note"], serde_json::json!("hello"));
+    assert_eq!(payload["ui_mode"], serde_json::json!("normal"));
+}
+
+#[test]
+fn menuconfig_script_invalid_edit_keeps_editing_mode_and_status_message() {
+    let schema = fixture_path("menuconfig_script_editing_invalid", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_editing_invalid", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option baud: u32 = 9600;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+enter
+home
+delete
+delete
+delete
+delete
+chars x
+enter
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(payload["ui_mode"], serde_json::json!("editing"));
+    assert_eq!(payload["user_values"]["app::baud"], serde_json::Value::Null);
+    let status = payload["status_message"].as_str().unwrap_or_default();
+    assert!(
+        status.contains("int option expects integer literal"),
+        "unexpected status message: {payload}"
+    );
+}
+
+#[test]
+fn menuconfig_script_editing_esc_cancels_and_returns_to_normal() {
+    let schema = fixture_path("menuconfig_script_editing_esc", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_editing_esc", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option note: string = "default";
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+enter
+chars hello
+esc
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(payload["ui_mode"], serde_json::json!("normal"));
+    assert_eq!(payload["user_values"]["app::note"], serde_json::Value::Null);
 }
 
 #[test]

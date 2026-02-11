@@ -2,8 +2,13 @@
 pub enum AppEvent {
     Up,
     Down,
+    Left,
+    Right,
+    Home,
+    End,
     Enter,
     Esc,
+    Tab,
     Space,
     F1,
     Save,
@@ -12,6 +17,8 @@ pub enum AppEvent {
     Chars(String),
     InputChar(char),
     Backspace,
+    Delete,
+    Paste(String),
     Resize(u16, u16),
 }
 
@@ -28,8 +35,13 @@ pub fn parse_script_line(line: &str) -> Result<Option<AppEvent>, String> {
     let event = match command {
         "up" => AppEvent::Up,
         "down" => AppEvent::Down,
+        "left" => AppEvent::Left,
+        "right" => AppEvent::Right,
+        "home" => AppEvent::Home,
+        "end" => AppEvent::End,
         "enter" => AppEvent::Enter,
         "esc" => AppEvent::Esc,
+        "tab" => AppEvent::Tab,
         "space" => AppEvent::Space,
         "f1" => AppEvent::F1,
         "save" => AppEvent::Save,
@@ -37,6 +49,8 @@ pub fn parse_script_line(line: &str) -> Result<Option<AppEvent>, String> {
         "reset" => AppEvent::Reset,
         "chars" => AppEvent::Chars(rest),
         "backspace" => AppEvent::Backspace,
+        "delete" => AppEvent::Delete,
+        "paste" => AppEvent::Paste(rest),
         _ => return Err(format!("unsupported script command `{command}`")),
     };
 

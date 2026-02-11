@@ -7,7 +7,7 @@ use rcfg_lang::{ResolvedValue, Severity, ValueSource};
 use crate::docs::{NodeDocEntry, build_doc_index, i18n_symbol_key};
 use crate::model::ConfigTree;
 use crate::save::{baseline_resolved, build_minimal_overrides, render_values};
-use crate::state::UiState;
+use crate::state::{UiMode, UiState};
 
 #[derive(Debug)]
 pub struct App {
@@ -182,10 +182,19 @@ impl App {
                 .node(self.state.selected)
                 .map(|node| node.path.clone())
                 .unwrap_or_default(),
+            "ui_mode": match &self.state.mode {
+                UiMode::Normal => "normal",
+                UiMode::Editing(_) => "editing",
+                UiMode::EnumPicker(_) => "enum_picker",
+                UiMode::SavePrompt(_) => "save_prompt",
+                UiMode::Help => "help",
+                UiMode::DiagnosticsFocus(_) => "diagnostics_focus",
+            },
             "user_values": user_values,
             "active_paths": active_paths,
             "diagnostics": diagnostics,
             "resolved_options": resolved_options,
+            "status_message": self.state.status_message,
         })
     }
 

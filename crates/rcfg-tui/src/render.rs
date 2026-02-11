@@ -8,6 +8,7 @@ use rcfg_lang::{ResolvedValue, Severity, ValueType};
 
 use crate::app::App;
 use crate::model::NodeKind;
+use crate::state::UiMode;
 
 pub fn render_frame(frame: &mut Frame<'_>, app: &App) {
     let areas = Layout::default()
@@ -29,23 +30,34 @@ pub fn render_frame(frame: &mut Frame<'_>, app: &App) {
     render_diagnostics_panel(frame, app, areas[1]);
     render_status_bar(frame, app, areas[2]);
 
-    if app.state.save_prompt_path().is_some() {
-        render_save_overlay(frame, app);
-    } else if app.state.help_visible {
-        render_help_overlay(frame, app);
+    match &app.state.mode {
+        UiMode::SavePrompt(_) => render_save_overlay(frame, app),
+        UiMode::Help => render_help_overlay(frame, app),
+        UiMode::Editing(_) => render_editing_overlay(frame, app),
+        UiMode::EnumPicker(_) | UiMode::DiagnosticsFocus(_) | UiMode::Normal => {}
     }
 }
 
 fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let items = app
+    let visible = app.state.visible_nodes();
+    let viewport = usize::from(app.state.tree_viewport_height);
+    let start = app
         .state
-        .visible_nodes()
+        .scroll_offset
+        .min(visible.len().saturating_sub(viewport.max(1)));
+    let end = if viewport == 0 {
+        visible.len()
+    } else {
+        (start + viewport).min(visible.len())
+    };
+
+    let items = visible[start..end]
         .into_iter()
         .filter_map(|node_id| {
-            let node = app.state.tree.node(node_id)?;
-            let depth = depth_of(app, node_id);
+            let node = app.state.tree.node(*node_id)?;
+            let depth = depth_of(app, *node_id);
             let indent = "  ".repeat(depth);
-            let marker = if node_id == app.state.selected {
+            let marker = if *node_id == app.state.selected {
                 ">"
             } else {
                 " "
@@ -81,7 +93,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             if node.kind == NodeKind::Option && !app.state.active_paths.contains(&node.path) {
                 style = style.fg(Color::DarkGray);
             }
-            if node_id == app.state.selected {
+            if *node_id == app.state.selected {
                 style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
             }
 
@@ -271,6 +283,46 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {
     let panel = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .block(Block::default().title("Help").borders(Borders::ALL));
+
+    frame.render_widget(panel, popup_area);
+}
+
+fn render_editing_overlay(frame: &mut Frame<'_>, app: &App) {
+    let UiMode::Editing(editing) = &app.state.mode else {
+        return;
+    };
+
+    let popup_area = centered_rect(75, 30, frame.area());
+    frame.render_widget(Clear, popup_area);
+
+    let cursor = editing.cursor_pos.min(editing.buffer.len());
+    let (left, right) = editing.buffer.split_at(cursor);
+
+    let mut lines = Vec::new();
+    lines.push(Line::styled(
+        "Edit Value",
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+    lines.push(Line::from(format!(
+        "path: {} (Enter submit, Esc cancel)",
+        editing.target_path
+    )));
+    lines.push(Line::default());
+    lines.push(Line::from(vec![
+        Span::raw(left.to_string()),
+        Span::styled(
+            " ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(right.to_string()),
+    ]));
+
+    let panel = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().title("Editing").borders(Borders::ALL));
 
     frame.render_widget(panel, popup_area);
 }
