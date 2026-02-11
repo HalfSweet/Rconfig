@@ -136,7 +136,7 @@ impl DerefMut for PromptState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagFocusState {
-    pub selected: usize,
+    pub(crate) selected: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,7 +171,12 @@ pub struct UiState {
 
 impl UiState {
     pub fn new(tree: ConfigTree) -> Self {
-        let selected = tree.root_ids.first().copied().unwrap_or(0);
+        let selected = tree
+            .root_ids
+            .first()
+            .copied()
+            .or_else(|| tree.nodes.first().map(|node| node.id))
+            .unwrap_or(usize::MAX);
         Self {
             tree,
             selected,

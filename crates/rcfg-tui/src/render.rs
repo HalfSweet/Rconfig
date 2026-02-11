@@ -375,6 +375,7 @@ fn render_save_overlay(frame: &mut Frame<'_>, app: &App) {
         _ => (app.save_target().display().to_string(), 0),
     };
     let cursor = cursor_pos.min(path.len());
+    debug_assert!(path.is_char_boundary(cursor));
     let (left, right) = path.split_at(cursor);
     lines.push(Line::from(vec![
         Span::raw(left.to_string()),
@@ -499,6 +500,7 @@ fn render_editing_overlay(frame: &mut Frame<'_>, app: &App) {
     frame.render_widget(Clear, popup_area);
 
     let cursor = editing.cursor_pos.min(editing.buffer.len());
+    debug_assert!(editing.buffer.is_char_boundary(cursor));
     let (left, right) = editing.buffer.split_at(cursor);
 
     let mut lines = Vec::new();
