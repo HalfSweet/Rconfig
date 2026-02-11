@@ -329,12 +329,60 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {
     let popup_area = centered_rect(75, 70, frame.area());
     frame.render_widget(Clear, popup_area);
 
+    let shortcuts = [
+        (
+            "Up / Down",
+            "Normal: move selection; Editing: no-op; DiagnosticsFocus: move diagnostic; Help: scroll docs",
+        ),
+        (
+            "Enter",
+            "Normal: toggle module or edit option; Editing: submit; EnumPicker: confirm; DiagnosticsFocus: jump",
+        ),
+        ("Space", "Toggle bool (Normal mode only)"),
+        (
+            "Esc",
+            "Exit current mode (Editing/EnumPicker/SavePrompt/Help/DiagnosticsFocus)",
+        ),
+        ("F1", "Toggle help overlay"),
+        ("Ctrl+S", "Open save prompt"),
+        ("d", "Clear selected user override (Normal mode only)"),
+        ("q", "Quit (dirty state requires double confirm, Normal mode only)"),
+        ("Tab", "Switch focus between Tree and Diagnostics"),
+        (
+            "Shift+Up / Shift+Down",
+            "Scroll details panel (Normal mode only)",
+        ),
+        (
+            "Left / Right / Home / End",
+            "Move cursor in Editing/SavePrompt",
+        ),
+        ("Delete", "Delete char after cursor in Editing/SavePrompt"),
+        (
+            "Backspace",
+            "Delete char before cursor in Editing/SavePrompt",
+        ),
+    ];
+
     let mut lines = Vec::new();
     lines.push(Line::styled(
         "Help (F1/Esc close)",
         Style::default().add_modifier(Modifier::BOLD),
     ));
     lines.push(Line::default());
+
+    lines.push(Line::styled(
+        "Shortcuts:",
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+    for (key, action) in shortcuts {
+        lines.push(Line::from(format!("{key:<26}{action}")));
+    }
+
+    lines.push(Line::default());
+    lines.push(Line::styled(
+        "Current Node:",
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
 
     if let Some(node) = app.state.tree.node(app.state.selected) {
         let (label_key, help_key) = app.doc_keys_for_path(&node.path);
@@ -357,6 +405,8 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         ));
         lines.push(Line::from(help.unwrap_or_else(|| "(none)".to_string())));
+    } else {
+        lines.push(Line::from("(no selected node)"));
     }
 
     let panel = Paragraph::new(lines)
