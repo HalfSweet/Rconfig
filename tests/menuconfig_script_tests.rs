@@ -956,7 +956,6 @@ fn menuconfig_script_applies_context_to_activation() {
 mod ctx {
   option arch: string;
 }
-
 mod app {
   option enabled: bool = false;
   when ctx::arch == "arm" {
@@ -995,6 +994,57 @@ mod app {
     assert!(
         active_paths.contains(&"app::arm_only"),
         "ctx-driven option should be active with --context: {payload}"
+    );
+}
+
+#[test]
+fn menuconfig_script_inactive_option_status_includes_guard_reason() {
+    let schema = fixture_path("menuconfig_script_inactive_reason", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_inactive_reason", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  option enabled: bool = false;
+
+  when enabled {
+    option gated: bool = true;
+  }
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+down
+enter
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(payload["selected_path"], serde_json::json!("app::gated"));
+    let status = payload["status_message"].as_str().unwrap_or_default();
+    assert!(
+        status.contains("inactive option is not editable") && status.contains("when enabled"),
+        "status should include inactive reason guard: {payload}"
     );
 }
 

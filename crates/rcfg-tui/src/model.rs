@@ -19,6 +19,35 @@ pub enum GuardClause {
     },
 }
 
+pub fn summarize_guard_clauses(guard: &[GuardClause]) -> String {
+    guard
+        .iter()
+        .map(format_guard_clause_compact)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+pub fn first_guard_clause(guard: &[GuardClause]) -> Option<String> {
+    guard.first().map(format_guard_clause_compact)
+}
+
+fn format_guard_clause_compact(clause: &GuardClause) -> String {
+    match clause {
+        GuardClause::When(expr) => format!("when {expr}"),
+        GuardClause::MatchCase {
+            pattern,
+            case_guard,
+            ..
+        } => {
+            if let Some(case_guard) = case_guard {
+                format!("case {pattern} if {case_guard}")
+            } else {
+                format!("case {pattern}")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfigNode {
     pub id: usize,

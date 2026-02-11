@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use rcfg_lang::{ResolvedValue, Severity, ValueType};
 
 use crate::app::App;
-use crate::model::{GuardClause, NodeKind};
+use crate::model::{GuardClause, NodeKind, first_guard_clause, summarize_guard_clauses};
 use crate::state::UiMode;
 
 #[derive(Debug, Clone, Copy)]
@@ -119,7 +119,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 && !app.state.active_paths.contains(&node.path)
                 && !node.guard.is_empty()
             {
-                format!(" [{}]", summarize_guard(&node.guard))
+                format!(" [{}]", summarize_guard_clauses(&node.guard))
             } else {
                 String::new()
             };
@@ -194,9 +194,23 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
         } else {
             true
         };
+        let activation_reason = if node.kind == NodeKind::Option && !active {
+            first_guard_clause(&node.guard)
+                .map(|summary| format!("inactive ({summary})"))
+                .unwrap_or_else(|| "inactive".to_string())
+        } else {
+            "active".to_string()
+        };
         lines.push(Line::from(vec![
             Span::styled("active: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(if active { "yes" } else { "no" }),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "activation: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(activation_reason),
         ]));
 
         let override_text = app
@@ -648,27 +662,6 @@ fn format_value_source(source: rcfg_lang::ValueSource) -> String {
         rcfg_lang::ValueSource::Default => "default".to_string(),
         rcfg_lang::ValueSource::Context => "context".to_string(),
     }
-}
-
-fn summarize_guard(guard: &[GuardClause]) -> String {
-    guard
-        .iter()
-        .map(|clause| match clause {
-            GuardClause::When(expr) => format!("when {expr}"),
-            GuardClause::MatchCase {
-                pattern,
-                case_guard,
-                ..
-            } => {
-                if let Some(case_guard) = case_guard {
-                    format!("case {pattern} if {case_guard}")
-                } else {
-                    format!("case {pattern}")
-                }
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 fn format_guard_chain(guard: &[GuardClause]) -> String {

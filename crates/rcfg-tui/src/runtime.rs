@@ -16,6 +16,7 @@ use rcfg_lang::ValueType;
 
 use crate::app::App;
 use crate::event::{AppEvent, parse_script_line};
+use crate::model::first_guard_clause;
 use crate::render::render_frame;
 use crate::state::{DiagFocusState, EditingState, PickerState, UiMode};
 
@@ -254,8 +255,10 @@ fn apply_event_normal(app: &mut App, event: AppEvent) -> Result<bool, String> {
                 }
                 crate::model::NodeKind::Option => {
                     if !app.state.active_paths.contains(&selected_node.path) {
-                        app.state
-                            .set_status_message("inactive option is not editable");
+                        let reason = first_guard_clause(&selected_node.guard)
+                            .map(|summary| format!("inactive option is not editable ({summary})"))
+                            .unwrap_or_else(|| "inactive option is not editable".to_string());
+                        app.state.set_status_message(reason);
                         return Ok(false);
                     }
 
@@ -323,6 +326,13 @@ fn apply_event_normal(app: &mut App, event: AppEvent) -> Result<bool, String> {
             let Some(selected_node) = app.state.tree.node(app.state.selected) else {
                 return Ok(false);
             };
+            if !app.state.active_paths.contains(&selected_node.path) {
+                let reason = first_guard_clause(&selected_node.guard)
+                    .map(|summary| format!("inactive option is not editable ({summary})"))
+                    .unwrap_or_else(|| "inactive option is not editable".to_string());
+                app.state.set_status_message(reason);
+                return Ok(false);
+            }
             if selected_node.value_type != Some(ValueType::Bool) {
                 app.state
                     .set_status_message("selected option is not bool and cannot toggle");
