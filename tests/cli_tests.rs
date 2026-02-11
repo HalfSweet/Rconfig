@@ -984,8 +984,67 @@ schema = "src/missing.rcfg"
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("manifest entry schema does not exist"),
+        stderr.contains("no schema files matched pattern"),
         "{stderr}"
+    );
+}
+
+#[test]
+fn rcfg_check_manifest_glob_schema_loads_sorted_files() {
+    let root = fixture_path("cli_manifest_glob_schema");
+    let manifest = root.join("Config.toml");
+    let values = root.join("values.rcfgv");
+    let schema_a = root.join("src/00_base.rcfg");
+    let schema_b = root.join("src/10_derived.rcfg");
+
+    write_file(
+        &schema_a,
+        r#"
+option enabled: bool = false;
+"#,
+    );
+    write_file(
+        &schema_b,
+        r#"
+when enabled {
+  option baud: u32 = 9600;
+}
+"#,
+    );
+    write_file(
+        &manifest,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+
+[entry]
+schema = "src/*.rcfg"
+"#,
+    );
+    write_file(
+        &values,
+        r#"
+demo::enabled = true;
+demo::baud = 115200;
+"#,
+    );
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args([
+            "check",
+            "--manifest",
+            manifest.to_str().expect("manifest path"),
+            "--values",
+            values.to_str().expect("values path"),
+        ])
+        .output()
+        .expect("run rcfg check");
+    assert!(
+        output.status.success(),
+        "rcfg check should succeed: stderr={} stdout={}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
     );
 }
 

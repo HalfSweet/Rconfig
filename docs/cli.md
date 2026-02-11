@@ -8,6 +8,19 @@
 - `--context <PATH>`：上下文注入 JSON（`ctx`）
 - `--i18n <PATH>`：语言包 TOML（用于诊断消息 fallback）
 
+`Config.toml` 的 `[entry].schema` 支持以下形式：
+
+- 字符串：`schema = "src/schema.rcfg"`
+- 字符串数组：`schema = ["src/types.rcfg", "src/options.rcfg"]`
+- glob：`schema = "src/*.rcfg"`（按字典序加载）
+
+补充规则：
+
+- 数组按声明顺序依次展开；每个 pattern 内按字典序
+- 展开后会做路径去重（按 canonical path）
+- pattern 0 命中时报错：`no schema files matched pattern '...'`
+- `--schema` 仍为单文件入口，不走 manifest 的多文件/glob 逻辑
+
 ## `rcfg check`
 
 校验 schema + values 并输出诊断。

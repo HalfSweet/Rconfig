@@ -5,6 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
+glob = "0.3.2"
 rcfg-lang = { path = "../rcfg-lang" }
 serde_json = "1.0.139"
 toml = "0.8.20"

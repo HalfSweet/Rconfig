@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use glob::glob;
 use rcfg_lang::parser::parse_schema_with_diagnostics;
 use rcfg_lang::{
     Diagnostic, File, ResolvedConfig, ResolvedValue, Severity, ValuesAnalysisReport,
@@ -20,7 +21,7 @@ pub struct I18nCatalog {
 #[derive(Debug, Clone)]
 pub struct ManifestModel {
     pub manifest_path: PathBuf,
-    pub schema: PathBuf,
+    pub schema: Vec<PathBuf>,
     pub package_name: String,
     pub package_version: String,
     pub dependencies: BTreeMap<String, PathBuf>,
@@ -358,25 +359,15 @@ pub fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, Strin
         .get("entry")
         .and_then(toml::Value::as_table)
         .ok_or_else(|| "manifest missing [entry] table".to_string())?;
-    let schema = entry
-        .get("schema")
-        .and_then(toml::Value::as_str)
-        .ok_or_else(|| "manifest missing entry.schema".to_string())?;
 
     let base = manifest_path.parent().unwrap_or_else(|| Path::new("."));
-    let schema_path = base.join(schema);
-    if !schema_path.is_file() {
-        return Err(format!(
-            "manifest entry schema does not exist: {}",
-            schema_path.display()
-        ));
-    }
+    let schema = parse_manifest_schema_paths(entry, base)?;
 
     let dependencies = parse_manifest_dependencies(&value, base)?;
 
     Ok(Some(ManifestModel {
         manifest_path,
-        schema: schema_path,
+        schema,
         package_name,
         package_version,
         dependencies,
@@ -529,6 +520,79 @@ fn parse_manifest_dependencies(
     Ok(out)
 }
 
+fn parse_manifest_schema_paths(
+    entry: &toml::value::Table,
+    base: &Path,
+) -> Result<Vec<PathBuf>, String> {
+    let schema_value = entry
+        .get("schema")
+        .ok_or_else(|| "manifest missing entry.schema".to_string())?;
+
+    let schema_patterns = match schema_value {
+        toml::Value::String(pattern) => vec![pattern.clone()],
+        toml::Value::Array(items) => {
+            if items.is_empty() {
+                return Err("manifest entry.schema array cannot be empty".to_string());
+            }
+
+            items
+                .iter()
+                .map(|item| {
+                    item.as_str().map(str::to_string).ok_or_else(|| {
+                        "manifest entry.schema array must contain only string patterns".to_string()
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        _ => {
+            return Err("manifest entry.schema must be a string or string array".to_string());
+        }
+    };
+
+    let mut canonical_seen = BTreeSet::new();
+    let mut out = Vec::new();
+
+    for pattern in schema_patterns {
+        let mut matched_for_pattern = Vec::new();
+        let pattern_path = base.join(&pattern);
+        let pattern_glob = pattern_path.to_string_lossy().to_string();
+        let entries = glob(&pattern_glob)
+            .map_err(|err| format!("invalid schema glob pattern `{pattern}`: {err}"))?;
+
+        for entry in entries {
+            let path = entry.map_err(|err| {
+                format!(
+                    "failed to resolve schema glob `{pattern}` entry: {}",
+                    err.path().display()
+                )
+            })?;
+            if path.is_file() {
+                matched_for_pattern.push(path);
+            }
+        }
+
+        matched_for_pattern.sort();
+
+        if matched_for_pattern.is_empty() {
+            return Err(format!("no schema files matched pattern `{pattern}`"));
+        }
+
+        for path in matched_for_pattern {
+            let canonical = fs::canonicalize(&path)
+                .map_err(|err| format!("failed to resolve schema {}: {err}", path.display()))?;
+            if canonical_seen.insert(canonical) {
+                out.push(path);
+            }
+        }
+    }
+
+    if out.is_empty() {
+        return Err("manifest entry.schema resolved to empty schema list".to_string());
+    }
+
+    Ok(out)
+}
+
 pub fn resolve_schema_path(
     schema: Option<&Path>,
     manifest: Option<&ManifestModel>,
@@ -538,7 +602,11 @@ pub fn resolve_schema_path(
     }
 
     if let Some(manifest) = manifest {
-        return Ok(manifest.schema.clone());
+        return manifest
+            .schema
+            .first()
+            .cloned()
+            .ok_or_else(|| "manifest entry.schema resolved to empty schema list".to_string());
     }
 
     Err("--schema is required (or provide --manifest with entry.schema)".to_string())
@@ -551,24 +619,38 @@ fn load_schema_with_dependencies(
     let mut all_diags = Vec::new();
 
     for manifest in &graph.packages_depth_first {
-        let schema_text = fs::read_to_string(&manifest.schema).map_err(|err| {
-            format!(
-                "failed to read schema {} for package `{}`: {err}",
-                manifest.schema.display(),
-                manifest.package_name
-            )
-        })?;
-        let (schema_file, mut diags) = parse_schema_with_diagnostics(&schema_text);
+        let mut package_items = Vec::new();
+
+        for schema_path in &manifest.schema {
+            let schema_text = fs::read_to_string(schema_path).map_err(|err| {
+                format!(
+                    "failed to read schema {} for package `{}`: {err}",
+                    schema_path.display(),
+                    manifest.package_name
+                )
+            })?;
+            let (schema_file, mut diags) = parse_schema_with_diagnostics(&schema_text);
+            for diagnostic in &mut diags {
+                if diagnostic.path.is_none() {
+                    diagnostic.path = Some(schema_path.display().to_string());
+                }
+            }
+            package_items.extend(schema_file.items);
+            all_diags.append(&mut diags);
+        }
+
         let (mut namespaced_items, mut namespace_diags) =
-            namespace_schema_items_for_package(schema_file.items, manifest.package_name.as_str());
+            namespace_schema_items_for_package(package_items, manifest.package_name.as_str());
         for diagnostic in &mut namespace_diags {
             if diagnostic.path.is_none() {
-                diagnostic.path = Some(manifest.schema.display().to_string());
+                diagnostic.path = manifest
+                    .schema
+                    .first()
+                    .map(|path| path.display().to_string());
             }
         }
 
         all_items.append(&mut namespaced_items);
-        all_diags.append(&mut diags);
         all_diags.append(&mut namespace_diags);
     }
 
@@ -1231,5 +1313,115 @@ schema = "src/schema.rcfg"
         );
         assert!(session.symbols().option_type("app::enabled").is_some());
         assert!(session.symbols().option_type("app::app::enabled").is_none());
+    }
+
+    #[test]
+    fn manifest_schema_supports_multiple_files() {
+        let root = fixture_root("manifest_schema_multiple_files");
+        let manifest = root.join("Config.toml");
+        let schema_a = root.join("src/a.rcfg");
+        let schema_b = root.join("src/b.rcfg");
+
+        write_file(&schema_a, "option enabled: bool = false;\n");
+        write_file(
+            &schema_b,
+            r#"
+when enabled {
+  option baud: u32 = 9600;
+}
+"#,
+        );
+        write_file(
+            &manifest,
+            r#"
+[package]
+name = "app"
+version = "0.1.0"
+
+[entry]
+schema = ["src/a.rcfg", "src/b.rcfg"]
+"#,
+        );
+
+        let graph = super::load_manifest_graph(Some(&manifest))
+            .expect("load manifest graph")
+            .expect("manifest graph should exist");
+
+        assert_eq!(graph.root.schema.len(), 2);
+        assert!(
+            graph.root.schema[0].ends_with("src/a.rcfg")
+                && graph.root.schema[1].ends_with("src/b.rcfg"),
+            "entry.schema list should preserve declaration order: {:?}",
+            graph.root.schema
+        );
+
+        let session = super::load_session(&super::AppLoadOptions {
+            schema: None,
+            manifest: Some(manifest),
+            context: None,
+            i18n: None,
+            strict: false,
+        })
+        .expect("load app session");
+
+        assert!(session.symbols().option_type("app::enabled").is_some());
+        assert!(session.symbols().option_type("app::baud").is_some());
+    }
+
+    #[test]
+    fn manifest_schema_glob_is_sorted_and_deduplicated() {
+        let root = fixture_root("manifest_schema_glob_sorted");
+        let manifest = root.join("Config.toml");
+        let schema_a = root.join("src/a.rcfg");
+        let schema_b = root.join("src/b.rcfg");
+
+        write_file(&schema_a, "option from_a: bool = true;\n");
+        write_file(&schema_b, "option from_b: bool = true;\n");
+        write_file(
+            &manifest,
+            r#"
+[package]
+name = "app"
+version = "0.1.0"
+
+[entry]
+schema = ["src/*.rcfg", "src/a.rcfg"]
+"#,
+        );
+
+        let loaded = super::load_manifest(Some(&manifest))
+            .expect("load manifest")
+            .expect("manifest should exist");
+
+        assert_eq!(loaded.schema.len(), 2);
+        assert!(
+            loaded.schema[0].ends_with("src/a.rcfg") && loaded.schema[1].ends_with("src/b.rcfg"),
+            "glob matches should be sorted and duplicated file removed: {:?}",
+            loaded.schema
+        );
+    }
+
+    #[test]
+    fn manifest_schema_glob_with_zero_match_returns_error() {
+        let root = fixture_root("manifest_schema_glob_zero_match");
+        let manifest = root.join("Config.toml");
+
+        write_file(
+            &manifest,
+            r#"
+[package]
+name = "app"
+version = "0.1.0"
+
+[entry]
+schema = "src/*.rcfg"
+"#,
+        );
+
+        let error = super::load_manifest(Some(&manifest)).expect_err("should fail");
+        assert!(
+            error.contains("no schema files matched pattern `src/*.rcfg`"),
+            "{error}"
+        );
     }
 }
