@@ -151,7 +151,10 @@ pub fn load_session(options: &AppLoadOptions) -> Result<AppSession, String> {
         parse_schema_with_diagnostics(&schema_text)
     };
 
-    if !parse_diagnostics.is_empty() {
+    if parse_diagnostics
+        .iter()
+        .any(|diag| diag.severity == Severity::Error)
+    {
         return Ok(AppSession {
             schema_file,
             parse_diagnostics,
@@ -556,11 +559,17 @@ fn load_schema_with_dependencies(
             )
         })?;
         let (schema_file, mut diags) = parse_schema_with_diagnostics(&schema_text);
-        all_items.extend(namespace_schema_items_for_package(
-            schema_file.items,
-            manifest.package_name.as_str(),
-        ));
+        let (mut namespaced_items, mut namespace_diags) =
+            namespace_schema_items_for_package(schema_file.items, manifest.package_name.as_str());
+        for diagnostic in &mut namespace_diags {
+            if diagnostic.path.is_none() {
+                diagnostic.path = Some(manifest.schema.display().to_string());
+            }
+        }
+
+        all_items.append(&mut namespaced_items);
         all_diags.append(&mut diags);
+        all_diags.append(&mut namespace_diags);
     }
 
     Ok((rcfg_lang::File { items: all_items }, all_diags))
@@ -569,32 +578,54 @@ fn load_schema_with_dependencies(
 fn namespace_schema_items_for_package(
     items: Vec<rcfg_lang::Item>,
     package_name: &str,
-) -> Vec<rcfg_lang::Item> {
+) -> (Vec<rcfg_lang::Item>, Vec<rcfg_lang::Diagnostic>) {
     let mut first_namespaced_index = None;
-    let mut namespaced_items = Vec::new();
 
     for (index, item) in items.iter().enumerate() {
-        let is_ctx_module = matches!(
-            item,
-            rcfg_lang::Item::Mod(module) if module.name.value == "ctx"
-        );
-        if is_ctx_module {
+        if is_ctx_module(item) {
             continue;
         }
 
         if first_namespaced_index.is_none() {
             first_namespaced_index = Some(index);
         }
-        namespaced_items.push(item.clone());
     }
+
+    let mut diagnostics = Vec::new();
+
+    let namespaced_items = if let Some(legacy_module) =
+        legacy_package_wrapper_module(&items, package_name)
+    {
+        diagnostics.push(rcfg_lang::Diagnostic::warning(
+            "W_LEGACY_PACKAGE_SCHEMA_LAYOUT",
+            format!(
+                "package `{}` schema uses deprecated top-level `mod {}` wrapper; move inner items to file root",
+                package_name, package_name
+            ),
+            legacy_module.span,
+        ));
+
+        let mut flattened = items
+            .iter()
+            .filter_map(|item| match item {
+                rcfg_lang::Item::Use(use_stmt) => Some(rcfg_lang::Item::Use(use_stmt.clone())),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        flattened.extend(legacy_module.items.clone());
+        flattened
+    } else {
+        items
+            .iter()
+            .filter(|item| !is_ctx_module(item))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
 
     let mut out = Vec::new();
     let mut inserted_namespace = false;
     for (index, item) in items.into_iter().enumerate() {
-        let is_ctx_module = matches!(
-            item,
-            rcfg_lang::Item::Mod(ref module) if module.name.value == "ctx"
-        );
+        let is_ctx_module = is_ctx_module(&item);
 
         if !inserted_namespace && first_namespaced_index.is_some_and(|value| value == index) {
             out.push(make_package_namespace_module(
@@ -616,7 +647,37 @@ fn namespace_schema_items_for_package(
         ));
     }
 
-    out
+    (out, diagnostics)
+}
+
+fn is_ctx_module(item: &rcfg_lang::Item) -> bool {
+    matches!(item, rcfg_lang::Item::Mod(module) if module.name.value == "ctx")
+}
+
+fn legacy_package_wrapper_module<'a>(
+    items: &'a [rcfg_lang::Item],
+    package_name: &str,
+) -> Option<&'a rcfg_lang::ast::ModDecl> {
+    let mut candidate = None;
+
+    for item in items {
+        if matches!(item, rcfg_lang::Item::Use(_)) || is_ctx_module(item) {
+            continue;
+        }
+
+        let rcfg_lang::Item::Mod(module) = item else {
+            return None;
+        };
+        if module.name.value != package_name {
+            return None;
+        }
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(module);
+    }
+
+    candidate
 }
 
 fn make_package_namespace_module(
@@ -1036,5 +1097,139 @@ mod app {
             .find(|option| option.path.ends_with("::app::enabled"))
             .expect("namespaced app::enabled option");
         assert_eq!(enabled.value, Some(rcfg_lang::ResolvedValue::Bool(true)));
+    }
+
+    #[test]
+    fn manifest_schema_without_legacy_wrapper_uses_single_package_namespace() {
+        let root = fixture_root("manifest_schema_without_legacy_wrapper");
+
+        let app_manifest = root.join("app/Config.toml");
+        let app_schema = root.join("app/src/schema.rcfg");
+
+        let foo_manifest = root.join("deps/foo/Config.toml");
+        let foo_schema = root.join("deps/foo/src/schema.rcfg");
+
+        write_file(
+            &app_schema,
+            r#"
+use foo as foo_cfg;
+
+option enabled: bool = false;
+
+when enabled {
+  option baud: u32 = 115200;
+}
+
+patch app {
+  default baud = 9600;
+}
+"#,
+        );
+        write_file(
+            &foo_schema,
+            r#"
+option enabled: bool = true;
+"#,
+        );
+
+        write_file(
+            &app_manifest,
+            r#"
+[package]
+name = "app"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+foo = "../deps/foo"
+"#,
+        );
+        write_file(
+            &foo_manifest,
+            r#"
+[package]
+name = "foo"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+        );
+
+        let session = super::load_session(&super::AppLoadOptions {
+            schema: None,
+            manifest: Some(app_manifest),
+            context: None,
+            i18n: None,
+            strict: false,
+        })
+        .expect("load app session with dependencies");
+
+        assert!(
+            session
+                .parse_diagnostics()
+                .iter()
+                .all(|diag| diag.code != "W_LEGACY_PACKAGE_SCHEMA_LAYOUT"),
+            "new schema layout should not emit legacy warning: {:?}",
+            session.parse_diagnostics()
+        );
+
+        assert!(session.symbols().option_type("foo::enabled").is_some());
+        assert!(session.symbols().option_type("foo::foo::enabled").is_none());
+    }
+
+    #[test]
+    fn manifest_schema_with_legacy_wrapper_emits_warning_and_still_builds_symbols() {
+        let root = fixture_root("manifest_schema_with_legacy_wrapper");
+
+        let manifest = root.join("Config.toml");
+        let schema = root.join("src/schema.rcfg");
+
+        write_file(
+            &schema,
+            r#"
+mod app {
+  option enabled: bool = false;
+}
+"#,
+        );
+        write_file(
+            &manifest,
+            r#"
+[package]
+name = "app"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+        );
+
+        let session = super::load_session(&super::AppLoadOptions {
+            schema: None,
+            manifest: Some(manifest),
+            context: None,
+            i18n: None,
+            strict: false,
+        })
+        .expect("load app session");
+
+        assert!(
+            session.parse_diagnostics().iter().any(|diag| {
+                diag.code == "W_LEGACY_PACKAGE_SCHEMA_LAYOUT"
+                    && diag.severity == rcfg_lang::Severity::Warning
+            }),
+            "legacy wrapper should emit warning: {:?}",
+            session.parse_diagnostics()
+        );
+
+        assert!(
+            !session.symbols().is_empty(),
+            "warnings should not trigger early return with empty symbols"
+        );
+        assert!(session.symbols().option_type("app::enabled").is_some());
+        assert!(session.symbols().option_type("app::app::enabled").is_none());
     }
 }

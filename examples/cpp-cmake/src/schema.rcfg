@@ -1,5 +1,5 @@
-use foo::foo as foo_cfg;
-use bar::bar as bar_cfg;
+use foo as foo_cfg;
+use bar as bar_cfg;
 #[cfg(true)]
 mod app {
   /// Build channel consumed by app runtime.

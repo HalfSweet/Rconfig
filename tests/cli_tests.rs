@@ -1373,7 +1373,7 @@ hal_uart = "../deps/hal_uart"
         &values,
         r#"
 demo::app::enabled = true;
-hal_uart::hal_uart::enabled = true;
+hal_uart::enabled = true;
 "#,
     );
 
