@@ -705,6 +705,135 @@ esc
 }
 
 #[test]
+fn menuconfig_script_masks_secret_values_in_json() {
+    let schema = fixture_path("menuconfig_script_secret_mask", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_secret_mask", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  #[secret]
+  option token: string = "default-token";
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+enter
+home
+delete
+delete
+delete
+delete
+delete
+delete
+delete
+delete
+delete
+delete
+delete
+delete
+delete
+chars super-secret
+enter
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(payload["user_values"]["app::token"], serde_json::json!("***"));
+
+    let resolved = payload["resolved_options"]
+        .as_array()
+        .expect("resolved options array");
+    let token = resolved
+        .iter()
+        .find(|item| item["path"] == "app::token")
+        .expect("resolved token");
+    assert_eq!(token["value"], serde_json::json!("***"));
+}
+
+#[test]
+fn menuconfig_script_rejects_out_of_range_edit_and_keeps_editing_mode() {
+    let schema = fixture_path("menuconfig_script_range_reject", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_range_reject", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  #[range(1200..=115200)]
+  option baud: u32 = 9600;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+enter
+home
+delete
+delete
+delete
+delete
+chars 100
+enter
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(payload["ui_mode"], serde_json::json!("editing"));
+    let status = payload["status_message"].as_str().unwrap_or_default();
+    assert!(
+        status.contains("outside range") || status.contains("range"),
+        "expected range rejection status: {payload}"
+    );
+
+    let user_values = payload["user_values"]
+        .as_object()
+        .expect("user values object");
+    assert!(
+        !user_values.contains_key("app::baud"),
+        "out-of-range edit should be rolled back: {payload}"
+    );
+}
+
+#[test]
 fn menuconfig_script_blocks_save_when_errors_present() {
     let schema = fixture_path("menuconfig_script_save_blocked", "schema.rcfg");
     let script = fixture_path("menuconfig_script_save_blocked", "script.txt");

@@ -412,7 +412,7 @@ impl SymbolTable {
         self.schema_items = items;
     }
 
-    pub(super) fn option_range(&self, path: &str) -> Option<&IntRange> {
+    pub fn option_range(&self, path: &str) -> Option<&IntRange> {
         self.option_ranges.get(path)
     }
 

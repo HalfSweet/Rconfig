@@ -88,9 +88,14 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
                     .resolved_values
                     .get(&node.path)
                     .map(|(value, source)| {
+                        let display_value = if node.is_secret {
+                            "***".to_string()
+                        } else {
+                            format_value(value)
+                        };
                         format!(
                             " = {} [{}]",
-                            format_value(value),
+                            display_value,
                             format_value_source(*source)
                         )
                     })
@@ -161,7 +166,13 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .state
             .user_values
             .get(&node.path)
-            .map(format_value)
+            .map(|value| {
+                if node.is_secret {
+                    "***".to_string()
+                } else {
+                    format_value(value)
+                }
+            })
             .unwrap_or_else(|| "<none>".to_string());
         lines.push(Line::from(vec![
             Span::styled("override: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -172,7 +183,14 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .state
             .resolved_values
             .get(&node.path)
-            .map(|(value, source)| (format_value(value), format_value_source(*source)))
+            .map(|(value, source)| {
+                let text = if node.is_secret {
+                    "***".to_string()
+                } else {
+                    format_value(value)
+                };
+                (text, format_value_source(*source))
+            })
             .unwrap_or_else(|| ("<none>".to_string(), "-".to_string()));
         lines.push(Line::from(vec![
             Span::styled("resolved: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -182,6 +200,31 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             Span::styled("source: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(source_text),
         ]));
+
+        let secret_text = if node.is_secret { "yes" } else { "no" };
+        lines.push(Line::from(vec![
+            Span::styled("secret: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(secret_text),
+        ]));
+
+        if let Some(range) = &node.range {
+            let rendered = if range.inclusive {
+                format!("[{}, {}]", range.start, range.end)
+            } else {
+                format!("[{}, {})", range.start, range.end)
+            };
+            lines.push(Line::from(vec![
+                Span::styled("range: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(rendered),
+            ]));
+        }
+
+        if node.kind == NodeKind::Option && !node.enum_variants.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("variants: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(node.enum_variants.join(" | ")),
+            ]));
+        }
 
         let (summary, help) = app.localized_docs_for_path(&node.path);
 

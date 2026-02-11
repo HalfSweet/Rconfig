@@ -476,14 +476,45 @@ fn apply_event_editing(app: &mut App, event: AppEvent) -> Result<bool, String> {
                 return Ok(false);
             };
 
+            let previous_values = app.state.user_values.clone();
+            let previous_errors = app
+                .state
+                .diagnostics
+                .iter()
+                .filter(|diag| diag.severity == rcfg_lang::Severity::Error)
+                .count();
+
             match apply_text_override(app, buffer) {
                 Ok(()) => {
                     app.recompute();
+                    let current_errors = app
+                        .state
+                        .diagnostics
+                        .iter()
+                        .filter(|diag| diag.severity == rcfg_lang::Severity::Error)
+                        .count();
+
+                    if current_errors > previous_errors {
+                        let rejected_message = app
+                            .state
+                            .diagnostics
+                            .iter()
+                            .find(|diag| diag.severity == rcfg_lang::Severity::Error)
+                            .map(|diag| app.session.localize_diagnostic_message(diag))
+                            .unwrap_or_else(|| "edit rejected by constraints".to_string());
+
+                        app.state.user_values = previous_values;
+                        app.recompute();
+                        app.state
+                            .set_status_message(mask_secret_message(app, &rejected_message));
+                        return Ok(false);
+                    }
+
                     app.state.exit_mode();
                     app.state.clear_status_message();
                 }
                 Err(err) => {
-                    app.state.set_status_message(err);
+                    app.state.set_status_message(mask_secret_message(app, &err));
                 }
             }
         }
@@ -705,6 +736,32 @@ fn perform_save(app: &mut App, target: PathBuf) -> Result<(), String> {
         .set_status_message(format!("saved: {}", target.display()));
 
     Ok(())
+}
+
+fn mask_secret_message(app: &App, message: &str) -> String {
+    let mut masked = message.to_string();
+
+    for node in &app.state.tree.nodes {
+        if !node.is_secret {
+            continue;
+        }
+
+        if let Some(value) = app.state.user_values.get(&node.path) {
+            let raw = format_user_value(value);
+            if !raw.is_empty() {
+                masked = masked.replace(&raw, "***");
+            }
+        }
+
+        if let Some((value, _)) = app.state.resolved_values.get(&node.path) {
+            let raw = format_user_value(value);
+            if !raw.is_empty() {
+                masked = masked.replace(&raw, "***");
+            }
+        }
+    }
+
+    masked
 }
 
 fn apply_text_override(app: &mut App, text: String) -> Result<(), String> {

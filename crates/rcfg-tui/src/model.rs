@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use rcfg_lang::{Item, SymbolKind, SymbolTable, ValueType};
+use rcfg_lang::{IntRange, Item, SymbolKind, SymbolTable, ValueType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
@@ -18,6 +18,8 @@ pub struct ConfigNode {
     pub kind: NodeKind,
     pub value_type: Option<ValueType>,
     pub enum_variants: Vec<String>,
+    pub is_secret: bool,
+    pub range: Option<IntRange>,
     pub children: Vec<usize>,
 }
 
@@ -79,6 +81,8 @@ fn collect_items(
                     NodeKind::Module,
                     None,
                     Vec::new(),
+                    false,
+                    None,
                 );
 
                 scope.push(module.name.value.clone());
@@ -113,6 +117,8 @@ fn collect_items(
                         _ => None,
                     })
                     .unwrap_or_default();
+                let is_secret = symbols.option_is_secret(&path);
+                let range = symbols.option_range(&path).cloned();
                 push_node(
                     tree,
                     next_id,
@@ -122,6 +128,8 @@ fn collect_items(
                     NodeKind::Option,
                     value_type,
                     option_variants,
+                    is_secret,
+                    range,
                 );
             }
             Item::Enum(enum_decl) => {
@@ -135,6 +143,8 @@ fn collect_items(
                     NodeKind::Enum,
                     None,
                     Vec::new(),
+                    false,
+                    None,
                 );
             }
             Item::When(when_block) => {
@@ -179,6 +189,8 @@ fn push_node(
     kind: NodeKind,
     value_type: Option<ValueType>,
     enum_variants: Vec<String>,
+    is_secret: bool,
+    range: Option<IntRange>,
 ) -> usize {
     let id = *next_id;
     *next_id += 1;
@@ -191,6 +203,8 @@ fn push_node(
         kind,
         value_type,
         enum_variants,
+        is_secret,
+        range,
         children: Vec::new(),
     });
 

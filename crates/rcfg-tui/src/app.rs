@@ -133,11 +133,36 @@ impl App {
     pub fn script_summary_json(&self) -> serde_json::Value {
         let mut user_values = BTreeMap::new();
         for (path, value) in &self.state.user_values {
+            let is_secret = self.session.symbols().option_is_secret(path);
             let value_json = match value {
-                ResolvedValue::Bool(raw) => serde_json::json!(raw),
-                ResolvedValue::Int(raw) => serde_json::json!(raw),
-                ResolvedValue::String(raw) => serde_json::json!(raw),
-                ResolvedValue::EnumVariant(raw) => serde_json::json!(raw),
+                ResolvedValue::Bool(raw) => {
+                    if is_secret {
+                        serde_json::json!("***")
+                    } else {
+                        serde_json::json!(raw)
+                    }
+                }
+                ResolvedValue::Int(raw) => {
+                    if is_secret {
+                        serde_json::json!("***")
+                    } else {
+                        serde_json::json!(raw)
+                    }
+                }
+                ResolvedValue::String(raw) => {
+                    if is_secret {
+                        serde_json::json!("***")
+                    } else {
+                        serde_json::json!(raw)
+                    }
+                }
+                ResolvedValue::EnumVariant(raw) => {
+                    if is_secret {
+                        serde_json::json!("***")
+                    } else {
+                        serde_json::json!(raw)
+                    }
+                }
             };
             user_values.insert(path.clone(), value_json);
         }
@@ -164,11 +189,36 @@ impl App {
             .options
             .iter()
             .map(|option| {
+                let is_secret = self.session.symbols().option_is_secret(&option.path);
                 let value = option.value.as_ref().map(|value| match value {
-                    ResolvedValue::Bool(raw) => serde_json::json!(raw),
-                    ResolvedValue::Int(raw) => serde_json::json!(raw),
-                    ResolvedValue::String(raw) => serde_json::json!(raw),
-                    ResolvedValue::EnumVariant(raw) => serde_json::json!(raw),
+                    ResolvedValue::Bool(raw) => {
+                        if is_secret {
+                            serde_json::json!("***")
+                        } else {
+                            serde_json::json!(raw)
+                        }
+                    }
+                    ResolvedValue::Int(raw) => {
+                        if is_secret {
+                            serde_json::json!("***")
+                        } else {
+                            serde_json::json!(raw)
+                        }
+                    }
+                    ResolvedValue::String(raw) => {
+                        if is_secret {
+                            serde_json::json!("***")
+                        } else {
+                            serde_json::json!(raw)
+                        }
+                    }
+                    ResolvedValue::EnumVariant(raw) => {
+                        if is_secret {
+                            serde_json::json!("***")
+                        } else {
+                            serde_json::json!(raw)
+                        }
+                    }
                 });
 
                 serde_json::json!({
