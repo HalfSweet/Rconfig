@@ -63,6 +63,8 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             } else {
                 " "
             };
+            let overridden = node.kind == NodeKind::Option && app.state.user_values.contains_key(&node.path);
+            let override_mark = if overridden { "*" } else { " " };
             let expand = if node.kind == NodeKind::Module {
                 if app.state.expanded.contains(&node.id) {
                     "▾"
@@ -97,9 +99,10 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 String::new()
             };
             let text = format!(
-                "{}{}{} {} {}{}{}",
+                "{}{}{}{} {} {}{}{}",
                 marker,
                 indent,
+                override_mark,
                 expand,
                 icon(node.kind.clone()),
                 node.name,
@@ -109,6 +112,8 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             let mut style = Style::default();
             if node.kind == NodeKind::Option && !app.state.active_paths.contains(&node.path) {
                 style = style.fg(Color::DarkGray);
+            } else if overridden {
+                style = style.fg(Color::Green);
             }
             if *node_id == app.state.selected {
                 style = style.fg(Color::Yellow).add_modifier(Modifier::BOLD);
