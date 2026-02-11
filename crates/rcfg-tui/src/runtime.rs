@@ -17,7 +17,7 @@ use rcfg_lang::ValueType;
 use crate::app::App;
 use crate::event::{AppEvent, parse_script_line};
 use crate::render::render_frame;
-use crate::state::{EditingState, UiMode};
+use crate::state::{EditingState, PickerState, UiMode};
 
 pub fn run_script_mode(app: &mut App, path: &std::path::Path) -> Result<(), String> {
     let text = fs::read_to_string(path)
@@ -229,6 +229,44 @@ fn apply_event_normal(app: &mut App, event: AppEvent) -> Result<bool, String> {
                     if !app.state.active_paths.contains(&selected_node.path) {
                         app.state
                             .set_status_message("inactive option is not editable");
+                        return Ok(false);
+                    }
+
+                    if matches!(selected_node.value_type, Some(ValueType::Enum(_))) {
+                        if selected_node.enum_variants.is_empty() {
+                            app.state
+                                .set_status_message("enum option has no available variants");
+                            return Ok(false);
+                        }
+
+                        let current = app
+                            .state
+                            .resolved_values
+                            .get(&selected_node.path)
+                            .and_then(|(value, _)| match value {
+                                rcfg_lang::ResolvedValue::EnumVariant(raw) => {
+                                    raw.rsplit("::").next().map(str::to_string)
+                                }
+                                _ => None,
+                            });
+
+                        let selected_index = current
+                            .as_deref()
+                            .and_then(|name| {
+                                selected_node
+                                    .enum_variants
+                                    .iter()
+                                    .position(|variant| variant == name)
+                            })
+                            .unwrap_or(0)
+                            .min(selected_node.enum_variants.len().saturating_sub(1));
+
+                        app.state.enter_mode(UiMode::EnumPicker(PickerState {
+                            variants: selected_node.enum_variants,
+                            selected: selected_index,
+                            target_path: selected_node.path,
+                        }));
+                        app.state.clear_status_message();
                         return Ok(false);
                     }
 
@@ -512,17 +550,44 @@ fn apply_event_enum_picker(app: &mut App, event: AppEvent) -> Result<bool, Strin
             app.state
                 .set_tree_viewport_height(compute_tree_viewport_height(height));
         }
+        AppEvent::Up => {
+            if let UiMode::EnumPicker(picker) = &mut app.state.mode
+                && picker.selected > 0
+            {
+                picker.selected -= 1;
+            }
+        }
+        AppEvent::Down => {
+            if let UiMode::EnumPicker(picker) = &mut app.state.mode
+                && picker.selected + 1 < picker.variants.len()
+            {
+                picker.selected += 1;
+            }
+        }
+        AppEvent::Enter => {
+            let Some((target_path, selected_variant)) = enum_picker_choice(&app.state.mode) else {
+                return Ok(false);
+            };
+
+            match app.state.set_enum_value(selected_variant) {
+                Ok(()) => {
+                    app.recompute();
+                    app.state.exit_mode();
+                    app.state.clear_status_message();
+                }
+                Err(err) => {
+                    app.state.set_status_message(format!("{}: {err}", target_path));
+                }
+            }
+        }
         AppEvent::Esc => {
             app.state.exit_mode();
             app.state.clear_status_message();
         }
-        AppEvent::Up
-        | AppEvent::Down
-        | AppEvent::Left
+        AppEvent::Left
         | AppEvent::Right
         | AppEvent::Home
         | AppEvent::End
-        | AppEvent::Enter
         | AppEvent::Tab
         | AppEvent::Space
         | AppEvent::F1
@@ -572,6 +637,16 @@ fn apply_event_diagnostics_focus(app: &mut App, event: AppEvent) -> Result<bool,
 fn editing_buffer(mode: &UiMode) -> Option<String> {
     match mode {
         UiMode::Editing(editing) => Some(editing.buffer.clone()),
+        _ => None,
+    }
+}
+
+fn enum_picker_choice(mode: &UiMode) -> Option<(String, String)> {
+    match mode {
+        UiMode::EnumPicker(picker) => {
+            let selected = picker.variants.get(picker.selected)?.clone();
+            Some((picker.target_path.clone(), selected))
+        }
         _ => None,
     }
 }

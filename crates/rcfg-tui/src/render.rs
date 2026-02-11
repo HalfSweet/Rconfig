@@ -34,7 +34,8 @@ pub fn render_frame(frame: &mut Frame<'_>, app: &App) {
         UiMode::SavePrompt(_) => render_save_overlay(frame, app),
         UiMode::Help => render_help_overlay(frame, app),
         UiMode::Editing(_) => render_editing_overlay(frame, app),
-        UiMode::EnumPicker(_) | UiMode::DiagnosticsFocus(_) | UiMode::Normal => {}
+        UiMode::EnumPicker(_) => render_enum_picker_overlay(frame, app),
+        UiMode::DiagnosticsFocus(_) | UiMode::Normal => {}
     }
 }
 
@@ -354,6 +355,37 @@ fn render_editing_overlay(frame: &mut Frame<'_>, app: &App) {
     let panel = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .block(Block::default().title("Editing").borders(Borders::ALL));
+
+    frame.render_widget(panel, popup_area);
+}
+
+fn render_enum_picker_overlay(frame: &mut Frame<'_>, app: &App) {
+    let UiMode::EnumPicker(picker) = &app.state.mode else {
+        return;
+    };
+
+    let popup_area = centered_rect(60, 45, frame.area());
+    frame.render_widget(Clear, popup_area);
+
+    let mut lines = Vec::new();
+    lines.push(Line::styled(
+        "Select Enum Variant",
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+    lines.push(Line::from(format!(
+        "path: {} (Up/Down choose, Enter confirm, Esc cancel)",
+        picker.target_path
+    )));
+    lines.push(Line::default());
+
+    for (index, variant) in picker.variants.iter().enumerate() {
+        let marker = if index == picker.selected { ">" } else { " " };
+        lines.push(Line::from(format!("{marker} {variant}")));
+    }
+
+    let panel = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().title("Enum Picker").borders(Borders::ALL));
 
     frame.render_widget(panel, popup_area);
 }

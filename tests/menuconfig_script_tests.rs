@@ -614,7 +614,9 @@ mod app {
 enter
 down
 down
-chars ascii
+enter
+down
+enter
 "#,
     );
 
@@ -648,6 +650,58 @@ chars ascii
         .expect("resolved mode option");
     assert_eq!(mode["value"], serde_json::json!("app::Mode::ascii"));
     assert_eq!(mode["source"], serde_json::json!("user"));
+}
+
+#[test]
+fn menuconfig_script_enum_picker_escape_cancels_without_override() {
+    let schema = fixture_path("menuconfig_script_enum_picker_cancel", "schema.rcfg");
+    let script = fixture_path("menuconfig_script_enum_picker_cancel", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  enum Mode { rtu, ascii }
+  option mode: Mode = Mode::rtu;
+}
+"#,
+    );
+    write_file(
+        &script,
+        r#"
+enter
+down
+down
+enter
+down
+esc
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+    assert_eq!(payload["ui_mode"], serde_json::json!("normal"));
+
+    let user_values = payload["user_values"]
+        .as_object()
+        .expect("user values object");
+    assert!(
+        !user_values.contains_key("app::mode"),
+        "enum picker cancel should not create override: {payload}"
+    );
 }
 
 #[test]
