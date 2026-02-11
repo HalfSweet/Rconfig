@@ -86,6 +86,12 @@ fn run_terminal_loop(
 
         match event::read().map_err(|err| format!("failed to read terminal event: {err}"))? {
             CrosstermEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                if key_event.code == KeyCode::Char('c')
+                    && key_event.modifiers.contains(KeyModifiers::CONTROL)
+                {
+                    break;
+                }
+
                 if let Some(event) = map_key_event(key_event, &app.state.mode)
                     && apply_event(app, event)?
                 {

@@ -348,19 +348,6 @@ impl UiState {
         }
     }
 
-    pub fn is_selected_active(&self) -> bool {
-        self.tree
-            .node(self.selected)
-            .map(|node| {
-                if node.kind == NodeKind::Option {
-                    self.active_paths.contains(&node.path)
-                } else {
-                    true
-                }
-            })
-            .unwrap_or(false)
-    }
-
     fn validate_selected_editable(&self) -> Result<&ConfigNode, String> {
         let Some(node) = self.tree.node(self.selected) else {
             return Err("no selected node".to_string());
@@ -581,10 +568,19 @@ impl UiState {
     }
 
     fn collect_visible(&self, node_id: usize, out: &mut Vec<usize>) {
-        out.push(node_id);
-        if !self.expanded.contains(&node_id) {
+        let is_enum = self
+            .tree
+            .node(node_id)
+            .is_some_and(|node| node.kind == NodeKind::Enum);
+
+        if !is_enum {
+            out.push(node_id);
+        }
+
+        if !self.expanded.contains(&node_id) && !is_enum {
             return;
         }
+
         for child in self.tree.children_of(node_id) {
             self.collect_visible(*child, out);
         }
@@ -704,6 +700,36 @@ mod app {
 
         state.select_prev();
         assert_eq!(before, state.selected);
+    }
+
+    #[test]
+    fn visible_nodes_skip_enum_declaration_nodes() {
+        let schema = parse_schema(
+            r#"
+mod app {
+  enum Mode { off, on }
+  option mode: Mode = Mode::off;
+  option enabled: bool = false;
+}
+"#,
+        )
+        .expect("parse schema");
+        let report = analyze_schema(&schema);
+        let tree = ConfigTree::from_schema(&report.symbols);
+        let mut state = UiState::new(tree);
+
+        state.toggle_selected_expand();
+
+        let visible_paths = state
+            .visible_nodes()
+            .into_iter()
+            .filter_map(|node_id| state.tree.node(node_id).map(|node| node.path.clone()))
+            .collect::<Vec<_>>();
+
+        assert!(visible_paths.iter().any(|path| path == "app"));
+        assert!(visible_paths.iter().any(|path| path == "app::mode"));
+        assert!(visible_paths.iter().any(|path| path == "app::enabled"));
+        assert!(!visible_paths.iter().any(|path| path == "app::Mode"));
     }
 
     #[test]
