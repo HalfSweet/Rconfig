@@ -279,6 +279,29 @@ impl UiState {
         self.calibrate_scroll_offset();
     }
 
+    pub fn select_node(&mut self, node_id: usize) {
+        if self.tree.node(node_id).is_none() {
+            return;
+        }
+
+        let mut current = self.tree.node(node_id).and_then(|node| node.parent_id);
+        let mut expanded_changed = false;
+        while let Some(parent_id) = current {
+            if self.expanded.insert(parent_id) {
+                expanded_changed = true;
+            }
+            current = self.tree.node(parent_id).and_then(|node| node.parent_id);
+        }
+
+        if expanded_changed {
+            self.cached_visible = None;
+        }
+
+        self.selected = node_id;
+        self.calibrate_scroll_offset();
+        self.pending_quit_confirm = false;
+    }
+
     pub fn calibrate_scroll_offset(&mut self) {
         let visible = self.visible_nodes_cached().clone();
         if visible.is_empty() {
@@ -495,6 +518,19 @@ impl UiState {
             })
             .collect::<BTreeMap<_, _>>();
         self.diagnostics = diagnostics;
+
+        let mut exit_diagnostics_focus = false;
+        if let UiMode::DiagnosticsFocus(focus) = &mut self.mode {
+            if self.diagnostics.is_empty() {
+                exit_diagnostics_focus = true;
+            } else {
+                focus.selected = focus.selected.min(self.diagnostics.len().saturating_sub(1));
+            }
+        }
+
+        if exit_diagnostics_focus {
+            self.mode = UiMode::Normal;
+        }
     }
 
     pub fn to_values_file(&self) -> ValuesFile {

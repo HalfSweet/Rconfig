@@ -251,27 +251,56 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
 fn render_diagnostics_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let mut lines = Vec::new();
+    let diagnostics = &app.state.diagnostics;
+    let focused = match &app.state.mode {
+        UiMode::DiagnosticsFocus(focus) if !diagnostics.is_empty() => {
+            Some(focus.selected.min(diagnostics.len().saturating_sub(1)))
+        }
+        _ => None,
+    };
 
-    if app.state.diagnostics.is_empty() {
+    if diagnostics.is_empty() {
         lines.push(Line::from("no diagnostics"));
     } else {
-        for diag in app.state.diagnostics.iter().take(4) {
+        let viewport = usize::from(area.height.saturating_sub(2)).max(1);
+        let max_offset = diagnostics.len().saturating_sub(viewport);
+        let start = focused
+            .map(|selected| selected.saturating_sub(viewport / 2).min(max_offset))
+            .unwrap_or(0);
+        let end = (start + viewport).min(diagnostics.len());
+
+        for (index, diag) in diagnostics.iter().enumerate().take(end).skip(start) {
             let severity = match diag.severity {
                 Severity::Error => "error",
                 Severity::Warning => "warning",
             };
             let path = diag.path.as_deref().unwrap_or("<global>");
             let message = app.session.localize_diagnostic_message(diag);
-            lines.push(Line::from(format!("[{severity}] {path}: {message}")));
-        }
-        if app.state.diagnostics.len() > 4 {
-            lines.push(Line::from("..."));
+            let selected = focused == Some(index);
+            let prefix = if selected { ">" } else { " " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            lines.push(Line::styled(
+                format!("{prefix}[{severity}] {path}: {message}"),
+                style,
+            ));
         }
     }
 
+    let title = if focused.is_some() {
+        "Diagnostics (focus)"
+    } else {
+        "Diagnostics"
+    };
+
     let diagnostics = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .block(Block::default().title("Diagnostics").borders(Borders::ALL));
+        .block(Block::default().title(title).borders(Borders::ALL));
 
     frame.render_widget(diagnostics, area);
 }

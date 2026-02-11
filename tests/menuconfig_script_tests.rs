@@ -1050,3 +1050,57 @@ locale = "zh-CN"
         serde_json::json!("必须启用 app::enabled")
     );
 }
+
+#[test]
+fn menuconfig_script_tab_focus_and_enter_jumps_to_diagnostic_node() {
+    let schema = fixture_path("menuconfig_script_diag_focus_jump", "schema.rcfg");
+    let values = fixture_path("menuconfig_script_diag_focus_jump", "profile.rcfgv");
+    let script = fixture_path("menuconfig_script_diag_focus_jump", "script.txt");
+
+    write_file(
+        &schema,
+        r#"
+mod app {
+  #[range(1200..=115200)]
+  option baud: u32 = 9600;
+}
+"#,
+    );
+    write_file(&values, "app::baud = 100;\n");
+    write_file(
+        &script,
+        r#"
+tab
+enter
+"#,
+    );
+
+    let output = run_menuconfig(
+        &[
+            "menuconfig",
+            "--schema",
+            schema.to_str().expect("schema path"),
+            "--values",
+            values.to_str().expect("values path"),
+            "--script",
+            script.to_str().expect("script path"),
+        ],
+        None,
+    );
+
+    assert_success(&output);
+
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("script summary json");
+
+    assert_eq!(payload["ui_mode"], serde_json::json!("normal"));
+    assert_eq!(payload["selected_path"], serde_json::json!("app::baud"));
+
+    let diagnostics = payload["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    assert!(
+        diagnostics.iter().any(|diag| diag["path"] == "app::baud"),
+        "expected at least one diagnostic on app::baud: {payload}"
+    );
+}

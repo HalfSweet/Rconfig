@@ -28,6 +28,7 @@ pub struct ConfigNode {
 pub struct ConfigTree {
     pub nodes: Vec<ConfigNode>,
     pub root_ids: Vec<usize>,
+    pub path_to_node: BTreeMap<String, usize>,
 }
 
 impl ConfigTree {
@@ -57,6 +58,10 @@ impl ConfigTree {
             .get(id)
             .map(|node| node.children.as_slice())
             .unwrap_or_default()
+    }
+
+    pub fn find_node_by_path(&self, path: &str) -> Option<usize> {
+        self.path_to_node.get(path).copied()
     }
 }
 
@@ -200,6 +205,8 @@ fn push_node(
     let id = *next_id;
     *next_id += 1;
 
+    let path_for_index = path.clone();
+
     tree.nodes.push(ConfigNode {
         id,
         parent_id: parent,
@@ -213,6 +220,8 @@ fn push_node(
         range,
         children: Vec::new(),
     });
+
+    tree.path_to_node.entry(path_for_index).or_insert(id);
 
     if let Some(parent_id) = parent {
         if let Some(parent_node) = tree.nodes.get_mut(parent_id) {
