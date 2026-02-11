@@ -131,7 +131,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 indent,
                 override_mark,
                 expand,
-                icon(node.kind.clone()),
+                icon(node.kind),
                 node.name,
                 status,
                 value_summary
@@ -166,7 +166,7 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
         lines.push(Line::from(vec![
             Span::styled("kind: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(kind_label(node.kind.clone())),
+            Span::raw(kind_label(node.kind)),
         ]));
 
         lines.push(Line::from(vec![
