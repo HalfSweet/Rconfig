@@ -56,8 +56,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .into_iter()
         .filter_map(|node_id| {
             let node = app.state.tree.node(*node_id)?;
-            let depth = depth_of(app, *node_id);
-            let indent = "  ".repeat(depth);
+            let indent = "  ".repeat(node.depth);
             let marker = if *node_id == app.state.selected {
                 ">"
             } else {
@@ -504,18 +503,4 @@ fn format_value_source(source: rcfg_lang::ValueSource) -> String {
         rcfg_lang::ValueSource::Default => "default".to_string(),
         rcfg_lang::ValueSource::Context => "context".to_string(),
     }
-}
-
-fn depth_of(app: &App, node_id: usize) -> usize {
-    let mut depth = 0usize;
-    let mut current = app.state.tree.node(node_id).and_then(|node| node.parent_id);
-    while let Some(parent_id) = current {
-        depth += 1;
-        current = app
-            .state
-            .tree
-            .node(parent_id)
-            .and_then(|node| node.parent_id);
-    }
-    depth
 }

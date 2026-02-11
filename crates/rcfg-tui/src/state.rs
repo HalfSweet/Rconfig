@@ -164,6 +164,7 @@ pub struct UiState {
     pub tree: ConfigTree,
     pub selected: usize,
     pub expanded: BTreeSet<usize>,
+    pub cached_visible: Option<Vec<usize>>,
     pub scroll_offset: usize,
     pub tree_viewport_height: u16,
     pub user_values: BTreeMap<String, ResolvedValue>,
@@ -183,6 +184,7 @@ impl UiState {
             tree,
             selected,
             expanded: BTreeSet::new(),
+            cached_visible: None,
             scroll_offset: 0,
             tree_viewport_height: 0,
             user_values: BTreeMap::new(),
@@ -197,6 +199,10 @@ impl UiState {
     }
 
     pub fn visible_nodes(&self) -> Vec<usize> {
+        if let Some(cached) = &self.cached_visible {
+            return cached.clone();
+        }
+
         let mut out = Vec::new();
         for root in &self.tree.root_ids {
             self.collect_visible(*root, &mut out);
@@ -204,8 +210,22 @@ impl UiState {
         out
     }
 
+    pub fn visible_nodes_cached(&mut self) -> &Vec<usize> {
+        if self.cached_visible.is_none() {
+            let mut computed = Vec::new();
+            for root in &self.tree.root_ids {
+                self.collect_visible(*root, &mut computed);
+            }
+            self.cached_visible = Some(computed);
+        }
+
+        self.cached_visible
+            .as_ref()
+            .expect("visible node cache must be initialized")
+    }
+
     pub fn select_next(&mut self) {
-        let visible = self.visible_nodes();
+        let visible = self.visible_nodes_cached().clone();
         if visible.is_empty() {
             self.scroll_offset = 0;
             return;
@@ -222,7 +242,7 @@ impl UiState {
     }
 
     pub fn select_prev(&mut self) {
-        let visible = self.visible_nodes();
+        let visible = self.visible_nodes_cached().clone();
         if visible.is_empty() {
             self.scroll_offset = 0;
             return;
@@ -249,6 +269,7 @@ impl UiState {
         if !self.expanded.insert(node.id) {
             self.expanded.remove(&node.id);
         }
+        self.cached_visible = None;
         self.calibrate_scroll_offset();
         self.pending_quit_confirm = false;
     }
@@ -259,7 +280,7 @@ impl UiState {
     }
 
     pub fn calibrate_scroll_offset(&mut self) {
-        let visible = self.visible_nodes();
+        let visible = self.visible_nodes_cached().clone();
         if visible.is_empty() {
             self.scroll_offset = 0;
             return;
@@ -462,6 +483,7 @@ impl UiState {
         resolved: &ResolvedConfig,
         diagnostics: Vec<Diagnostic>,
     ) {
+        self.cached_visible = None;
         self.set_active_from_resolved(resolved);
         self.resolved_values = resolved
             .options
