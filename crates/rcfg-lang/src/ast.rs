@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::span::{Span, Spanned};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -182,6 +184,22 @@ impl MatchPat {
     }
 }
 
+impl fmt::Display for MatchPat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MatchPat::Wildcard(_) => f.write_str("_"),
+            MatchPat::Paths(paths, _) => {
+                let rendered = paths
+                    .iter()
+                    .map(Path::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                f.write_str(&rendered)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attr {
     pub kind: AttrKind,
@@ -326,6 +344,156 @@ impl Expr {
             | Expr::InSet { span, .. }
             | Expr::Group { span, .. } => *span,
         }
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        format_expr(self, ExprPrecedence::Lowest, f)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ExprPrecedence {
+    Lowest,
+    Or,
+    And,
+    Compare,
+    Membership,
+    Unary,
+}
+
+fn format_expr(
+    expr: &Expr,
+    parent_precedence: ExprPrecedence,
+    f: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    match expr {
+        Expr::Bool(value, _) => write!(f, "{value}"),
+        Expr::Int(value, _) => write!(f, "{value}"),
+        Expr::String(value, _) => write!(f, "\"{}\"", value.escape_default()),
+        Expr::SelfValue(_) => f.write_str("self"),
+        Expr::Path(path) => f.write_str(&path.to_string()),
+        Expr::Call { name, args, .. } => {
+            write!(f, "{}(", name.value)?;
+            for (index, arg) in args.iter().enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                format_expr(arg, ExprPrecedence::Lowest, f)?;
+            }
+            f.write_str(")")
+        }
+        Expr::Unary { op, expr, .. } => {
+            let precedence = ExprPrecedence::Unary;
+            let need_group = precedence < parent_precedence;
+            if need_group {
+                f.write_str("(")?;
+            }
+
+            match op {
+                UnaryOp::Not => f.write_str("!")?,
+            }
+            format_expr(expr, precedence, f)?;
+
+            if need_group {
+                f.write_str(")")?;
+            }
+            Ok(())
+        }
+        Expr::Binary {
+            op, left, right, ..
+        } => {
+            let precedence = binary_precedence(*op);
+            let need_group = precedence < parent_precedence;
+            if need_group {
+                f.write_str("(")?;
+            }
+
+            format_expr(left, precedence, f)?;
+            write!(f, " {} ", binary_op_text(*op))?;
+            format_expr(right, precedence, f)?;
+
+            if need_group {
+                f.write_str(")")?;
+            }
+
+            Ok(())
+        }
+        Expr::InRange { expr, range, .. } => {
+            let precedence = ExprPrecedence::Membership;
+            let need_group = precedence < parent_precedence;
+            if need_group {
+                f.write_str("(")?;
+            }
+
+            format_expr(expr, precedence, f)?;
+            if range.inclusive {
+                write!(f, " in {}..={}", range.start, range.end)?;
+            } else {
+                write!(f, " in {}..{}", range.start, range.end)?;
+            }
+
+            if need_group {
+                f.write_str(")")?;
+            }
+
+            Ok(())
+        }
+        Expr::InSet { expr, elems, .. } => {
+            let precedence = ExprPrecedence::Membership;
+            let need_group = precedence < parent_precedence;
+            if need_group {
+                f.write_str("(")?;
+            }
+
+            format_expr(expr, precedence, f)?;
+            f.write_str(" in {")?;
+            for (index, elem) in elems.iter().enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                match elem {
+                    InSetElem::Int(value, _) => write!(f, "{value}")?,
+                    InSetElem::Path(path) => f.write_str(&path.to_string())?,
+                }
+            }
+            f.write_str("}")?;
+
+            if need_group {
+                f.write_str(")")?;
+            }
+
+            Ok(())
+        }
+        Expr::Group { expr, .. } => {
+            f.write_str("(")?;
+            format_expr(expr, ExprPrecedence::Lowest, f)?;
+            f.write_str(")")
+        }
+    }
+}
+
+fn binary_precedence(op: BinaryOp) -> ExprPrecedence {
+    match op {
+        BinaryOp::Or => ExprPrecedence::Or,
+        BinaryOp::And => ExprPrecedence::And,
+        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+            ExprPrecedence::Compare
+        }
+    }
+}
+
+fn binary_op_text(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Or => "||",
+        BinaryOp::And => "&&",
+        BinaryOp::Eq => "==",
+        BinaryOp::Ne => "!=",
+        BinaryOp::Lt => "<",
+        BinaryOp::Le => "<=",
+        BinaryOp::Gt => ">",
+        BinaryOp::Ge => ">=",
     }
 }
 

@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use rcfg_lang::{ResolvedValue, Severity, ValueType};
 
 use crate::app::App;
-use crate::model::NodeKind;
+use crate::model::{GuardClause, NodeKind};
 use crate::state::UiMode;
 
 #[derive(Debug, Clone, Copy)]
@@ -115,6 +115,14 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             } else {
                 ""
             };
+            let guard_summary = if node.kind == NodeKind::Option
+                && !app.state.active_paths.contains(&node.path)
+                && !node.guard.is_empty()
+            {
+                format!(" [{}]", summarize_guard(&node.guard))
+            } else {
+                String::new()
+            };
             let value_summary = if node.kind == NodeKind::Option {
                 app.state
                     .resolved_values
@@ -132,7 +140,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 String::new()
             };
             let text = format!(
-                "{}{}{}{} {} {}{}{}",
+                "{}{}{}{} {} {}{}{}{}",
                 marker,
                 indent,
                 override_mark,
@@ -140,6 +148,7 @@ fn render_tree_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 icon(node.kind),
                 node.name,
                 status,
+                guard_summary,
                 value_summary
             );
             let mut style = Style::default();
@@ -251,6 +260,16 @@ fn render_detail_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
             lines.push(Line::from(vec![
                 Span::styled("variants: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(node.enum_variants.join(" | ")),
+            ]));
+        }
+
+        if node.kind == NodeKind::Option && !node.guard.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "guarded by: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(format_guard_chain(&node.guard)),
             ]));
         }
 
@@ -629,4 +648,46 @@ fn format_value_source(source: rcfg_lang::ValueSource) -> String {
         rcfg_lang::ValueSource::Default => "default".to_string(),
         rcfg_lang::ValueSource::Context => "context".to_string(),
     }
+}
+
+fn summarize_guard(guard: &[GuardClause]) -> String {
+    guard
+        .iter()
+        .map(|clause| match clause {
+            GuardClause::When(expr) => format!("when {expr}"),
+            GuardClause::MatchCase {
+                pattern,
+                case_guard,
+                ..
+            } => {
+                if let Some(case_guard) = case_guard {
+                    format!("case {pattern} if {case_guard}")
+                } else {
+                    format!("case {pattern}")
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_guard_chain(guard: &[GuardClause]) -> String {
+    guard
+        .iter()
+        .map(|clause| match clause {
+            GuardClause::When(expr) => format!("when {expr}"),
+            GuardClause::MatchCase {
+                expr,
+                pattern,
+                case_guard,
+            } => {
+                if let Some(case_guard) = case_guard {
+                    format!("match {expr} {{ case {pattern} if {case_guard} }}")
+                } else {
+                    format!("match {expr} {{ case {pattern} }}")
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" -> ")
 }

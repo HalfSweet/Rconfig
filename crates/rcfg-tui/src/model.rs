@@ -9,6 +9,16 @@ pub enum NodeKind {
     Enum,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GuardClause {
+    When(String),
+    MatchCase {
+        expr: String,
+        pattern: String,
+        case_guard: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfigNode {
     pub id: usize,
@@ -21,6 +31,7 @@ pub struct ConfigNode {
     pub enum_variants: Vec<String>,
     pub is_secret: bool,
     pub range: Option<IntRange>,
+    pub guard: Vec<GuardClause>,
     pub children: Vec<usize>,
 }
 
@@ -40,6 +51,7 @@ impl ConfigTree {
         collect_items(
             symbols,
             symbols.schema_items(),
+            &[],
             &mut scope,
             None,
             &mut next_id,
@@ -68,6 +80,7 @@ impl ConfigTree {
 fn collect_items(
     symbols: &SymbolTable,
     items: &[Item],
+    guard: &[GuardClause],
     scope: &mut Vec<String>,
     parent: Option<usize>,
     next_id: &mut usize,
@@ -90,12 +103,14 @@ fn collect_items(
                     Vec::new(),
                     false,
                     None,
+                    guard.to_vec(),
                 );
 
                 scope.push(module.name.value.clone());
                 collect_items(
                     symbols,
                     &module.items,
+                    guard,
                     scope,
                     Some(id),
                     next_id,
@@ -138,6 +153,7 @@ fn collect_items(
                     option_variants,
                     is_secret,
                     range,
+                    guard.to_vec(),
                 );
             }
             Item::Enum(enum_decl) => {
@@ -154,12 +170,16 @@ fn collect_items(
                     Vec::new(),
                     false,
                     None,
+                    guard.to_vec(),
                 );
             }
             Item::When(when_block) => {
+                let mut next_guard = guard.to_vec();
+                next_guard.push(GuardClause::When(when_block.condition.to_string()));
                 collect_items(
                     symbols,
                     &when_block.items,
+                    &next_guard,
                     scope,
                     parent,
                     next_id,
@@ -169,9 +189,16 @@ fn collect_items(
             }
             Item::Match(match_block) => {
                 for case in &match_block.cases {
+                    let mut next_guard = guard.to_vec();
+                    next_guard.push(GuardClause::MatchCase {
+                        expr: match_block.expr.to_string(),
+                        pattern: case.pattern.to_string(),
+                        case_guard: case.guard.as_ref().map(ToString::to_string),
+                    });
                     collect_items(
                         symbols,
                         &case.items,
+                        &next_guard,
                         scope,
                         parent,
                         next_id,
@@ -201,6 +228,7 @@ fn push_node(
     enum_variants: Vec<String>,
     is_secret: bool,
     range: Option<IntRange>,
+    guard: Vec<GuardClause>,
 ) -> usize {
     let id = *next_id;
     *next_id += 1;
@@ -218,6 +246,7 @@ fn push_node(
         enum_variants,
         is_secret,
         range,
+        guard,
         children: Vec::new(),
     });
 
@@ -293,5 +322,94 @@ pub fn kind_from_symbol(symbol_kind: SymbolKind) -> NodeKind {
         SymbolKind::Mod => NodeKind::Module,
         SymbolKind::Enum => NodeKind::Enum,
         SymbolKind::Option => NodeKind::Option,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ConfigTree, GuardClause};
+    use rcfg_lang::{analyze_schema, parser::parse_schema_with_diagnostics};
+
+    fn build_tree(schema: &str) -> ConfigTree {
+        let (file, parse_diags) = parse_schema_with_diagnostics(schema);
+        assert!(
+            parse_diags.is_empty(),
+            "schema should parse without diagnostics: {parse_diags:?}"
+        );
+
+        let report = analyze_schema(&file);
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .all(|diag| diag.severity != rcfg_lang::Severity::Error),
+            "schema should analyze without errors: {:?}",
+            report.diagnostics
+        );
+
+        ConfigTree::from_schema(&report.symbols)
+    }
+
+    #[test]
+    fn tree_records_single_when_guard() {
+        let tree = build_tree(
+            r#"
+mod app {
+  option enabled: bool = true;
+
+  when enabled {
+    option advanced: bool = false;
+  }
+}
+"#,
+        );
+
+        let option_id = tree
+            .find_node_by_path("app::advanced")
+            .expect("find option node");
+        let option = tree.node(option_id).expect("option node");
+
+        assert_eq!(option.guard, vec![GuardClause::When("enabled".to_string())]);
+    }
+
+    #[test]
+    fn tree_records_nested_when_and_match_case_guards() {
+        let tree = build_tree(
+            r#"
+mod app {
+  enum Mode { basic, pro }
+
+  option enabled: bool = true;
+  option mode: Mode = Mode::basic;
+  option strict_lane: bool = true;
+
+  when enabled {
+    match mode {
+      case Mode::pro if strict_lane => {
+        option advanced: bool = false;
+      }
+      case Mode::basic => { }
+    }
+  }
+}
+"#,
+        );
+
+        let option_id = tree
+            .find_node_by_path("app::advanced")
+            .expect("find option node");
+        let option = tree.node(option_id).expect("option node");
+
+        assert_eq!(
+            option.guard,
+            vec![
+                GuardClause::When("enabled".to_string()),
+                GuardClause::MatchCase {
+                    expr: "mode".to_string(),
+                    pattern: "Mode::pro".to_string(),
+                    case_guard: Some("strict_lane".to_string()),
+                },
+            ]
+        );
     }
 }
