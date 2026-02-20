@@ -139,13 +139,7 @@ pub fn load_session(options: &AppLoadOptions) -> Result<AppSession, String> {
     let schema_path = resolve_schema_path(options.schema.as_deref(), root_manifest)?;
 
     let (schema_file, mut parse_diagnostics) = if let Some(graph) = manifest_graph.as_ref() {
-        if options.schema.is_none() {
-            load_schema_with_dependencies(graph)?
-        } else {
-            let schema_text = fs::read_to_string(&schema_path)
-                .map_err(|err| format!("failed to read schema {}: {err}", schema_path.display()))?;
-            parse_schema_with_diagnostics(&schema_text)
-        }
+        load_schema_with_dependencies(graph, options.schema.as_deref())?
     } else {
         let schema_text = fs::read_to_string(&schema_path)
             .map_err(|err| format!("failed to read schema {}: {err}", schema_path.display()))?;
@@ -614,14 +608,22 @@ pub fn resolve_schema_path(
 
 fn load_schema_with_dependencies(
     graph: &ManifestGraph,
+    root_schema_override: Option<&Path>,
 ) -> Result<(rcfg_lang::File, Vec<rcfg_lang::Diagnostic>), String> {
     let mut all_items = Vec::new();
     let mut all_diags = Vec::new();
 
     for manifest in &graph.packages_depth_first {
         let mut package_items = Vec::new();
+        let schema_paths = if manifest.manifest_path == graph.root.manifest_path {
+            root_schema_override
+                .map(|path| vec![path.to_path_buf()])
+                .unwrap_or_else(|| manifest.schema.clone())
+        } else {
+            manifest.schema.clone()
+        };
 
-        for schema_path in &manifest.schema {
+        for schema_path in &schema_paths {
             let schema_text = fs::read_to_string(schema_path).map_err(|err| {
                 format!(
                     "failed to read schema {} for package `{}`: {err}",
@@ -643,10 +645,7 @@ fn load_schema_with_dependencies(
             namespace_schema_items_for_package(package_items, manifest.package_name.as_str());
         for diagnostic in &mut namespace_diags {
             if diagnostic.path.is_none() {
-                diagnostic.path = manifest
-                    .schema
-                    .first()
-                    .map(|path| path.display().to_string());
+                diagnostic.path = schema_paths.first().map(|path| path.display().to_string());
             }
         }
 
@@ -1260,6 +1259,80 @@ schema = "src/schema.rcfg"
 
         assert!(session.symbols().option_type("foo::enabled").is_some());
         assert!(session.symbols().option_type("foo::foo::enabled").is_none());
+    }
+
+    #[test]
+    fn manifest_mode_with_explicit_schema_still_loads_dependencies() {
+        let root = fixture_root("manifest_with_explicit_schema_loads_dependencies");
+
+        let app_manifest = root.join("app/Config.toml");
+        let app_schema = root.join("app/src/schema.rcfg");
+
+        let dep_manifest = root.join("deps/dep/Config.toml");
+        let dep_schema = root.join("deps/dep/src/schema.rcfg");
+
+        write_file(
+            &app_schema,
+            r#"
+use dep as dep_cfg;
+
+option enabled: bool = true;
+
+#[msg("app.dep.enabled")]
+require!(dep_cfg::enabled);
+"#,
+        );
+        write_file(
+            &dep_schema,
+            r#"
+option enabled: bool = true;
+"#,
+        );
+
+        write_file(
+            &app_manifest,
+            r#"
+[package]
+name = "app"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+
+[dependencies]
+dep = "../deps/dep"
+"#,
+        );
+        write_file(
+            &dep_manifest,
+            r#"
+[package]
+name = "dep"
+version = "0.1.0"
+
+[entry]
+schema = "src/schema.rcfg"
+"#,
+        );
+
+        let session = super::load_session(&super::AppLoadOptions {
+            schema: Some(app_schema),
+            manifest: Some(app_manifest),
+            context: None,
+            i18n: None,
+            strict: false,
+        })
+        .expect("load app session with explicit schema and manifest");
+
+        assert!(session.symbols().option_type("dep::enabled").is_some());
+        assert!(
+            !session
+                .parse_diagnostics()
+                .iter()
+                .any(|diag| diag.code == "E_SYMBOL_NOT_FOUND"),
+            "should not emit unresolved symbol diagnostics: {:?}",
+            session.parse_diagnostics()
+        );
     }
 
     #[test]
