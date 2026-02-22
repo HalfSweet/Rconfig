@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    target-branch: master
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: master
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:30"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
