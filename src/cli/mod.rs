@@ -24,12 +24,46 @@ pub(crate) fn entry() -> i32 {
 }
 
 fn run(cli: Cli) -> Result<(), String> {
+    let Cli {
+        schema,
+        manifest,
+        strict,
+        context,
+        i18n,
+        command,
+    } = cli;
+
+    match command {
+        Commands::Fmt {
+            files,
+            check,
+            stdin,
+            kind,
+        } => {
+            let kind = kind.map(|item| match item {
+                args::FmtKindArg::Schema => commands::fmt::FmtKind::Schema,
+                args::FmtKindArg::Values => commands::fmt::FmtKind::Values,
+            });
+            commands::fmt::execute(files, check, stdin, kind)
+        }
+        command => run_with_session(schema, manifest, strict, context, i18n, command),
+    }
+}
+
+fn run_with_session(
+    schema: Option<std::path::PathBuf>,
+    manifest: Option<std::path::PathBuf>,
+    strict: bool,
+    context: Option<std::path::PathBuf>,
+    i18n: Option<std::path::PathBuf>,
+    command: Commands,
+) -> Result<(), String> {
     let session = load_session(&AppLoadOptions {
-        schema: cli.schema.clone(),
-        manifest: cli.manifest.clone(),
-        context: cli.context.clone(),
-        i18n: cli.i18n.clone(),
-        strict: cli.strict,
+        schema,
+        manifest,
+        context,
+        i18n,
+        strict,
     })?;
 
     let parse_diags = session.parse_diagnostics().to_vec();
@@ -43,7 +77,7 @@ fn run(cli: Cli) -> Result<(), String> {
         return Err("schema parse failed".to_string());
     }
 
-    match cli.command {
+    match command {
         Commands::Check { values, format } => {
             commands::check::execute(&session, &values, format, parse_diags)?;
         }
@@ -145,6 +179,7 @@ fn run(cli: Cli) -> Result<(), String> {
 
             commands::menuconfig::execute(&session, values, out, script)?;
         }
+        Commands::Fmt { .. } => unreachable!("fmt command is handled before loading session"),
     }
 
     Ok(())

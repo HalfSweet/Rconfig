@@ -106,6 +106,19 @@ pub(crate) enum Commands {
         #[arg(long, hide = true)]
         script: Option<PathBuf>,
     },
+    Fmt {
+        #[arg(value_name = "FILE", required_unless_present = "stdin")]
+        files: Vec<PathBuf>,
+
+        #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+        check: bool,
+
+        #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+        stdin: bool,
+
+        #[arg(long, value_enum, requires = "stdin")]
+        kind: Option<FmtKindArg>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -160,4 +173,10 @@ pub(crate) enum ExportFormatArg {
 pub(crate) enum OutputFormat {
     Human,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum FmtKindArg {
+    Schema,
+    Values,
 }

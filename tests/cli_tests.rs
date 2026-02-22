@@ -1,5 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+use std::process::Stdio;
 
 fn fixture_path(name: &str) -> PathBuf {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1684,4 +1686,91 @@ file(WRITE "{}" "${{CFG_APP_ENABLED}};${{CFG_APP_RETRIES}}")
 
     let rendered = fs::read_to_string(&result).expect("read cmake result");
     assert_eq!(rendered, "ON;8");
+}
+
+#[test]
+fn rcfg_fmt_check_returns_zero_for_formatted_file() {
+    let schema = fixture_path("cli_fmt_check_clean/schema.rcfg");
+    write_file(
+        &schema,
+        r#"mod app {
+    option enabled: bool = true;
+}
+"#,
+    );
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args(["fmt", "--check", schema.to_str().expect("schema path")])
+        .status()
+        .expect("run rcfg fmt --check");
+    assert!(status.success(), "formatted file should pass fmt check");
+}
+
+#[test]
+fn rcfg_fmt_check_returns_one_for_unformatted_file() {
+    let schema = fixture_path("cli_fmt_check_dirty/schema.rcfg");
+    write_file(&schema, "mod app{option enabled:bool=true;}\n");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args(["fmt", "--check", schema.to_str().expect("schema path")])
+        .output()
+        .expect("run rcfg fmt --check");
+    assert!(
+        !output.status.success(),
+        "unformatted file should fail fmt check"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("would reformat"), "{stderr}");
+}
+
+#[test]
+fn rcfg_fmt_overwrites_file_with_formatted_content() {
+    let schema = fixture_path("cli_fmt_write/schema.rcfg");
+    write_file(&schema, "mod app{option enabled:bool=true;}\n");
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args(["fmt", schema.to_str().expect("schema path")])
+        .status()
+        .expect("run rcfg fmt");
+    assert!(status.success(), "rcfg fmt should succeed");
+
+    let formatted = fs::read_to_string(&schema).expect("read schema");
+    let expected = r#"mod app {
+    option enabled: bool = true;
+}
+"#;
+    assert_eq!(formatted, expected);
+}
+
+#[test]
+fn rcfg_fmt_stdin_schema_outputs_formatted_text() {
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_rcfg"))
+        .args(["fmt", "--stdin", "--kind", "schema"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn rcfg fmt --stdin");
+
+    let input = "mod app{option enabled:bool=true;}\n";
+    {
+        let stdin = child.stdin.as_mut().expect("stdin handle");
+        stdin
+            .write_all(input.as_bytes())
+            .expect("write stdin schema source");
+    }
+
+    let output = child.wait_with_output().expect("collect rcfg fmt output");
+    assert!(
+        output.status.success(),
+        "rcfg fmt stdin should succeed: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let expected = r#"mod app {
+    option enabled: bool = true;
+}
+"#;
+    assert_eq!(stdout, expected);
 }
