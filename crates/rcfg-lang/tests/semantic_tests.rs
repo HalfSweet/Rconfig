@@ -1252,8 +1252,10 @@ fn include_expander_rejects_parent_path_escape() {
 
 #[test]
 fn include_expander_rejects_symlink_path_escape() {
-    let tmp =
-        std::env::temp_dir().join(format!("rcfg_include_symlink_escape_{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!(
+        "rcfg_include_symlink_escape_{}",
+        std::process::id()
+    ));
     let root = tmp.join("root");
     let _ = std::fs::create_dir_all(&root);
 

@@ -8,7 +8,12 @@ use rcfg_lang::{
 
 fn collect_case_dirs(root: &Path) -> Vec<PathBuf> {
     let mut dirs = fs::read_dir(root)
-        .unwrap_or_else(|err| panic!("failed to read conformance root `{}`: {err}", root.display()))
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to read conformance root `{}`: {err}",
+                root.display()
+            )
+        })
         .filter_map(|entry| entry.ok().map(|item| item.path()))
         .filter(|path| path.is_dir())
         .collect::<Vec<_>>();
@@ -68,9 +73,8 @@ fn conformance_fail_cases_match_expected_codes() {
             .unwrap_or_else(|err| panic!("case `{case_name}` failed to read schema.rcfg: {err}"));
         let values_src = fs::read_to_string(case_dir.join("values.rcfgv"))
             .unwrap_or_else(|err| panic!("case `{case_name}` failed to read values.rcfgv: {err}"));
-        let expected_src = fs::read_to_string(case_dir.join("expected.json")).unwrap_or_else(|err| {
-            panic!("case `{case_name}` failed to read expected.json: {err}")
-        });
+        let expected_src = fs::read_to_string(case_dir.join("expected.json"))
+            .unwrap_or_else(|err| panic!("case `{case_name}` failed to read expected.json: {err}"));
 
         let expected: serde_json::Value = serde_json::from_str(&expected_src)
             .unwrap_or_else(|err| panic!("case `{case_name}` has invalid expected.json: {err}"));
@@ -139,14 +143,13 @@ fn conformance_golden_cases_match_exports() {
         let expected_h = case_dir.join("expected.h");
         if expected_h.exists() {
             matched_any = true;
-            let expected = normalize_newlines(
-                fs::read_to_string(&expected_h).unwrap_or_else(|err| {
+            let expected =
+                normalize_newlines(fs::read_to_string(&expected_h).unwrap_or_else(|err| {
                     panic!(
                         "case `{case_name}` failed to read {}: {err}",
                         expected_h.display()
                     )
-                }),
-            );
+                }));
             assert_eq!(
                 normalize_newlines(exports.c_header.clone()),
                 expected,
@@ -157,14 +160,13 @@ fn conformance_golden_cases_match_exports() {
         let expected_cmake = case_dir.join("expected.cmake");
         if expected_cmake.exists() {
             matched_any = true;
-            let expected = normalize_newlines(
-                fs::read_to_string(&expected_cmake).unwrap_or_else(|err| {
+            let expected =
+                normalize_newlines(fs::read_to_string(&expected_cmake).unwrap_or_else(|err| {
                     panic!(
                         "case `{case_name}` failed to read {}: {err}",
                         expected_cmake.display()
                     )
-                }),
-            );
+                }));
             assert_eq!(
                 normalize_newlines(exports.cmake.clone()),
                 expected,

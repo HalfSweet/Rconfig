@@ -933,11 +933,7 @@ impl<'a> TypeChecker<'a> {
                     if !enum_name_matches(enum_name, &found_enum) {
                         self.diagnostics.push(Diagnostic::error(
                             "E_ENUM_VARIANT_NOT_FOUND",
-                            format!(
-                                "variant `{}` does not belong to enum `{}`",
-                                path,
-                                enum_name
-                            ),
+                            format!("variant `{}` does not belong to enum `{}`", path, enum_name),
                             path.span,
                         ));
                         continue;

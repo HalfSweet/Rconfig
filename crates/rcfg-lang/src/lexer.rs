@@ -324,10 +324,7 @@ impl Lexer {
                     b't' => '\t',
                     _ => {
                         let esc_len = unknown_token_len(source, i);
-                        let escaped = source
-                            .get(i..i + esc_len)
-                            .unwrap_or("\u{FFFD}")
-                            .to_string();
+                        let escaped = source.get(i..i + esc_len).unwrap_or("\u{FFFD}").to_string();
                         return Err((i + esc_len, format!("unsupported escape `\\{escaped}`")));
                     }
                 };
@@ -435,10 +432,7 @@ fn unknown_token_len(source: &str, start: usize) -> usize {
     }
 
     if source.is_char_boundary(start) {
-        return source[start..]
-            .chars()
-            .next()
-            .map_or(1, char::len_utf8);
+        return source[start..].chars().next().map_or(1, char::len_utf8);
     }
 
     (start + 1..=source.len())

@@ -81,8 +81,11 @@ pub fn analyze_values_with_options(
     let mut diagnostics = if let Some(include_root) = options.include_root {
         let (expanded_values, mut include_diags) =
             expand_values_includes_from_memory_with_root(values, include_root);
-        let (mut semantic, _) =
-            analyze_values_with_context_and_stmt_indexes(&expanded_values, symbols, options.context);
+        let (mut semantic, _) = analyze_values_with_context_and_stmt_indexes(
+            &expanded_values,
+            symbols,
+            options.context,
+        );
         include_diags.append(&mut semantic);
         include_diags
     } else {
@@ -221,11 +224,7 @@ pub fn analyze_values_from_path_report_with_context(
     symbols: &SymbolTable,
     context: &HashMap<String, ResolvedValue>,
 ) -> ValuesAnalysisReport {
-    analyze_values_from_path_report_with_options(
-        entry,
-        symbols,
-        AnalyzeValuesOptions::new(context),
-    )
+    analyze_values_from_path_report_with_options(entry, symbols, AnalyzeValuesOptions::new(context))
 }
 
 pub fn analyze_values_from_path_report_with_context_and_root(

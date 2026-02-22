@@ -116,7 +116,11 @@ fn collect_runtime_patch_defaults(
     let mut ctx_references = BTreeSet::new();
     {
         let mut context = RuntimeContext::new(symbols, runtime, &mut ctx_references);
-        context.collect_patch_defaults_from_items(symbols.schema_items(), true, &mut patch_defaults);
+        context.collect_patch_defaults_from_items(
+            symbols.schema_items(),
+            true,
+            &mut patch_defaults,
+        );
     }
     (patch_defaults, ctx_references)
 }
@@ -154,7 +158,8 @@ impl<'a> RuntimeContext<'a> {
             match item {
                 Item::Use(use_stmt) => {
                     if let Some(alias) = &use_stmt.alias {
-                        self.aliases.insert(alias.value.clone(), use_stmt.path.to_string());
+                        self.aliases
+                            .insert(alias.value.clone(), use_stmt.path.to_string());
                     }
                 }
                 Item::Require(_)
@@ -255,7 +260,8 @@ impl<'a> RuntimeContext<'a> {
             match item {
                 Item::Use(use_stmt) => {
                     if let Some(alias) = &use_stmt.alias {
-                        self.aliases.insert(alias.value.clone(), use_stmt.path.to_string());
+                        self.aliases
+                            .insert(alias.value.clone(), use_stmt.path.to_string());
                     }
                 }
                 Item::Require(_)

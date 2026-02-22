@@ -261,8 +261,7 @@ pub struct Path {
     pub span: Span,
 }
 
-impl Path {
-}
+impl Path {}
 
 impl fmt::Display for Path {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
