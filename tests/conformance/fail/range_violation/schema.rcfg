@@ -1,0 +1,4 @@
+mod app {
+  #[range(1..=8)]
+  option retries: u8 = 3;
+}

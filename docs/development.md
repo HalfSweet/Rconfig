@@ -62,6 +62,37 @@ cargo fuzz run fuzz_parse_values --manifest-path fuzz/Cargo.toml -- -max_total_t
 - `fuzz/corpus/fuzz_parse_schema/`
 - `fuzz/corpus/fuzz_parse_values/`
 
+## Conformance 测试
+
+Conformance 用例目录如下：
+
+```text
+tests/conformance/
+├── ok/
+├── fail/
+└── golden/
+```
+
+约定：
+
+- `ok/<case>/`：`schema.rcfg` + `values.rcfgv`，断言无错误诊断
+- `fail/<case>/`：`schema.rcfg` + `values.rcfgv` + `expected.json`
+- `golden/<case>/`：`schema.rcfg` + `values.rcfgv` + `expected.h`/`expected.cmake`
+
+`expected.json` 当前格式：
+
+```json
+{
+  "error_codes": ["E_TYPE_MISMATCH"]
+}
+```
+
+运行 conformance harness：
+
+```bash
+cargo test --test conformance_tests
+```
+
 ## 文档约定
 
 - 用户文档与开发文档统一放 `docs/`

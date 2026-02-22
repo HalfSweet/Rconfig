@@ -1,0 +1,6 @@
+mod app {
+  option enabled: bool = false;
+  when enabled {
+    option retries: u8 = 3;
+  }
+}
