@@ -109,14 +109,14 @@ impl Lexer {
                 continue;
             }
 
-            if b == b'/' {
-                if let Some((kind, next, text)) = self.lex_comment(source, cursor) {
-                    if kind == TokenKind::DocComment {
-                        tokens.push(Token::new(kind, text, Span::new(cursor, next)));
-                    }
-                    cursor = next;
-                    continue;
+            if b == b'/'
+                && let Some((kind, next, text)) = self.lex_comment(source, cursor)
+            {
+                if kind == TokenKind::DocComment {
+                    tokens.push(Token::new(kind, text, Span::new(cursor, next)));
                 }
+                cursor = next;
+                continue;
             }
 
             if is_ident_start(b) {

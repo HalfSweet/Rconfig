@@ -72,11 +72,10 @@ impl SymbolPositionIndex {
                     let current = &self.occurrences[current_index];
                     let current_width = current.span.end.saturating_sub(current.span.start);
                     let next_width = occurrence.span.end.saturating_sub(occurrence.span.start);
-                    if next_width < current_width {
-                        best_index = Some(index);
-                    } else if next_width == current_width
-                        && current.role == SymbolOccurrenceRole::Definition
-                        && occurrence.role == SymbolOccurrenceRole::Reference
+                    if next_width < current_width
+                        || (next_width == current_width
+                            && current.role == SymbolOccurrenceRole::Definition
+                            && occurrence.role == SymbolOccurrenceRole::Reference)
                     {
                         best_index = Some(index);
                     }
@@ -525,10 +524,6 @@ impl SymbolTable {
         None
     }
 
-    pub(super) fn resolve_path_type(&self, scope: &[String], path: &Path) -> ResolvePathResult {
-        self.resolve_path_type_raw_in_scope(scope, &path.to_string())
-    }
-
     pub(super) fn resolve_path_type_raw_in_scope(
         &self,
         scope: &[String],
@@ -540,19 +535,19 @@ impl SymbolTable {
         let mut seen = HashSet::new();
 
         for candidate in candidates {
-            if let Some(ty) = self.option_types.get(candidate.as_str()) {
-                if seen.insert(candidate.clone()) {
-                    matches.push((candidate.clone(), ty.clone()));
-                }
+            if let Some(ty) = self.option_types.get(candidate.as_str())
+                && seen.insert(candidate.clone())
+            {
+                matches.push((candidate.clone(), ty.clone()));
             }
 
-            if let Some(enum_path) = self.enum_variants.get(candidate.as_str()) {
-                if seen.insert(candidate.clone()) {
-                    matches.push((
-                        candidate.clone(),
-                        ValueType::Enum(enum_path.as_str().to_string()),
-                    ));
-                }
+            if let Some(enum_path) = self.enum_variants.get(candidate.as_str())
+                && seen.insert(candidate.clone())
+            {
+                matches.push((
+                    candidate.clone(),
+                    ValueType::Enum(enum_path.as_str().to_string()),
+                ));
             }
         }
 
@@ -616,14 +611,6 @@ impl SymbolTable {
             .collect::<Vec<_>>()
     }
 
-    pub(super) fn resolve_option_path_in_scope(
-        &self,
-        scope: &[String],
-        path: &Path,
-    ) -> ResolveOptionPathResult {
-        self.resolve_option_path_raw_in_scope(scope, &path.to_string())
-    }
-
     pub(super) fn resolve_option_path_raw_in_scope(
         &self,
         scope: &[String],
@@ -653,14 +640,6 @@ impl SymbolTable {
 
         let (path, ty) = matches.pop().expect("matches length was checked");
         ResolveOptionPathResult::Resolved(path, ty)
-    }
-
-    pub(super) fn resolve_enum_variant_path_in_scope(
-        &self,
-        scope: &[String],
-        path: &Path,
-    ) -> ResolveEnumVariantPathResult {
-        self.resolve_enum_variant_path_raw_in_scope(scope, &path.to_string())
     }
 
     pub(super) fn resolve_enum_variant_path_raw_in_scope(

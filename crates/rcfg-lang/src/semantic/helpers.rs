@@ -43,7 +43,7 @@ pub(super) fn canonical_cycle_signature(cycle: &[String]) -> String {
             .map(|index| sequence[(offset + index) % sequence.len()].clone())
             .collect::<Vec<_>>()
             .join("->");
-        if best.as_ref().map_or(true, |current| rotated < *current) {
+        if best.as_ref().is_none_or(|current| rotated < *current) {
             best = Some(rotated);
         }
     }

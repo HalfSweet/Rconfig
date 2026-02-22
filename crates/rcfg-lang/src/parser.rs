@@ -1423,29 +1423,6 @@ impl Parser {
         })
     }
 
-    fn skip_reserved_item_body(&mut self) {
-        if self.eat(TokenKind::LBrace).is_some() {
-            let mut depth = 1usize;
-            while depth > 0 && !self.at(TokenKind::Eof) {
-                let token = self.bump();
-                match token.kind {
-                    TokenKind::LBrace => depth += 1,
-                    TokenKind::RBrace => depth -= 1,
-                    _ => {}
-                }
-            }
-            return;
-        }
-
-        while !self.at(TokenKind::Semicolon)
-            && !self.at(TokenKind::Eof)
-            && !self.at(TokenKind::RBrace)
-        {
-            self.bump();
-        }
-        self.eat(TokenKind::Semicolon);
-    }
-
     fn synchronize_item(&mut self) {
         while !self.at(TokenKind::Eof) {
             if self.at(TokenKind::Semicolon) {

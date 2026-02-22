@@ -262,12 +262,17 @@ pub struct Path {
 }
 
 impl Path {
-    pub fn to_string(&self) -> String {
-        self.segments
-            .iter()
-            .map(|segment| segment.value.clone())
-            .collect::<Vec<_>>()
-            .join("::")
+}
+
+impl fmt::Display for Path {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, segment) in self.segments.iter().enumerate() {
+            if index > 0 {
+                write!(f, "::")?;
+            }
+            write!(f, "{}", segment.value)?;
+        }
+        Ok(())
     }
 }
 
