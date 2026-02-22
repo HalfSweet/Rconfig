@@ -20,6 +20,22 @@ pub(crate) struct ExportTarget {
     pub(crate) out: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ExportCommandOptions<'a> {
+    pub(crate) values: &'a Path,
+    pub(crate) targets: &'a [ExportTarget],
+    pub(crate) export_secrets: bool,
+    pub(crate) export_context: bool,
+    pub(crate) c_prefix: String,
+    pub(crate) cmake_prefix: String,
+    pub(crate) bool_false_style: BoolFalseExportStyle,
+    pub(crate) enum_export_style: EnumExportStyle,
+    pub(crate) int_export_format: IntExportFormat,
+    pub(crate) export_name_rule: ExportNameRule,
+    pub(crate) diag_format: OutputFormat,
+    pub(crate) parse_diags: Vec<Diagnostic>,
+}
+
 pub(crate) fn build_targets(
     out_h: Option<PathBuf>,
     out_cmake: Option<PathBuf>,
@@ -74,38 +90,27 @@ pub(crate) fn build_targets(
 
 pub(crate) fn execute(
     session: &AppSession,
-    values: &Path,
-    targets: &[ExportTarget],
-    export_secrets: bool,
-    export_context: bool,
-    c_prefix: String,
-    cmake_prefix: String,
-    bool_false_style: BoolFalseExportStyle,
-    enum_export_style: EnumExportStyle,
-    int_export_format: IntExportFormat,
-    export_name_rule: ExportNameRule,
-    diag_format: OutputFormat,
-    parse_diags: Vec<Diagnostic>,
+    options: ExportCommandOptions<'_>,
 ) -> Result<(), String> {
-    let values_report = session.analyze_values_from_path(values);
-    let mut all = parse_diags;
+    let values_report = session.analyze_values_from_path(options.values);
+    let mut all = options.parse_diags;
     all.extend(values_report.diagnostics.clone());
 
     let resolved = session.resolve(&values_report.values);
 
     let export_options = ExportOptions {
-        include_secrets: export_secrets,
-        include_context: export_context,
-        c_prefix,
-        cmake_prefix,
-        bool_false_style,
-        enum_export_style,
-        int_export_format,
-        export_name_rule,
+        include_secrets: options.export_secrets,
+        include_context: options.export_context,
+        c_prefix: options.c_prefix,
+        cmake_prefix: options.cmake_prefix,
+        bool_false_style: options.bool_false_style,
+        enum_export_style: options.enum_export_style,
+        int_export_format: options.int_export_format,
+        export_name_rule: options.export_name_rule,
     };
 
     let mut rendered_outputs = Vec::new();
-    for target in targets {
+    for target in options.targets {
         let Some(exporter) = create_builtin_exporter(&target.format_name) else {
             let mut available = builtin_exporter_names();
             available.sort();
@@ -123,7 +128,7 @@ pub(crate) fn execute(
 
     dedup_diagnostics(&mut all);
 
-    print_diagnostics(&all, diag_format, session.i18n());
+    print_diagnostics(&all, options.diag_format, session.i18n());
     if all.iter().any(|diag| diag.severity == Severity::Error) {
         return Err("export blocked by diagnostics".to_string());
     }

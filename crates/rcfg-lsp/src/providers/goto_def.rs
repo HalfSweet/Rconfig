@@ -65,7 +65,7 @@ fn provide_values_definition(
                 if !matches!(info.kind, SymbolKind::Option) {
                     return None;
                 }
-                if path == &raw_path || path.ends_with(&format!("::{raw_path}")) {
+                if path == raw_path || path.ends_with(&format!("::{raw_path}")) {
                     return Some(path.to_string());
                 }
                 None

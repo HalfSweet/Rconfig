@@ -14,14 +14,13 @@ pub(crate) use self::render::{render_resolved_json, render_schema_ir_json};
 
 pub(crate) fn entry() -> i32 {
     let cli = Cli::parse();
-    let code = match run(cli) {
+    match run(cli) {
         Ok(()) => 0,
         Err(err) => {
             eprintln!("{}", err);
             1
         }
-    };
-    code
+    }
 }
 
 fn run(cli: Cli) -> Result<(), String> {
@@ -93,18 +92,20 @@ fn run(cli: Cli) -> Result<(), String> {
 
             commands::export::execute(
                 &session,
-                &values,
-                &targets,
-                export_secrets,
-                export_context,
-                c_prefix,
-                cmake_prefix,
-                bool_false_style,
-                enum_export_style,
-                int_export_format,
-                export_name_rule,
-                diag_format,
-                parse_diags,
+                commands::export::ExportCommandOptions {
+                    values: &values,
+                    targets: &targets,
+                    export_secrets,
+                    export_context,
+                    c_prefix,
+                    cmake_prefix,
+                    bool_false_style,
+                    enum_export_style,
+                    int_export_format,
+                    export_name_rule,
+                    diag_format,
+                    parse_diags,
+                },
             )?;
         }
         Commands::Dump {

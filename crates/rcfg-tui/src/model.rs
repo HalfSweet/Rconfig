@@ -74,18 +74,9 @@ impl ConfigTree {
     pub fn from_schema(symbols: &SymbolTable) -> Self {
         let mut tree = Self::default();
         let mut scope = Vec::new();
-        let mut next_id = 0usize;
         let enum_variants = enum_variants_by_enum_path(symbols.schema_items());
-        collect_items(
-            symbols,
-            symbols.schema_items(),
-            &[],
-            &mut scope,
-            None,
-            &mut next_id,
-            &enum_variants,
-            &mut tree,
-        );
+        let mut builder = NodeBuildContext::new(symbols, &enum_variants, &mut tree);
+        builder.collect_items(symbols.schema_items(), &[], &mut scope, None);
         tree
     }
 
@@ -105,145 +96,14 @@ impl ConfigTree {
     }
 }
 
-fn collect_items(
-    symbols: &SymbolTable,
-    items: &[Item],
-    guard: &[GuardClause],
-    scope: &mut Vec<String>,
-    parent: Option<usize>,
-    next_id: &mut usize,
-    enum_variants: &BTreeMap<String, Vec<String>>,
-    tree: &mut ConfigTree,
-) {
-    for item in items {
-        match item {
-            Item::Mod(module) => {
-                let path = scoped_path(scope, &module.name.value);
-                let id = push_node(
-                    tree,
-                    next_id,
-                    parent,
-                    path,
-                    module.name.value.clone(),
-                    NodeKind::Module,
-                    None,
-                    Vec::new(),
-                    false,
-                    None,
-                    guard.to_vec(),
-                );
-
-                scope.push(module.name.value.clone());
-                collect_items(
-                    symbols,
-                    &module.items,
-                    guard,
-                    scope,
-                    Some(id),
-                    next_id,
-                    enum_variants,
-                    tree,
-                );
-                scope.pop();
-            }
-            Item::Option(option) => {
-                let path = scoped_path(scope, &option.name.value);
-                let value_type = symbols.option_type(&path).cloned();
-                let option_variants = value_type
-                    .as_ref()
-                    .and_then(|ty| match ty {
-                        ValueType::Enum(enum_path) => enum_variants
-                            .get(enum_path)
-                            .or_else(|| {
-                                if enum_path.contains("::") {
-                                    None
-                                } else {
-                                    let scoped = scoped_path(scope, enum_path);
-                                    enum_variants.get(&scoped)
-                                }
-                            })
-                            .cloned(),
-                        _ => None,
-                    })
-                    .unwrap_or_default();
-                let is_secret = symbols.option_is_secret(&path);
-                let range = symbols.option_range(&path).cloned();
-                push_node(
-                    tree,
-                    next_id,
-                    parent,
-                    path,
-                    option.name.value.clone(),
-                    NodeKind::Option,
-                    value_type,
-                    option_variants,
-                    is_secret,
-                    range,
-                    guard.to_vec(),
-                );
-            }
-            Item::Enum(enum_decl) => {
-                let path = scoped_path(scope, &enum_decl.name.value);
-                push_node(
-                    tree,
-                    next_id,
-                    parent,
-                    path,
-                    enum_decl.name.value.clone(),
-                    NodeKind::Enum,
-                    None,
-                    Vec::new(),
-                    false,
-                    None,
-                    guard.to_vec(),
-                );
-            }
-            Item::When(when_block) => {
-                let mut next_guard = guard.to_vec();
-                next_guard.push(GuardClause::When(when_block.condition.to_string()));
-                collect_items(
-                    symbols,
-                    &when_block.items,
-                    &next_guard,
-                    scope,
-                    parent,
-                    next_id,
-                    enum_variants,
-                    tree,
-                );
-            }
-            Item::Match(match_block) => {
-                for case in &match_block.cases {
-                    let mut next_guard = guard.to_vec();
-                    next_guard.push(GuardClause::MatchCase {
-                        expr: match_block.expr.to_string(),
-                        pattern: case.pattern.to_string(),
-                        case_guard: case.guard.as_ref().map(ToString::to_string),
-                    });
-                    collect_items(
-                        symbols,
-                        &case.items,
-                        &next_guard,
-                        scope,
-                        parent,
-                        next_id,
-                        enum_variants,
-                        tree,
-                    );
-                }
-            }
-            Item::Use(_)
-            | Item::Require(_)
-            | Item::Constraint(_)
-            | Item::Patch(_)
-            | Item::Export(_) => {}
-        }
-    }
+struct NodeBuildContext<'a> {
+    symbols: &'a SymbolTable,
+    enum_variants: &'a BTreeMap<String, Vec<String>>,
+    tree: &'a mut ConfigTree,
+    next_id: usize,
 }
 
-fn push_node(
-    tree: &mut ConfigTree,
-    next_id: &mut usize,
+struct NodeBuildInput {
     parent: Option<usize>,
     path: String,
     name: String,
@@ -253,37 +113,155 @@ fn push_node(
     is_secret: bool,
     range: Option<IntRange>,
     guard: Vec<GuardClause>,
-) -> usize {
-    let id = *next_id;
-    *next_id += 1;
+}
 
-    let path_for_index = path.clone();
-
-    tree.nodes.push(ConfigNode {
-        id,
-        parent_id: parent,
-        path,
-        name,
-        kind,
-        value_type,
-        enum_variants,
-        is_secret,
-        range,
-        guard,
-        children: Vec::new(),
-    });
-
-    tree.path_to_node.entry(path_for_index).or_insert(id);
-
-    if let Some(parent_id) = parent {
-        if let Some(parent_node) = tree.nodes.get_mut(parent_id) {
-            parent_node.children.push(id);
+impl<'a> NodeBuildContext<'a> {
+    fn new(
+        symbols: &'a SymbolTable,
+        enum_variants: &'a BTreeMap<String, Vec<String>>,
+        tree: &'a mut ConfigTree,
+    ) -> Self {
+        Self {
+            symbols,
+            enum_variants,
+            tree,
+            next_id: 0,
         }
-    } else {
-        tree.root_ids.push(id);
     }
 
-    id
+    fn collect_items(
+        &mut self,
+        items: &[Item],
+        guard: &[GuardClause],
+        scope: &mut Vec<String>,
+        parent: Option<usize>,
+    ) {
+        for item in items {
+            match item {
+                Item::Mod(module) => {
+                    let path = scoped_path(scope, &module.name.value);
+                    let id = self.push_node(NodeBuildInput {
+                        parent,
+                        path,
+                        name: module.name.value.clone(),
+                        kind: NodeKind::Module,
+                        value_type: None,
+                        enum_variants: Vec::new(),
+                        is_secret: false,
+                        range: None,
+                        guard: guard.to_vec(),
+                    });
+
+                    scope.push(module.name.value.clone());
+                    self.collect_items(&module.items, guard, scope, Some(id));
+                    scope.pop();
+                }
+                Item::Option(option) => {
+                    let path = scoped_path(scope, &option.name.value);
+                    let value_type = self.symbols.option_type(&path).cloned();
+                    let option_variants = value_type
+                        .as_ref()
+                        .and_then(|ty| match ty {
+                            ValueType::Enum(enum_path) => self
+                                .enum_variants
+                                .get(enum_path)
+                                .or_else(|| {
+                                    if enum_path.contains("::") {
+                                        None
+                                    } else {
+                                        let scoped = scoped_path(scope, enum_path);
+                                        self.enum_variants.get(&scoped)
+                                    }
+                                })
+                                .cloned(),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let is_secret = self.symbols.option_is_secret(&path);
+                    let range = self.symbols.option_range(&path).cloned();
+                    self.push_node(NodeBuildInput {
+                        parent,
+                        path,
+                        name: option.name.value.clone(),
+                        kind: NodeKind::Option,
+                        value_type,
+                        enum_variants: option_variants,
+                        is_secret,
+                        range,
+                        guard: guard.to_vec(),
+                    });
+                }
+                Item::Enum(enum_decl) => {
+                    let path = scoped_path(scope, &enum_decl.name.value);
+                    self.push_node(NodeBuildInput {
+                        parent,
+                        path,
+                        name: enum_decl.name.value.clone(),
+                        kind: NodeKind::Enum,
+                        value_type: None,
+                        enum_variants: Vec::new(),
+                        is_secret: false,
+                        range: None,
+                        guard: guard.to_vec(),
+                    });
+                }
+                Item::When(when_block) => {
+                    let mut next_guard = guard.to_vec();
+                    next_guard.push(GuardClause::When(when_block.condition.to_string()));
+                    self.collect_items(&when_block.items, &next_guard, scope, parent);
+                }
+                Item::Match(match_block) => {
+                    for case in &match_block.cases {
+                        let mut next_guard = guard.to_vec();
+                        next_guard.push(GuardClause::MatchCase {
+                            expr: match_block.expr.to_string(),
+                            pattern: case.pattern.to_string(),
+                            case_guard: case.guard.as_ref().map(ToString::to_string),
+                        });
+                        self.collect_items(&case.items, &next_guard, scope, parent);
+                    }
+                }
+                Item::Use(_)
+                | Item::Require(_)
+                | Item::Constraint(_)
+                | Item::Patch(_)
+                | Item::Export(_) => {}
+            }
+        }
+    }
+
+    fn push_node(&mut self, input: NodeBuildInput) -> usize {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let path_for_index = input.path.clone();
+
+        self.tree.nodes.push(ConfigNode {
+            id,
+            parent_id: input.parent,
+            path: input.path,
+            name: input.name,
+            kind: input.kind,
+            value_type: input.value_type,
+            enum_variants: input.enum_variants,
+            is_secret: input.is_secret,
+            range: input.range,
+            guard: input.guard,
+            children: Vec::new(),
+        });
+
+        self.tree.path_to_node.entry(path_for_index).or_insert(id);
+
+        if let Some(parent_id) = input.parent {
+            if let Some(parent_node) = self.tree.nodes.get_mut(parent_id) {
+                parent_node.children.push(id);
+            }
+        } else {
+            self.tree.root_ids.push(id);
+        }
+
+        id
+    }
 }
 
 fn scoped_path(scope: &[String], name: &str) -> String {
