@@ -239,11 +239,14 @@ impl Lexer {
                         (TokenKind::Pipe, 1)
                     }
                 }
-                _ => (TokenKind::Unknown, 1),
+                _ => (TokenKind::Unknown, unknown_token_len(source, start)),
             };
 
             cursor += len;
-            let text = source[start..cursor].to_string();
+            let text = source.get(start..cursor).map_or_else(
+                || String::from_utf8_lossy(&bytes[start..cursor]).into_owned(),
+                ToString::to_string,
+            );
 
             if kind == TokenKind::Unknown {
                 self.diagnostics.push(Diagnostic::error(
@@ -320,15 +323,21 @@ impl Lexer {
                     b'r' => '\r',
                     b't' => '\t',
                     _ => {
-                        return Err((i + 1, format!("unsupported escape `\\{}`", esc as char)));
+                        let esc_len = unknown_token_len(source, i);
+                        let escaped = source
+                            .get(i..i + esc_len)
+                            .unwrap_or("\u{FFFD}")
+                            .to_string();
+                        return Err((i + esc_len, format!("unsupported escape `\\{escaped}`")));
                     }
                 };
                 output.push(ch);
                 i += 1;
                 continue;
             }
-            output.push(b as char);
-            i += 1;
+            let ch_len = unknown_token_len(source, i);
+            output.push_str(source.get(i..i + ch_len).unwrap_or("\u{FFFD}"));
+            i += ch_len;
         }
 
         Err((source.len(), "unterminated string literal".to_string()))
@@ -418,6 +427,23 @@ fn lex_integer(source: &str, mut cursor: usize) -> usize {
         }
     }
     cursor
+}
+
+fn unknown_token_len(source: &str, start: usize) -> usize {
+    if start >= source.len() {
+        return 1;
+    }
+
+    if source.is_char_boundary(start) {
+        return source[start..]
+            .chars()
+            .next()
+            .map_or(1, char::len_utf8);
+    }
+
+    (start + 1..=source.len())
+        .find(|idx| source.is_char_boundary(*idx))
+        .map_or(1, |next| next - start)
 }
 
 pub fn collect_doc_comments(tokens: &[Token], start: usize) -> (Vec<Spanned<String>>, usize) {

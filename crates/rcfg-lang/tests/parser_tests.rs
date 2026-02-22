@@ -245,6 +245,36 @@ fn parser_nesting_within_limit_does_not_trigger_depth_error() {
     );
 }
 
+#[test]
+fn parser_handles_replacement_char_without_panicking() {
+    let src = format!(
+        "mod app {{\n  option enabled: bool = true;\n  {}\n}}\n",
+        '\u{FFFD}'
+    );
+    let (_file, diags) = parse_schema_with_diagnostics(&src);
+    assert!(
+        diags
+            .iter()
+            .any(|diag| diag.code == "E_PARSE_UNEXPECTED_TOKEN"),
+        "expected E_PARSE_UNEXPECTED_TOKEN, got: {diags:#?}"
+    );
+}
+
+#[test]
+fn parser_handles_multibyte_unsupported_escape_without_panicking() {
+    let src = format!(
+        "mod app {{\n  option value: string = \"\\{}\";\n}}\n",
+        '\u{FFFD}'
+    );
+    let (_file, diags) = parse_schema_with_diagnostics(&src);
+    assert!(
+        diags
+            .iter()
+            .any(|diag| diag.code == "E_PARSE_INVALID_LITERAL"),
+        "expected E_PARSE_INVALID_LITERAL, got: {diags:#?}"
+    );
+}
+
 fn nested_when_schema(depth: usize) -> String {
     let mut src = String::from("mod app {\n  option enabled: bool = false;\n");
     for _ in 0..depth {
