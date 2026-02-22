@@ -1194,8 +1194,9 @@ schema = "missing.rcfg"
     let (mut service, mut socket) = LspService::new(Backend::new);
     initialize(&mut service).await;
 
-    notify_service(
+    let _initial_publishes = notify_service_with_drain(
         &mut service,
+        &mut socket,
         "textDocument/didOpen",
         json!({
             "textDocument": {
@@ -1207,7 +1208,6 @@ schema = "missing.rcfg"
         }),
     )
     .await;
-    let _ = wait_for_publish(&mut socket).await;
 
     let publishes = notify_service_with_drain(
         &mut service,
