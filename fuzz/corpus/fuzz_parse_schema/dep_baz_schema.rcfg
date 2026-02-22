@@ -1,0 +1,12 @@
+/// Runtime lane kind used by higher-level packages.
+enum Lane { alpha, beta, gamma }
+
+/// Turn on deterministic lane checks.
+option strict_lane: bool = true;
+
+/// Lane used by default when no override is provided.
+option default_lane: Lane = Lane::beta;
+
+/// Allowed batch count for app schedulers.
+#[range(1..=32)]
+option max_batch: u16 = 16;

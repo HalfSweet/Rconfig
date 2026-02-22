@@ -37,6 +37,31 @@ cargo test --workspace
 2. `cargo test --workspace` 通过
 3. 对外行为不变的重构需说明“行为等价”
 
+## Fuzz 测试（Parser）
+
+当前仓库提供两个 fuzz target：
+
+- `fuzz_parse_schema`
+- `fuzz_parse_values`
+
+首次使用前请安装 `cargo-fuzz`：
+
+```bash
+cargo install cargo-fuzz
+```
+
+运行 5 分钟 smoke fuzz：
+
+```bash
+cargo fuzz run fuzz_parse_schema --manifest-path fuzz/Cargo.toml -- -max_total_time=300
+cargo fuzz run fuzz_parse_values --manifest-path fuzz/Cargo.toml -- -max_total_time=300
+```
+
+初始语料库位于：
+
+- `fuzz/corpus/fuzz_parse_schema/`
+- `fuzz/corpus/fuzz_parse_values/`
+
 ## 文档约定
 
 - 用户文档与开发文档统一放 `docs/`

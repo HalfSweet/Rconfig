@@ -1,0 +1,12 @@
+/// Preferred output format.
+enum Format { json, text, binary }
+
+/// Text label for environment grouping.
+option env_label: string = "dev";
+
+/// Target format consumed by foo/app.
+option format: Format = Format::json;
+
+/// Number of worker shards.
+#[range(1..=64)]
+option shard_count: u32 = 8;

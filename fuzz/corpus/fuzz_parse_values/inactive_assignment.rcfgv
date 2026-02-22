@@ -1,0 +1,31 @@
+use foo as foo_cfg;
+use bar as bar_cfg;
+use demo::app as app_cfg;
+
+foo_cfg::enabled = true;
+foo_cfg::mode = pro;
+foo_cfg::timeout_ms = 2000;
+foo_cfg::retries = 4;
+foo_cfg::format = binary;
+foo_cfg::lane = beta;
+
+foo_cfg::sample_rate = 42;
+
+bar_cfg::enabled = true;
+bar_cfg::flavor = full;
+bar_cfg::queue_depth = 128;
+bar_cfg::endpoint = "bar.strict.local";
+
+app_cfg::enabled = true;
+app_cfg::release_name = "strict-prod";
+app_cfg::channel = prod;
+app_cfg::workers = 16;
+app_cfg::ratio = 50;
+app_cfg::target = "linux";
+app_cfg::out_format = "binary";
+app_cfg::lane = "beta";
+app_cfg::trace_level = 1;
+app_cfg::cache_mb = 256;
+app_cfg::api_tag = "strict-v1";
+app_cfg::win_console = false;
+app_cfg::posix_signals = true;

@@ -1,0 +1,22 @@
+enum Flavor { tiny, full }
+
+option enabled: bool = true;
+option flavor: Flavor = Flavor::tiny;
+
+#[range(1..=512)]
+option queue_depth: u16 = 16;
+
+option endpoint: string = "bar.local";
+
+when enabled {
+  #[msg("bar.endpoint.rule")]
+  require!(matches(endpoint, "^[a-z0-9.-]+$"));
+}
+
+match flavor {
+  case Flavor::full => {
+    #[msg("bar.full.queue")]
+    require!(queue_depth >= 64);
+  }
+  case Flavor::tiny => { }
+}

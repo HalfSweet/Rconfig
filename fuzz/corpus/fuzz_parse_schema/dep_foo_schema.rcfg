@@ -1,0 +1,70 @@
+use baz as baz_cfg;
+use qux as qux_cfg;
+
+/// Primary runtime mode.
+enum Mode { off, basic, pro }
+
+option enabled: bool = true;
+option mode: Mode = Mode::basic;
+
+#[unit("ms")]
+#[range(10..=20_000)]
+option timeout_ms: u32 = 500;
+
+/// Sample token; hidden from default export.
+#[secret]
+option token: string = "demo-token";
+
+#[range(0..=7)]
+option retries: u8 = 3;
+
+#[range(-128..=127)]
+option offset: i32 = 0;
+
+option lane: baz_cfg::Lane = baz_cfg::Lane::beta;
+option format: qux_cfg::Format = qux_cfg::Format::json;
+
+constraint {
+  #[msg("foo.timeout.safe")]
+  require!(timeout_ms >= 100 && timeout_ms <= 10_000);
+
+  #[msg("foo.retries.compat")]
+  require!(retries in 0..=7);
+}
+
+option warmup: u16 = 64 {
+  #[msg("foo.warmup.active")]
+  require!(enabled == true);
+
+    #[msg("foo.warmup.range")]
+    require!(self in 1..=32);
+
+    #[msg("foo.warmup.max_batch")]
+    require!(self <= baz_cfg::max_batch);
+}
+
+when enabled {
+  #[msg("foo.env_label.len")]
+  require!(len(qux_cfg::env_label) >= 3);
+
+  #[msg("foo.retries.membership")]
+  require!(retries in { 0, 1, 2, 3, 4, 5, 6, 7 });
+}
+
+match mode {
+  case Mode::pro if baz_cfg::strict_lane => {
+    #[msg("foo.pro.needs_binary")]
+    require!(timeout_ms >= 1000);
+  }
+
+  case Mode::basic => {
+    option sample_rate: u32 = 10;
+  }
+
+  case Mode::off => { }
+}
+
+patch foo {
+  default timeout_ms = 1000;
+  default lane = baz_cfg::Lane::gamma;
+}

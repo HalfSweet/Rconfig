@@ -1,0 +1,11 @@
+include "@root/profiles/base.rcfgv";
+
+foo_cfg::mode = basic;
+foo_cfg::format = text;
+
+app_cfg::channel = dev;
+app_cfg::target = env("DEMO_TARGET", "linux");
+app_cfg::release_name = env("DEMO_RELEASE", "dev-local");
+app_cfg::out_format = "text";
+app_cfg::workers = 12;
+app_cfg::ratio = 50;

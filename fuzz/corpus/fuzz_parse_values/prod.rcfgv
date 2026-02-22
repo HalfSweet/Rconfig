@@ -1,0 +1,16 @@
+include "@root/profiles/base.rcfgv";
+
+foo_cfg::mode = pro;
+foo_cfg::format = binary;
+foo_cfg::timeout_ms = 2000;
+
+bar_cfg::flavor = full;
+bar_cfg::queue_depth = 256;
+
+app_cfg::channel = prod;
+app_cfg::target = env("DEMO_TARGET", "linux");
+app_cfg::release_name = env("DEMO_RELEASE", "prod-release");
+app_cfg::out_format = "binary";
+app_cfg::workers = 16;
+app_cfg::ratio = 50;
+app_cfg::trace_level = 1;
