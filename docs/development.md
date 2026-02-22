@@ -93,6 +93,20 @@ tests/conformance/
 cargo test --test conformance_tests
 ```
 
+## Dump JSON 快照测试
+
+当前提供 `dump` 三份JSON输出的稳定性快照测试：
+
+- `tests/snapshots/dump/schema_ir.json`
+- `tests/snapshots/dump/resolved.json`
+- `tests/snapshots/dump/diagnostics.json`
+
+执行：
+
+```bash
+cargo test --test dump_snapshot_tests
+```
+
 ## 文档约定
 
 - 用户文档与开发文档统一放 `docs/`

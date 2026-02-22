@@ -1,0 +1,610 @@
+[
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `bar::enabled` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "bar::enabled",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 42,
+      "start": 35
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `bar::flavor` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "bar::flavor",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 70,
+      "start": 64
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `bar::queue_depth` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "bar::queue_depth",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 132,
+      "start": 121
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `bar::endpoint` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "bar::endpoint",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 160,
+      "start": 152
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::enabled` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::enabled",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 112,
+      "start": 105
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::mode` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::mode",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 138,
+      "start": 134
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::timeout_ms` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::timeout_ms",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 214,
+      "start": 204
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::retries` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::retries",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 352,
+      "start": 345
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::offset` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::offset",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 397,
+      "start": 391
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::lane` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::lane",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 420,
+      "start": 416
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::format` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::format",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 472,
+      "start": 466
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::warmup` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::warmup",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 691,
+      "start": 685
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `foo::sample_rate` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "foo::sample_rate",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 1262,
+      "start": 1251
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::release_name` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::release_name",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 363,
+      "start": 351
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::channel` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::channel",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 406,
+      "start": 399
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::workers` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::workers",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 469,
+      "start": 462
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::balance_bias` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::balance_bias",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 523,
+      "start": 511
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::ratio` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::ratio",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 569,
+      "start": 564
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::lane` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::lane",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 594,
+      "start": 590
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::out_format` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::out_format",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 632,
+      "start": 622
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::cache_mb` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::cache_mb",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 1418,
+      "start": 1410
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::api_tag` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::api_tag",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 1605,
+      "start": 1598
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::win_console` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::win_console",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 1996,
+      "start": 1985
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::posix_signals` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::posix_signals",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 2117,
+      "start": 2104
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::app::trace_level` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::app::trace_level",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 2238,
+      "start": 2227
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `demo::arch_tune::simd` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "demo::arch_tune::simd",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 3207,
+      "start": 3203
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `ctx::arch` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "ctx::arch",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 3144,
+      "start": 3140
+    }
+  },
+  {
+    "args": {},
+    "code": "L_MISSING_DOC",
+    "include_chain": [],
+    "message": "option `ctx::os` is missing documentation comment",
+    "message_key": null,
+    "note": null,
+    "path": "ctx::os",
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 3165,
+      "start": 3163
+    }
+  },
+  {
+    "args": {},
+    "code": "L_UNUSED_ENUM_VARIANT",
+    "include_chain": [],
+    "message": "enum variant `baz::Lane::alpha` is never referenced",
+    "message_key": null,
+    "note": null,
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 70,
+      "start": 65
+    }
+  },
+  {
+    "args": {},
+    "code": "L_UNUSED_ENUM_VARIANT",
+    "include_chain": [],
+    "message": "enum variant `qux::Format::binary` is never referenced",
+    "message_key": null,
+    "note": null,
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 61,
+      "start": 55
+    }
+  },
+  {
+    "args": {},
+    "code": "L_UNUSED_ENUM_VARIANT",
+    "include_chain": [],
+    "message": "enum variant `qux::Format::text` is never referenced",
+    "message_key": null,
+    "note": null,
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 53,
+      "start": 49
+    }
+  },
+  {
+    "args": {},
+    "code": "W_DUPLICATE_ASSIGNMENT",
+    "include_chain": [],
+    "message": "option `foo::mode` is assigned multiple times; last wins",
+    "message_key": null,
+    "note": "fix-it: remove earlier assignment and keep only the final value",
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 105,
+      "start": 38
+    }
+  },
+  {
+    "args": {},
+    "code": "W_DUPLICATE_ASSIGNMENT",
+    "include_chain": [],
+    "message": "option `foo::format` is assigned multiple times; last wins",
+    "message_key": null,
+    "note": "fix-it: remove earlier assignment and keep only the final value",
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 180,
+      "start": 61
+    }
+  },
+  {
+    "args": {},
+    "code": "W_DUPLICATE_ASSIGNMENT",
+    "include_chain": [],
+    "message": "option `demo::app::channel` is assigned multiple times; last wins",
+    "message_key": null,
+    "note": "fix-it: remove earlier assignment and keep only the final value",
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 412,
+      "start": 86
+    }
+  },
+  {
+    "args": {},
+    "code": "W_DUPLICATE_ASSIGNMENT",
+    "include_chain": [],
+    "message": "option `demo::app::target` is assigned multiple times; last wins",
+    "message_key": null,
+    "note": "fix-it: remove earlier assignment and keep only the final value",
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 458,
+      "start": 110
+    }
+  },
+  {
+    "args": {},
+    "code": "W_DUPLICATE_ASSIGNMENT",
+    "include_chain": [],
+    "message": "option `demo::app::release_name` is assigned multiple times; last wins",
+    "message_key": null,
+    "note": "fix-it: remove earlier assignment and keep only the final value",
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 377,
+      "start": 157
+    }
+  },
+  {
+    "args": {},
+    "code": "W_DUPLICATE_ASSIGNMENT",
+    "include_chain": [],
+    "message": "option `demo::app::out_format` is assigned multiple times; last wins",
+    "message_key": null,
+    "note": "fix-it: remove earlier assignment and keep only the final value",
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 550,
+      "start": 215
+    }
+  },
+  {
+    "args": {},
+    "code": "W_DUPLICATE_ASSIGNMENT",
+    "include_chain": [],
+    "message": "option `demo::app::workers` is assigned multiple times; last wins",
+    "message_key": null,
+    "note": "fix-it: remove earlier assignment and keep only the final value",
+    "path": null,
+    "related": [],
+    "severity": "warning",
+    "source": null,
+    "span": {
+      "end": 436,
+      "start": 245
+    }
+  }
+]

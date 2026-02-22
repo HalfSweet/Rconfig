@@ -1,0 +1,361 @@
+{
+  "symbols": {
+    "enums": [
+      {
+        "help": null,
+        "help_key": "demo.bar.Flavor.help",
+        "label_key": "demo.bar.Flavor.label",
+        "path": "demo::bar::Flavor",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.baz.Lane.help",
+        "label_key": "demo.baz.Lane.label",
+        "path": "demo::baz::Lane",
+        "summary": "Runtime lane kind used by higher-level packages."
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.Channel.help",
+        "label_key": "demo.app.Channel.label",
+        "path": "demo::app::Channel",
+        "summary": "Build channel consumed by app runtime."
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.Mode.help",
+        "label_key": "demo.foo.Mode.label",
+        "path": "demo::foo::Mode",
+        "summary": "Primary runtime mode."
+      },
+      {
+        "help": null,
+        "help_key": "demo.qux.Format.help",
+        "label_key": "demo.qux.Format.label",
+        "path": "demo::qux::Format",
+        "summary": "Preferred output format."
+      }
+    ],
+    "mods": [
+      {
+        "help": null,
+        "help_key": "demo.bar.help",
+        "label_key": "demo.bar.label",
+        "path": "demo::bar",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.baz.help",
+        "label_key": "demo.baz.label",
+        "path": "demo::baz",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.ctx.help",
+        "label_key": "demo.ctx.label",
+        "path": "ctx",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.help",
+        "label_key": "demo.label",
+        "path": "demo",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.help",
+        "label_key": "demo.app.label",
+        "path": "demo::app",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.arch_tune.help",
+        "label_key": "demo.arch_tune.label",
+        "path": "demo::arch_tune",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.help",
+        "label_key": "demo.foo.label",
+        "path": "demo::foo",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.qux.help",
+        "label_key": "demo.qux.label",
+        "path": "demo::qux",
+        "summary": null
+      }
+    ],
+    "options": [
+      {
+        "help": null,
+        "help_key": "demo.bar.enabled.help",
+        "label_key": "demo.bar.enabled.label",
+        "path": "demo::bar::enabled",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.bar.endpoint.help",
+        "label_key": "demo.bar.endpoint.label",
+        "path": "demo::bar::endpoint",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.bar.flavor.help",
+        "label_key": "demo.bar.flavor.label",
+        "path": "demo::bar::flavor",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.bar.queue_depth.help",
+        "label_key": "demo.bar.queue_depth.label",
+        "path": "demo::bar::queue_depth",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.baz.default_lane.help",
+        "label_key": "demo.baz.default_lane.label",
+        "path": "demo::baz::default_lane",
+        "summary": "Lane used by default when no override is provided."
+      },
+      {
+        "help": null,
+        "help_key": "demo.baz.max_batch.help",
+        "label_key": "demo.baz.max_batch.label",
+        "path": "demo::baz::max_batch",
+        "summary": "Allowed batch count for app schedulers."
+      },
+      {
+        "help": null,
+        "help_key": "demo.baz.strict_lane.help",
+        "label_key": "demo.baz.strict_lane.label",
+        "path": "demo::baz::strict_lane",
+        "summary": "Turn on deterministic lane checks."
+      },
+      {
+        "help": null,
+        "help_key": "demo.ctx.arch.help",
+        "label_key": "demo.ctx.arch.label",
+        "path": "ctx::arch",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.ctx.os.help",
+        "label_key": "demo.ctx.os.label",
+        "path": "ctx::os",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.api_tag.help",
+        "label_key": "demo.app.api_tag.label",
+        "path": "demo::app::api_tag",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.balance_bias.help",
+        "label_key": "demo.app.balance_bias.label",
+        "path": "demo::app::balance_bias",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.cache_mb.help",
+        "label_key": "demo.app.cache_mb.label",
+        "path": "demo::app::cache_mb",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.channel.help",
+        "label_key": "demo.app.channel.label",
+        "path": "demo::app::channel",
+        "summary": null
+      },
+      {
+        "help": "Disabled app keeps only minimal exports.",
+        "help_key": "demo.app.enabled.help",
+        "label_key": "demo.app.enabled.label",
+        "path": "demo::app::enabled",
+        "summary": "Toggle the top-level app."
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.lane.help",
+        "label_key": "demo.app.lane.label",
+        "path": "demo::app::lane",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.out_format.help",
+        "label_key": "demo.app.out_format.label",
+        "path": "demo::app::out_format",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.posix_signals.help",
+        "label_key": "demo.app.posix_signals.label",
+        "path": "demo::app::posix_signals",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.ratio.help",
+        "label_key": "demo.app.ratio.label",
+        "path": "demo::app::ratio",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.release_name.help",
+        "label_key": "demo.app.release_name.label",
+        "path": "demo::app::release_name",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.target.help",
+        "label_key": "demo.app.target.label",
+        "path": "demo::app::target",
+        "summary": "Pulled from context JSON."
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.trace_level.help",
+        "label_key": "demo.app.trace_level.label",
+        "path": "demo::app::trace_level",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.win_console.help",
+        "label_key": "demo.app.win_console.label",
+        "path": "demo::app::win_console",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.app.workers.help",
+        "label_key": "demo.app.workers.label",
+        "path": "demo::app::workers",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.arch_tune.simd.help",
+        "label_key": "demo.arch_tune.simd.label",
+        "path": "demo::arch_tune::simd",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.enabled.help",
+        "label_key": "demo.foo.enabled.label",
+        "path": "demo::foo::enabled",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.format.help",
+        "label_key": "demo.foo.format.label",
+        "path": "demo::foo::format",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.lane.help",
+        "label_key": "demo.foo.lane.label",
+        "path": "demo::foo::lane",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.mode.help",
+        "label_key": "demo.foo.mode.label",
+        "path": "demo::foo::mode",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.offset.help",
+        "label_key": "demo.foo.offset.label",
+        "path": "demo::foo::offset",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.retries.help",
+        "label_key": "demo.foo.retries.label",
+        "path": "demo::foo::retries",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.sample_rate.help",
+        "label_key": "demo.foo.sample_rate.label",
+        "path": "demo::foo::sample_rate",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.timeout_ms.help",
+        "label_key": "demo.foo.timeout_ms.label",
+        "path": "demo::foo::timeout_ms",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.token.help",
+        "label_key": "demo.foo.token.label",
+        "path": "demo::foo::token",
+        "summary": "Sample token; hidden from default export."
+      },
+      {
+        "help": null,
+        "help_key": "demo.foo.warmup.help",
+        "label_key": "demo.foo.warmup.label",
+        "path": "demo::foo::warmup",
+        "summary": null
+      },
+      {
+        "help": null,
+        "help_key": "demo.qux.env_label.help",
+        "label_key": "demo.qux.env_label.label",
+        "path": "demo::qux::env_label",
+        "summary": "Text label for environment grouping."
+      },
+      {
+        "help": null,
+        "help_key": "demo.qux.format.help",
+        "label_key": "demo.qux.format.label",
+        "path": "demo::qux::format",
+        "summary": "Target format consumed by foo/app."
+      },
+      {
+        "help": null,
+        "help_key": "demo.qux.shard_count.help",
+        "label_key": "demo.qux.shard_count.label",
+        "path": "demo::qux::shard_count",
+        "summary": "Number of worker shards."
+      }
+    ]
+  },
+  "tool_version": "0.1.0"
+}

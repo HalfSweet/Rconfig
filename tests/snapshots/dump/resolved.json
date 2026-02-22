@@ -1,0 +1,337 @@
+{
+  "options": {
+    "ctx::arch": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": null
+      },
+      "source": null,
+      "type": "string"
+    },
+    "ctx::os": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": null
+      },
+      "source": null,
+      "type": "string"
+    },
+    "demo::app::api_tag": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "demo-v1"
+      },
+      "source": "user",
+      "type": "string"
+    },
+    "demo::app::balance_bias": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 0
+      },
+      "source": "default",
+      "type": "i32"
+    },
+    "demo::app::cache_mb": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 256
+      },
+      "source": "user",
+      "type": "u32"
+    },
+    "demo::app::channel": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "demo::app::Channel::dev"
+      },
+      "source": "user",
+      "type": "enum:Channel"
+    },
+    "demo::app::enabled": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": true
+      },
+      "source": "user",
+      "type": "bool"
+    },
+    "demo::app::lane": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "beta"
+      },
+      "source": "user",
+      "type": "string"
+    },
+    "demo::app::out_format": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "text"
+      },
+      "source": "user",
+      "type": "string"
+    },
+    "demo::app::posix_signals": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": true
+      },
+      "source": "user",
+      "type": "bool"
+    },
+    "demo::app::ratio": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 50
+      },
+      "source": "user",
+      "type": "u8"
+    },
+    "demo::app::release_name": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "dev-local"
+      },
+      "source": "user",
+      "type": "string"
+    },
+    "demo::app::target": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "linux"
+      },
+      "source": "user",
+      "type": "string"
+    },
+    "demo::app::trace_level": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 3
+      },
+      "source": "patch",
+      "type": "u8"
+    },
+    "demo::app::win_console": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": false
+      },
+      "source": "user",
+      "type": "bool"
+    },
+    "demo::app::workers": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 12
+      },
+      "source": "user",
+      "type": "u16"
+    },
+    "demo::arch_tune::simd": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": true
+      },
+      "source": "patch",
+      "type": "bool"
+    },
+    "demo::bar::enabled": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": true
+      },
+      "source": "user",
+      "type": "bool"
+    },
+    "demo::bar::endpoint": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "bar.default.local"
+      },
+      "source": "user",
+      "type": "string"
+    },
+    "demo::bar::flavor": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "bar::Flavor::full"
+      },
+      "source": "user",
+      "type": "enum:Flavor"
+    },
+    "demo::bar::queue_depth": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 128
+      },
+      "source": "user",
+      "type": "u16"
+    },
+    "demo::baz::default_lane": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "baz::Lane::beta"
+      },
+      "source": "default",
+      "type": "enum:Lane"
+    },
+    "demo::baz::max_batch": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 16
+      },
+      "source": "default",
+      "type": "u16"
+    },
+    "demo::baz::strict_lane": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": true
+      },
+      "source": "default",
+      "type": "bool"
+    },
+    "demo::foo::enabled": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": true
+      },
+      "source": "user",
+      "type": "bool"
+    },
+    "demo::foo::format": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "qux::Format::text"
+      },
+      "source": "user",
+      "type": "enum:Format"
+    },
+    "demo::foo::lane": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "baz::Lane::beta"
+      },
+      "source": "user",
+      "type": "enum:Lane"
+    },
+    "demo::foo::mode": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "foo::Mode::basic"
+      },
+      "source": "user",
+      "type": "enum:Mode"
+    },
+    "demo::foo::offset": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 0
+      },
+      "source": "default",
+      "type": "i32"
+    },
+    "demo::foo::retries": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 4
+      },
+      "source": "user",
+      "type": "u8"
+    },
+    "demo::foo::sample_rate": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 10
+      },
+      "source": "default",
+      "type": "u32"
+    },
+    "demo::foo::timeout_ms": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 1200
+      },
+      "source": "user",
+      "type": "u32"
+    },
+    "demo::foo::token": {
+      "active": true,
+      "data": {
+        "redacted": true,
+        "value": null
+      },
+      "source": "default",
+      "type": "string"
+    },
+    "demo::foo::warmup": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 64
+      },
+      "source": "default",
+      "type": "u16"
+    },
+    "demo::qux::env_label": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "dev"
+      },
+      "source": "default",
+      "type": "string"
+    },
+    "demo::qux::format": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": "qux::Format::json"
+      },
+      "source": "default",
+      "type": "enum:Format"
+    },
+    "demo::qux::shard_count": {
+      "active": true,
+      "data": {
+        "redacted": false,
+        "value": 8
+      },
+      "source": "default",
+      "type": "u32"
+    }
+  }
+}
