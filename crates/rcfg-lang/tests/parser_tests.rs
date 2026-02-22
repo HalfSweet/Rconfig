@@ -204,3 +204,56 @@ mod app {
         "expected fix-it note in parser diagnostic: {diag:#?}"
     );
 }
+
+#[test]
+fn reports_parse_nesting_too_deep_for_when_blocks() {
+    let src = nested_when_schema(300);
+    let (_file, diags) = parse_schema_with_diagnostics(&src);
+    assert!(
+        diags
+            .iter()
+            .any(|diag| diag.code == "E_PARSE_NESTING_TOO_DEEP"),
+        "expected E_PARSE_NESTING_TOO_DEEP, got: {diags:#?}"
+    );
+}
+
+#[test]
+fn reports_parse_nesting_too_deep_for_group_expr() {
+    let src = format!(
+        "constraint {{ require!({}true{}); }}",
+        "(".repeat(300),
+        ")".repeat(300)
+    );
+    let (_file, diags) = parse_schema_with_diagnostics(&src);
+    assert!(
+        diags
+            .iter()
+            .any(|diag| diag.code == "E_PARSE_NESTING_TOO_DEEP"),
+        "expected E_PARSE_NESTING_TOO_DEEP, got: {diags:#?}"
+    );
+}
+
+#[test]
+fn parser_nesting_within_limit_does_not_trigger_depth_error() {
+    let src = nested_when_schema(32);
+    let (_file, diags) = parse_schema_with_diagnostics(&src);
+    assert!(
+        diags
+            .iter()
+            .all(|diag| diag.code != "E_PARSE_NESTING_TOO_DEEP"),
+        "unexpected E_PARSE_NESTING_TOO_DEEP: {diags:#?}"
+    );
+}
+
+fn nested_when_schema(depth: usize) -> String {
+    let mut src = String::from("mod app {\n  option enabled: bool = false;\n");
+    for _ in 0..depth {
+        src.push_str("  when true {\n");
+    }
+    src.push_str("  option nested: bool = true;\n");
+    for _ in 0..depth {
+        src.push_str("  }\n");
+    }
+    src.push_str("}\n");
+    src
+}

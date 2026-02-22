@@ -54,7 +54,11 @@ struct Parser {
     cursor: usize,
     source_len: usize,
     diagnostics: Vec<Diagnostic>,
+    depth: usize,
 }
+
+// Keep this conservative to avoid parser stack overflow on deeply nested groups.
+const MAX_PARSE_NESTING_DEPTH: usize = 128;
 
 impl Parser {
     fn new(tokens: Vec<Token>, source_len: usize) -> Self {
@@ -63,6 +67,7 @@ impl Parser {
             cursor: 0,
             source_len,
             diagnostics: Vec::new(),
+            depth: 0,
         }
     }
 
@@ -124,6 +129,10 @@ impl Parser {
     }
 
     fn parse_schema_item(&mut self, in_conditional: bool) -> Option<Item> {
+        self.with_nesting_guard(|parser| parser.parse_schema_item_inner(in_conditional))
+    }
+
+    fn parse_schema_item_inner(&mut self, in_conditional: bool) -> Option<Item> {
         let meta = self.parse_item_meta();
         let token = self.peek().clone();
         match token.kind {
@@ -962,7 +971,7 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Option<Expr> {
-        self.parse_logic_or()
+        self.with_nesting_guard(|parser| parser.parse_logic_or())
     }
 
     fn parse_logic_or(&mut self) -> Option<Expr> {
@@ -1512,6 +1521,25 @@ impl Parser {
             );
         }
         self.diagnostics.push(diag);
+    }
+
+    fn with_nesting_guard<T>(&mut self, parse: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+        if self.depth >= MAX_PARSE_NESTING_DEPTH {
+            self.push_error(
+                "E_PARSE_NESTING_TOO_DEEP",
+                format!(
+                    "parser nesting depth exceeded limit {}",
+                    MAX_PARSE_NESTING_DEPTH
+                ),
+                self.peek().span,
+            );
+            return None;
+        }
+
+        self.depth += 1;
+        let result = parse(self);
+        self.depth = self.depth.saturating_sub(1);
+        result
     }
 }
 
