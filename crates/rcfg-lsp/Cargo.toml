@@ -2,7 +2,7 @@
 name = "rcfg-lsp"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.86"
+rust-version = "1.90"
 license = "Apache-2.0"
 
 [dependencies]
