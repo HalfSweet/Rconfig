@@ -1226,6 +1226,85 @@ fn include_expander_supports_root_prefixed_paths() {
 }
 
 #[test]
+fn include_expander_rejects_parent_path_escape() {
+    let tmp = std::env::temp_dir().join(format!("rcfg_include_escape_{}", std::process::id()));
+    let root = tmp.join("root");
+    let _ = std::fs::create_dir_all(&root);
+
+    let outside = tmp.join("outside.rcfgv");
+    let entry = root.join("entry.rcfgv");
+    std::fs::write(&outside, "app::enabled = true;\n").expect("write outside");
+    std::fs::write(&entry, "include \"../outside.rcfgv\";\n").expect("write entry");
+
+    let (_values, diags) = expand_values_includes_from_path_with_root(&entry, &root);
+    assert!(
+        diags
+            .iter()
+            .any(|diag| diag.code == "E_INCLUDE_PATH_ESCAPE"),
+        "expected E_INCLUDE_PATH_ESCAPE, got: {diags:#?}"
+    );
+
+    let _ = std::fs::remove_file(&outside);
+    let _ = std::fs::remove_file(&entry);
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir(&tmp);
+}
+
+#[test]
+fn include_expander_rejects_symlink_path_escape() {
+    let tmp =
+        std::env::temp_dir().join(format!("rcfg_include_symlink_escape_{}", std::process::id()));
+    let root = tmp.join("root");
+    let _ = std::fs::create_dir_all(&root);
+
+    let outside = tmp.join("outside.rcfgv");
+    let link = root.join("linked.rcfgv");
+    let entry = root.join("entry.rcfgv");
+    std::fs::write(&outside, "app::enabled = true;\n").expect("write outside");
+
+    if create_test_symlink(&outside, &link).is_err() {
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir(&tmp);
+        return;
+    }
+
+    std::fs::write(&entry, "include \"linked.rcfgv\";\n").expect("write entry");
+
+    let (_values, diags) = expand_values_includes_from_path_with_root(&entry, &root);
+    assert!(
+        diags
+            .iter()
+            .any(|diag| diag.code == "E_INCLUDE_PATH_ESCAPE"),
+        "expected E_INCLUDE_PATH_ESCAPE, got: {diags:#?}"
+    );
+
+    let _ = std::fs::remove_file(&entry);
+    let _ = std::fs::remove_file(&link);
+    let _ = std::fs::remove_file(&outside);
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir(&tmp);
+}
+
+#[cfg(unix)]
+fn create_test_symlink(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(from, to)
+}
+
+#[cfg(windows)]
+fn create_test_symlink(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(from, to)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn create_test_symlink(_from: &std::path::Path, _to: &std::path::Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "symlink is not supported on this platform",
+    ))
+}
+
+#[test]
 fn analyze_values_from_path_runs_include_and_semantic_checks() {
     let schema_src = r#"
 mod app {

@@ -33,6 +33,10 @@ impl IncludeExpander {
         base_dir.join(include_path)
     }
 
+    fn is_within_root(&self, path: &FsPath) -> bool {
+        path.starts_with(&self.root_dir)
+    }
+
     pub(super) fn current_chain(&self, next: &PathBuf) -> Vec<String> {
         self.stack
             .iter()
@@ -60,6 +64,25 @@ impl IncludeExpander {
                 return;
             }
         };
+
+        if !self.is_within_root(&canonical) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_INCLUDE_PATH_ESCAPE",
+                    format!(
+                        "include path escapes root directory: {}",
+                        canonical.display()
+                    ),
+                    Span::default(),
+                )
+                .with_source(canonical.display().to_string())
+                .with_include_chain(self.current_chain(&canonical))
+                .with_note(
+                    "fix-it: keep include targets under the project root, or use @root/ paths",
+                ),
+            );
+            return;
+        }
 
         if let Some(index) = self.stack.iter().position(|path| path == &canonical) {
             let chain = self.stack[index..]
