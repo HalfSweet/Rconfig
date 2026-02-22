@@ -56,12 +56,43 @@ pub fn analyze_schema_files_strict(files: &[File]) -> SemanticReport {
 }
 
 pub fn analyze_values(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnostic> {
-    analyze_values_with_context(values, symbols, &HashMap::new())
+    let context = HashMap::new();
+    analyze_values_with_options(values, symbols, AnalyzeValuesOptions::new(&context))
 }
 
 pub fn analyze_values_strict(values: &ValuesFile, symbols: &SymbolTable) -> Vec<Diagnostic> {
-    let mut diagnostics = analyze_values_with_context(values, symbols, &HashMap::new());
-    promote_strict_diagnostics(&mut diagnostics);
+    let context = HashMap::new();
+    analyze_values_with_options(
+        values,
+        symbols,
+        AnalyzeValuesOptions {
+            strict: true,
+            context: &context,
+            include_root: None,
+        },
+    )
+}
+
+pub fn analyze_values_with_options(
+    values: &ValuesFile,
+    symbols: &SymbolTable,
+    options: AnalyzeValuesOptions<'_>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = if let Some(include_root) = options.include_root {
+        let (expanded_values, mut include_diags) =
+            expand_values_includes_from_memory_with_root(values, include_root);
+        let (mut semantic, _) =
+            analyze_values_with_context_and_stmt_indexes(&expanded_values, symbols, options.context);
+        include_diags.append(&mut semantic);
+        include_diags
+    } else {
+        analyze_values_with_context_and_stmt_indexes(values, symbols, options.context).0
+    };
+
+    if options.strict {
+        promote_strict_diagnostics(&mut diagnostics);
+    }
+
     diagnostics
 }
 
@@ -70,7 +101,7 @@ pub fn analyze_values_with_context(
     symbols: &SymbolTable,
     context: &HashMap<String, ResolvedValue>,
 ) -> Vec<Diagnostic> {
-    analyze_values_with_context_and_stmt_indexes(values, symbols, context).0
+    analyze_values_with_options(values, symbols, AnalyzeValuesOptions::new(context))
 }
 
 pub fn analyze_values_with_context_and_root(
@@ -79,13 +110,15 @@ pub fn analyze_values_with_context_and_root(
     context: &HashMap<String, ResolvedValue>,
     include_root: &FsPath,
 ) -> Vec<Diagnostic> {
-    let (expanded_values, mut diagnostics) =
-        expand_values_includes_from_memory_with_root(values, include_root);
-
-    let (mut semantic, _) =
-        analyze_values_with_context_and_stmt_indexes(&expanded_values, symbols, context);
-    diagnostics.append(&mut semantic);
-    diagnostics
+    analyze_values_with_options(
+        values,
+        symbols,
+        AnalyzeValuesOptions {
+            strict: false,
+            context,
+            include_root: Some(include_root),
+        },
+    )
 }
 
 pub fn analyze_values_with_context_strict(
@@ -93,9 +126,15 @@ pub fn analyze_values_with_context_strict(
     symbols: &SymbolTable,
     context: &HashMap<String, ResolvedValue>,
 ) -> Vec<Diagnostic> {
-    let mut diagnostics = analyze_values_with_context(values, symbols, context);
-    promote_strict_diagnostics(&mut diagnostics);
-    diagnostics
+    analyze_values_with_options(
+        values,
+        symbols,
+        AnalyzeValuesOptions {
+            strict: true,
+            context,
+            include_root: None,
+        },
+    )
 }
 
 pub fn analyze_values_with_context_and_root_strict(
@@ -104,10 +143,15 @@ pub fn analyze_values_with_context_and_root_strict(
     context: &HashMap<String, ResolvedValue>,
     include_root: &FsPath,
 ) -> Vec<Diagnostic> {
-    let mut diagnostics =
-        analyze_values_with_context_and_root(values, symbols, context, include_root);
-    promote_strict_diagnostics(&mut diagnostics);
-    diagnostics
+    analyze_values_with_options(
+        values,
+        symbols,
+        AnalyzeValuesOptions {
+            strict: true,
+            context,
+            include_root: Some(include_root),
+        },
+    )
 }
 
 fn analyze_values_with_context_and_stmt_indexes(
@@ -134,21 +178,35 @@ pub fn analyze_values_from_path_report(
     entry: &FsPath,
     symbols: &SymbolTable,
 ) -> ValuesAnalysisReport {
-    analyze_values_from_path_report_with_context(entry, symbols, &HashMap::new())
+    let context = HashMap::new();
+    analyze_values_from_path_report_with_options(
+        entry,
+        symbols,
+        AnalyzeValuesOptions::new(&context),
+    )
 }
 
-pub fn analyze_values_from_path_report_with_context(
+pub fn analyze_values_from_path_report_with_options(
     entry: &FsPath,
     symbols: &SymbolTable,
-    context: &HashMap<String, ResolvedValue>,
+    options: AnalyzeValuesOptions<'_>,
 ) -> ValuesAnalysisReport {
-    let (values, stmt_origins, mut diagnostics) = expand_values_includes_with_origins(entry);
+    let (values, stmt_origins, mut diagnostics) = if let Some(include_root) = options.include_root {
+        expand_values_includes_with_origins_with_root(entry, include_root)
+    } else {
+        expand_values_includes_with_origins(entry)
+    };
     let mut diagnostic_stmt_indexes = vec![None; diagnostics.len()];
     let (mut semantic, mut semantic_stmt_indexes) =
-        analyze_values_with_context_and_stmt_indexes(&values, symbols, context);
+        analyze_values_with_context_and_stmt_indexes(&values, symbols, options.context);
     diagnostics.append(&mut semantic);
     diagnostic_stmt_indexes.append(&mut semantic_stmt_indexes);
-    let resolved = resolve_values_with_context(&values, symbols, context);
+
+    if options.strict {
+        promote_strict_diagnostics(&mut diagnostics);
+    }
+
+    let resolved = resolve_values_with_context(&values, symbols, options.context);
     ValuesAnalysisReport {
         values,
         resolved,
@@ -156,6 +214,18 @@ pub fn analyze_values_from_path_report_with_context(
         diagnostics,
         diagnostic_stmt_indexes,
     }
+}
+
+pub fn analyze_values_from_path_report_with_context(
+    entry: &FsPath,
+    symbols: &SymbolTable,
+    context: &HashMap<String, ResolvedValue>,
+) -> ValuesAnalysisReport {
+    analyze_values_from_path_report_with_options(
+        entry,
+        symbols,
+        AnalyzeValuesOptions::new(context),
+    )
 }
 
 pub fn analyze_values_from_path_report_with_context_and_root(
@@ -164,30 +234,31 @@ pub fn analyze_values_from_path_report_with_context_and_root(
     context: &HashMap<String, ResolvedValue>,
     include_root: &FsPath,
 ) -> ValuesAnalysisReport {
-    let (values, stmt_origins, mut diagnostics) =
-        expand_values_includes_with_origins_with_root(entry, include_root);
-    let mut diagnostic_stmt_indexes = vec![None; diagnostics.len()];
-    let (mut semantic, mut semantic_stmt_indexes) =
-        analyze_values_with_context_and_stmt_indexes(&values, symbols, context);
-    diagnostics.append(&mut semantic);
-    diagnostic_stmt_indexes.append(&mut semantic_stmt_indexes);
-    let resolved = resolve_values_with_context(&values, symbols, context);
-    ValuesAnalysisReport {
-        values,
-        resolved,
-        stmt_origins,
-        diagnostics,
-        diagnostic_stmt_indexes,
-    }
+    analyze_values_from_path_report_with_options(
+        entry,
+        symbols,
+        AnalyzeValuesOptions {
+            strict: false,
+            context,
+            include_root: Some(include_root),
+        },
+    )
 }
 
 pub fn analyze_values_from_path_report_strict(
     entry: &FsPath,
     symbols: &SymbolTable,
 ) -> ValuesAnalysisReport {
-    let mut report = analyze_values_from_path_report_with_context(entry, symbols, &HashMap::new());
-    promote_strict_diagnostics(&mut report.diagnostics);
-    report
+    let context = HashMap::new();
+    analyze_values_from_path_report_with_options(
+        entry,
+        symbols,
+        AnalyzeValuesOptions {
+            strict: true,
+            context: &context,
+            include_root: None,
+        },
+    )
 }
 
 pub fn analyze_values_from_path_report_with_context_strict(
@@ -195,9 +266,15 @@ pub fn analyze_values_from_path_report_with_context_strict(
     symbols: &SymbolTable,
     context: &HashMap<String, ResolvedValue>,
 ) -> ValuesAnalysisReport {
-    let mut report = analyze_values_from_path_report_with_context(entry, symbols, context);
-    promote_strict_diagnostics(&mut report.diagnostics);
-    report
+    analyze_values_from_path_report_with_options(
+        entry,
+        symbols,
+        AnalyzeValuesOptions {
+            strict: true,
+            context,
+            include_root: None,
+        },
+    )
 }
 
 pub fn analyze_values_from_path_report_with_context_and_root_strict(
@@ -206,14 +283,15 @@ pub fn analyze_values_from_path_report_with_context_and_root_strict(
     context: &HashMap<String, ResolvedValue>,
     include_root: &FsPath,
 ) -> ValuesAnalysisReport {
-    let mut report = analyze_values_from_path_report_with_context_and_root(
+    analyze_values_from_path_report_with_options(
         entry,
         symbols,
-        context,
-        include_root,
-    );
-    promote_strict_diagnostics(&mut report.diagnostics);
-    report
+        AnalyzeValuesOptions {
+            strict: true,
+            context,
+            include_root: Some(include_root),
+        },
+    )
 }
 
 pub fn analyze_values_from_path(
@@ -258,11 +336,13 @@ pub fn resolve_values_with_context(
     })
 }
 
+#[doc(hidden)]
 pub fn expand_values_includes_from_path(entry: &FsPath) -> (ValuesFile, Vec<Diagnostic>) {
     let (values, _, diagnostics) = expand_values_includes_with_origins(entry);
     (values, diagnostics)
 }
 
+#[doc(hidden)]
 pub fn expand_values_includes_from_path_with_root(
     entry: &FsPath,
     include_root: &FsPath,
@@ -272,12 +352,14 @@ pub fn expand_values_includes_from_path_with_root(
     (values, diagnostics)
 }
 
+#[doc(hidden)]
 pub fn expand_values_includes_with_origins(
     entry: &FsPath,
 ) -> (ValuesFile, Vec<ValuesStmtOrigin>, Vec<Diagnostic>) {
     expand_values_includes_with_origins_internal(entry, None)
 }
 
+#[doc(hidden)]
 pub fn expand_values_includes_with_origins_with_root(
     entry: &FsPath,
     include_root: &FsPath,

@@ -65,7 +65,9 @@ impl IncludeExpander {
             }
         };
 
-        if !self.is_within_root(&canonical) {
+        // The entry file can be outside root (explicit CLI input); enforce root boundary for
+        // nested includes only.
+        if !self.stack.is_empty() && !self.is_within_root(&canonical) {
             self.diagnostics.push(
                 Diagnostic::error(
                     "E_INCLUDE_PATH_ESCAPE",

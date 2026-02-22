@@ -1,5 +1,6 @@
 use super::*;
 
+#[doc(hidden)]
 pub fn plan_c_header_exports(
     symbols: &SymbolTable,
     include_secrets: bool,
@@ -7,6 +8,7 @@ pub fn plan_c_header_exports(
     plan_c_header_exports_with_prefix(symbols, include_secrets, "CONFIG_")
 }
 
+#[doc(hidden)]
 pub fn plan_c_header_exports_with_prefix(
     symbols: &SymbolTable,
     include_secrets: bool,

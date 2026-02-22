@@ -710,6 +710,23 @@ pub struct ValuesAnalysisReport {
     pub diagnostic_stmt_indexes: Vec<Option<usize>>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AnalyzeValuesOptions<'a> {
+    pub strict: bool,
+    pub context: &'a HashMap<String, ResolvedValue>,
+    pub include_root: Option<&'a FsPath>,
+}
+
+impl<'a> AnalyzeValuesOptions<'a> {
+    pub fn new(context: &'a HashMap<String, ResolvedValue>) -> Self {
+        Self {
+            strict: false,
+            context,
+            include_root: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedExport {
     pub path: String,

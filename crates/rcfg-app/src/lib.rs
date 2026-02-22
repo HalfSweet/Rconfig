@@ -5,11 +5,9 @@ use std::path::{Path, PathBuf};
 use glob::glob;
 use rcfg_lang::parser::parse_schema_with_diagnostics;
 use rcfg_lang::{
-    Diagnostic, File, ResolvedConfig, ResolvedValue, Severity, ValuesAnalysisReport,
-    analyze_schema, analyze_schema_strict, analyze_values_from_path_report_with_context,
-    analyze_values_from_path_report_with_context_and_root,
-    analyze_values_from_path_report_with_context_and_root_strict,
-    analyze_values_from_path_report_with_context_strict, resolve_values,
+    AnalyzeValuesOptions, Diagnostic, File, ResolvedConfig, ResolvedValue, Severity,
+    ValuesAnalysisReport, analyze_schema, analyze_schema_strict,
+    analyze_values_from_path_report_with_options, analyze_values_with_options, resolve_values,
     resolve_values_with_context,
 };
 
@@ -98,26 +96,15 @@ impl AppSession {
     }
 
     pub fn analyze_values(&self, values: &rcfg_lang::ValuesFile) -> Vec<Diagnostic> {
-        let mut diagnostics = match (self.strict, self.include_root.as_deref()) {
-            (true, Some(root)) => rcfg_lang::analyze_values_with_context_and_root_strict(
-                values,
-                &self.symbols,
-                &self.context,
-                root,
-            ),
-            (false, Some(root)) => rcfg_lang::analyze_values_with_context_and_root(
-                values,
-                &self.symbols,
-                &self.context,
-                root,
-            ),
-            (true, None) => {
-                rcfg_lang::analyze_values_with_context_strict(values, &self.symbols, &self.context)
-            }
-            (false, None) => {
-                rcfg_lang::analyze_values_with_context(values, &self.symbols, &self.context)
-            }
-        };
+        let mut diagnostics = analyze_values_with_options(
+            values,
+            &self.symbols,
+            AnalyzeValuesOptions {
+                strict: self.strict,
+                context: &self.context,
+                include_root: self.include_root.as_deref(),
+            },
+        );
 
         diagnostics.extend(self.parse_diagnostics.clone());
         diagnostics
@@ -780,18 +767,15 @@ pub fn analyze_values_report(
     include_root: Option<&Path>,
     strict: bool,
 ) -> ValuesAnalysisReport {
-    match (strict, include_root) {
-        (true, Some(root)) => analyze_values_from_path_report_with_context_and_root_strict(
-            values, symbols, context, root,
-        ),
-        (false, Some(root)) => {
-            analyze_values_from_path_report_with_context_and_root(values, symbols, context, root)
-        }
-        (true, None) => {
-            analyze_values_from_path_report_with_context_strict(values, symbols, context)
-        }
-        (false, None) => analyze_values_from_path_report_with_context(values, symbols, context),
-    }
+    analyze_values_from_path_report_with_options(
+        values,
+        symbols,
+        AnalyzeValuesOptions {
+            strict,
+            context,
+            include_root,
+        },
+    )
 }
 
 pub fn resolve_with_context(
