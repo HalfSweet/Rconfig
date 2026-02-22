@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-native:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+
+      - name: Build rcfg
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin rcfg
+
+      - name: Build rcfg-lsp
+        run: cargo build --release --locked --target ${{ matrix.target }} -p rcfg-lsp --bin rcfg-lsp
+
+      - name: Package artifacts (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          out_dir="dist/${target}"
+          mkdir -p "${out_dir}"
+          cp "target/${target}/release/rcfg" "${out_dir}/rcfg"
+          cp "target/${target}/release/rcfg-lsp" "${out_dir}/rcfg-lsp"
+          archive="dist/rcfg-${target}.tar.gz"
+          tar -C "${out_dir}" -czf "${archive}" .
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${archive}" > "${archive}.sha256"
+          else
+            shasum -a 256 "${archive}" > "${archive}.sha256"
+          fi
+
+      - name: Package artifacts (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $target = "${{ matrix.target }}"
+          $outDir = "dist/$target"
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          Copy-Item "target/$target/release/rcfg.exe" "$outDir/rcfg.exe"
+          Copy-Item "target/$target/release/rcfg-lsp.exe" "$outDir/rcfg-lsp.exe"
+          $archive = "dist/rcfg-$target.zip"
+          Compress-Archive -Path "$outDir/*" -DestinationPath $archive -Force
+          $hash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLower()
+          "$hash  $(Split-Path -Leaf $archive)" | Out-File -FilePath "$archive.sha256" -Encoding ascii
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/rcfg-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  build-linux-aarch64:
+    name: build (aarch64-unknown-linux-gnu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-aarch64-unknown-linux-gnu
+
+      - name: Install cross
+        uses: taiki-e/install-action@cross
+
+      - name: Build rcfg
+        run: cross build --release --locked --target aarch64-unknown-linux-gnu --bin rcfg
+
+      - name: Build rcfg-lsp
+        run: cross build --release --locked --target aarch64-unknown-linux-gnu -p rcfg-lsp --bin rcfg-lsp
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="aarch64-unknown-linux-gnu"
+          out_dir="dist/${target}"
+          mkdir -p "${out_dir}"
+          cp "target/${target}/release/rcfg" "${out_dir}/rcfg"
+          cp "target/${target}/release/rcfg-lsp" "${out_dir}/rcfg-lsp"
+          archive="dist/rcfg-${target}.tar.gz"
+          tar -C "${out_dir}" -czf "${archive}" .
+          sha256sum "${archive}" > "${archive}.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-aarch64-unknown-linux-gnu
+          path: dist/rcfg-aarch64-unknown-linux-gnu.*
+          if-no-files-found: error
+
+  publish-release:
+    name: publish release
+    runs-on: ubuntu-latest
+    needs:
+      - build-native
+      - build-linux-aarch64
+    timeout-minutes: 20
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate combined checksums file
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat dist/*.sha256 > dist/SHA256SUMS
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*
