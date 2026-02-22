@@ -156,7 +156,7 @@ impl<'a> TypeChecker<'a> {
         if matches.is_empty() {
             self.diagnostics.push(Diagnostic::error(
                 "E_SYMBOL_NOT_FOUND",
-                format!("patch target `{}` cannot be resolved", target.to_string()),
+                format!("patch target `{}` cannot be resolved", target),
                 target.span,
             ));
             return None;
@@ -167,7 +167,7 @@ impl<'a> TypeChecker<'a> {
                 "E_AMBIGUOUS_PATH",
                 format!(
                     "patch target `{}` is ambiguous: {}",
-                    target.to_string(),
+                    target,
                     matches.join(", ")
                 ),
                 target.span,
@@ -188,7 +188,7 @@ impl<'a> TypeChecker<'a> {
                 "E_AMBIGUOUS_PATH",
                 format!(
                     "patch default target `{}` is ambiguous: {}",
-                    path.to_string(),
+                    path,
                     nested.join(", ")
                 ),
                 path.span,
@@ -205,7 +205,7 @@ impl<'a> TypeChecker<'a> {
                 "E_AMBIGUOUS_PATH",
                 format!(
                     "patch default target `{}` is ambiguous: {}",
-                    path.to_string(),
+                    path,
                     direct.join(", ")
                 ),
                 path.span,
@@ -219,10 +219,7 @@ impl<'a> TypeChecker<'a> {
         self.diagnostics.push(
             Diagnostic::error(
                 "E_SYMBOL_NOT_FOUND",
-                format!(
-                    "patch default target `{}` cannot be resolved",
-                    path.to_string()
-                ),
+                format!("patch default target `{}` cannot be resolved", path),
                 path.span,
             )
             .with_path(path.to_string()),
@@ -260,24 +257,24 @@ impl<'a> TypeChecker<'a> {
 
         self.mark_default_enum_variant_usage(&default_stmt.value, &option_scope);
 
-        if let ConstValue::EnumPath(path) = &default_stmt.value {
-            if self.symbols.path_resolves_to_option_raw_in_scope(
+        if let ConstValue::EnumPath(path) = &default_stmt.value
+            && self.symbols.path_resolves_to_option_raw_in_scope(
                 &option_scope,
                 &expand_with_aliases(path, &self.aliases),
-            ) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E_DEFAULT_NOT_CONSTANT",
-                        format!(
-                            "patch default for option `{}` must be a constant enum variant or literal",
-                            option_path
-                        ),
-                        path.span,
-                    )
-                    .with_path(option_path),
-                );
-                return;
-            }
+            )
+        {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_DEFAULT_NOT_CONSTANT",
+                    format!(
+                        "patch default for option `{}` must be a constant enum variant or literal",
+                        option_path
+                    ),
+                    path.span,
+                )
+                .with_path(option_path),
+            );
+            return;
         }
 
         let expected = self
@@ -305,26 +302,25 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
-        if let ConstValue::Int(value, span) = &default_stmt.value {
-            if let Some((min, max)) = int_value_type_bounds(&expected) {
-                if *value < min || *value > max {
-                    let is_secret = self.symbols.option_is_secret(&option_path);
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            "E_DEFAULT_OUT_OF_RANGE",
-                            format!(
-                                "patch default value `{}` for option `{}` is out of range [{}..={}]",
-                                value, option_path, min, max
-                            ),
-                            *span,
-                        )
-                        .with_path(option_path)
-                        .with_arg("actual", redacted_int_arg(*value, is_secret))
-                        .with_arg("min", DiagnosticArgValue::Int(min))
-                        .with_arg("max", DiagnosticArgValue::Int(max)),
-                    );
-                }
-            }
+        if let ConstValue::Int(value, span) = &default_stmt.value
+            && let Some((min, max)) = int_value_type_bounds(&expected)
+            && (*value < min || *value > max)
+        {
+            let is_secret = self.symbols.option_is_secret(&option_path);
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_DEFAULT_OUT_OF_RANGE",
+                    format!(
+                        "patch default value `{}` for option `{}` is out of range [{}..={}]",
+                        value, option_path, min, max
+                    ),
+                    *span,
+                )
+                .with_path(option_path)
+                .with_arg("actual", redacted_int_arg(*value, is_secret))
+                .with_arg("min", DiagnosticArgValue::Int(min))
+                .with_arg("max", DiagnosticArgValue::Int(max)),
+            );
         }
     }
 
@@ -348,21 +344,21 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
-        if let ConstValue::EnumPath(path) = default {
-            if self.symbols.path_resolves_to_option_in_scope(scope, path) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        "E_DEFAULT_NOT_CONSTANT",
-                        format!(
-                            "default value for option `{}` must be a constant enum variant or literal",
-                            option_path
-                        ),
-                        path.span,
-                    )
-                    .with_path(option_path),
-                );
-                return;
-            }
+        if let ConstValue::EnumPath(path) = default
+            && self.symbols.path_resolves_to_option_in_scope(scope, path)
+        {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_DEFAULT_NOT_CONSTANT",
+                    format!(
+                        "default value for option `{}` must be a constant enum variant or literal",
+                        option_path
+                    ),
+                    path.span,
+                )
+                .with_path(option_path),
+            );
+            return;
         }
 
         let expected = option_type_to_value_type(&option.ty);
@@ -386,26 +382,25 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
-        if let ConstValue::Int(value, span) = default {
-            if let Some((min, max)) = int_type_bounds(&option.ty) {
-                if *value < min || *value > max {
-                    let is_secret = self.symbols.option_is_secret(&option_path);
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            "E_DEFAULT_OUT_OF_RANGE",
-                            format!(
-                                "default value `{}` for option `{}` is out of range [{}..={}]",
-                                value, option_path, min, max
-                            ),
-                            *span,
-                        )
-                        .with_path(option_path)
-                        .with_arg("actual", redacted_int_arg(*value, is_secret))
-                        .with_arg("min", DiagnosticArgValue::Int(min))
-                        .with_arg("max", DiagnosticArgValue::Int(max)),
-                    );
-                }
-            }
+        if let ConstValue::Int(value, span) = default
+            && let Some((min, max)) = int_type_bounds(&option.ty)
+            && (*value < min || *value > max)
+        {
+            let is_secret = self.symbols.option_is_secret(&option_path);
+            self.diagnostics.push(
+                Diagnostic::error(
+                    "E_DEFAULT_OUT_OF_RANGE",
+                    format!(
+                        "default value `{}` for option `{}` is out of range [{}..={}]",
+                        value, option_path, min, max
+                    ),
+                    *span,
+                )
+                .with_path(option_path)
+                .with_arg("actual", redacted_int_arg(*value, is_secret))
+                .with_arg("min", DiagnosticArgValue::Int(min))
+                .with_arg("max", DiagnosticArgValue::Int(max)),
+            );
         }
     }
 
@@ -929,7 +924,7 @@ impl<'a> TypeChecker<'a> {
                     let ValueType::Enum(found_enum) = ty else {
                         self.diagnostics.push(Diagnostic::error(
                             "E_ENUM_VARIANT_NOT_FOUND",
-                            format!("`{}` is not an enum variant path", path.to_string()),
+                            format!("`{}` is not an enum variant path", path),
                             path.span,
                         ));
                         continue;
@@ -940,7 +935,7 @@ impl<'a> TypeChecker<'a> {
                             "E_ENUM_VARIANT_NOT_FOUND",
                             format!(
                                 "variant `{}` does not belong to enum `{}`",
-                                path.to_string(),
+                                path,
                                 enum_name
                             ),
                             path.span,
@@ -975,10 +970,9 @@ impl<'a> TypeChecker<'a> {
                             scope,
                             &expand_with_aliases(path, &self.aliases),
                         )
+                        && enum_name_matches(enum_name, &resolved_enum)
                     {
-                        if enum_name_matches(enum_name, &resolved_enum) {
-                            self.used_enum_variants.insert(variant_path);
-                        }
+                        self.used_enum_variants.insert(variant_path);
                     }
 
                     result.insert(variant_name);
@@ -1302,14 +1296,13 @@ impl<'a> TypeChecker<'a> {
                 }
                 if let (Some(left_int), Some(right_int)) =
                     (left.concrete_int(), right.concrete_int())
+                    && left_int != right_int
                 {
-                    if left_int != right_int {
-                        self.diagnostics.push(Diagnostic::error(
-                            "E_EXPECT_SAME_TYPE",
-                            "relational operators require operands of the same integer type",
-                            span,
-                        ));
-                    }
+                    self.diagnostics.push(Diagnostic::error(
+                        "E_EXPECT_SAME_TYPE",
+                        "relational operators require operands of the same integer type",
+                        span,
+                    ));
                 }
                 ValueType::Bool
             }

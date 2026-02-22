@@ -252,10 +252,7 @@ impl<'a> ValuesChecker<'a> {
         if candidates.is_empty() {
             self.push_diag(Diagnostic::error(
                 "E_SYMBOL_NOT_FOUND",
-                format!(
-                    "assignment target `{}` cannot be resolved",
-                    path.to_string()
-                ),
+                format!("assignment target `{}` cannot be resolved", path),
                 path.span,
             ));
             return None;
@@ -266,7 +263,7 @@ impl<'a> ValuesChecker<'a> {
                 "E_AMBIGUOUS_PATH",
                 format!(
                     "assignment target `{}` is ambiguous: {}",
-                    path.to_string(),
+                    path,
                     candidates.join(", ")
                 ),
                 path.span,
@@ -327,23 +324,22 @@ impl<'a> ValuesChecker<'a> {
         }
 
         if expected.is_int() {
-            if let Some(actual) = parsed.int_value {
-                if let Some((min, max)) = int_value_type_bounds(&expected) {
-                    if actual < min || actual > max {
-                        self.push_diag(
-                            Diagnostic::error(
-                                "E_TYPE_MISMATCH",
-                                format!(
-                                    "value `{}` for `{}` is out of type bounds [{}..={}]",
-                                    actual, target, min, max
-                                ),
-                                value.span(),
-                            )
-                            .with_path(target),
-                        );
-                        return;
-                    }
-                }
+            if let Some(actual) = parsed.int_value
+                && let Some((min, max)) = int_value_type_bounds(&expected)
+                && (actual < min || actual > max)
+            {
+                self.push_diag(
+                    Diagnostic::error(
+                        "E_TYPE_MISMATCH",
+                        format!(
+                            "value `{}` for `{}` is out of type bounds [{}..={}]",
+                            actual, target, min, max
+                        ),
+                        value.span(),
+                    )
+                    .with_path(target),
+                );
+                return;
             }
 
             if let (Some(range), Some(actual)) =
@@ -604,7 +600,7 @@ impl<'a> ValuesChecker<'a> {
                     self.push_diag(
                         Diagnostic::error(
                             "E_VALUE_PATH_RESOLVES_TO_OPTION",
-                            format!("value path `{}` resolves to option", path.to_string()),
+                            format!("value path `{}` resolves to option", path),
                             path.span,
                         )
                         .with_path(resolved),
@@ -616,7 +612,7 @@ impl<'a> ValuesChecker<'a> {
                 if matches.is_empty() {
                     self.push_diag(Diagnostic::error(
                         "E_VALUE_PATH_NOT_ENUM_VARIANT",
-                        format!("value path `{}` is not an enum variant", path.to_string()),
+                        format!("value path `{}` is not an enum variant", path),
                         path.span,
                     ));
                     return ValueType::Unknown;
@@ -627,7 +623,7 @@ impl<'a> ValuesChecker<'a> {
                         "E_AMBIGUOUS_ENUM_VARIANT",
                         format!(
                             "enum variant `{}` is ambiguous: {}",
-                            path.to_string(),
+                            path,
                             matches.join(", ")
                         ),
                         path.span,

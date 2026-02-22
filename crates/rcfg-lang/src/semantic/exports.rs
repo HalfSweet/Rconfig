@@ -59,21 +59,21 @@ fn plan_exports_with_options(
             &rewrite_export_name_path(option_path_str, export_name_rule),
             prefix,
         );
-        if let Some(existing) = used_names.get(&export_name) {
-            if existing != option_path_str {
-                diagnostics.push(
-                    Diagnostic::error(
-                        "E_EXPORT_NAME_COLLISION",
-                        format!(
-                            "export name `{}` collides between `{}` and `{}`",
-                            export_name, existing, option_path_str
-                        ),
-                        symbols.option_span(option_path_str).unwrap_or_default(),
-                    )
-                    .with_path(option_path_str.to_string()),
-                );
-                continue;
-            }
+        if let Some(existing) = used_names.get(&export_name)
+            && existing != option_path_str
+        {
+            diagnostics.push(
+                Diagnostic::error(
+                    "E_EXPORT_NAME_COLLISION",
+                    format!(
+                        "export name `{}` collides between `{}` and `{}`",
+                        export_name, existing, option_path_str
+                    ),
+                    symbols.option_span(option_path_str).unwrap_or_default(),
+                )
+                .with_path(option_path_str.to_string()),
+            );
+            continue;
         }
 
         used_names.insert(export_name.clone(), option_path_str.to_string());

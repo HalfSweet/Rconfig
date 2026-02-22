@@ -384,7 +384,7 @@ pub(super) fn collect_active_options(
             }
             Item::Match(match_block) => {
                 let selected = select_match_case_index(
-                    &match_block,
+                    match_block,
                     symbols,
                     scope,
                     aliases,
@@ -441,12 +441,11 @@ pub(super) fn select_match_case_index(
             continue;
         }
 
-        if let Some(guard) = &case.guard {
-            if !eval_expr_as_bool(guard, symbols, scope, aliases, runtime, ctx_references)
+        if let Some(guard) = &case.guard
+            && !eval_expr_as_bool(guard, symbols, scope, aliases, runtime, ctx_references)
                 .unwrap_or(false)
-            {
-                return None;
-            }
+        {
+            return None;
         }
 
         return Some(index);
