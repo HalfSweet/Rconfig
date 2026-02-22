@@ -1,0 +1,7 @@
+# Keep snapshot fixtures byte-stable across platforms (especially Windows CRLF checkout).
+tests/snapshots/** text eol=lf
+examples/cpp-cmake/** text eol=lf
+
+# Keep DSL fixtures line-endings stable for deterministic span offsets.
+*.rcfg text eol=lf
+*.rcfgv text eol=lf
