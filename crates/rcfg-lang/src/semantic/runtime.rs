@@ -114,132 +114,196 @@ fn collect_runtime_patch_defaults(
 ) -> (BTreeMap<String, ResolvedValue>, BTreeSet<String>) {
     let mut patch_defaults = BTreeMap::new();
     let mut ctx_references = BTreeSet::new();
-    let mut scope = Vec::new();
-    let mut aliases = HashMap::new();
-    collect_patch_defaults_from_items(
-        symbols,
-        symbols.schema_items(),
-        &mut scope,
-        &mut aliases,
-        runtime,
-        true,
-        &mut patch_defaults,
-        &mut ctx_references,
-    );
+    {
+        let mut context = RuntimeContext::new(symbols, runtime, &mut ctx_references);
+        context.collect_patch_defaults_from_items(symbols.schema_items(), true, &mut patch_defaults);
+    }
     (patch_defaults, ctx_references)
 }
 
-fn collect_patch_defaults_from_items(
-    symbols: &SymbolTable,
-    items: &[Item],
-    scope: &mut Vec<String>,
-    aliases: &mut HashMap<String, String>,
-    runtime: &RuntimeState,
-    guard_active: bool,
-    patch_defaults: &mut BTreeMap<String, ResolvedValue>,
-    ctx_references: &mut BTreeSet<String>,
-) {
-    for item in items {
-        match item {
-            Item::Use(use_stmt) => {
-                if let Some(alias) = &use_stmt.alias {
-                    aliases.insert(alias.value.clone(), use_stmt.path.to_string());
+struct RuntimeContext<'a> {
+    symbols: &'a SymbolTable,
+    runtime: &'a RuntimeState,
+    scope: Vec<String>,
+    aliases: HashMap<String, String>,
+    ctx_references: &'a mut BTreeSet<String>,
+}
+
+impl<'a> RuntimeContext<'a> {
+    fn new(
+        symbols: &'a SymbolTable,
+        runtime: &'a RuntimeState,
+        ctx_references: &'a mut BTreeSet<String>,
+    ) -> Self {
+        Self {
+            symbols,
+            runtime,
+            scope: Vec::new(),
+            aliases: HashMap::new(),
+            ctx_references,
+        }
+    }
+
+    fn collect_patch_defaults_from_items(
+        &mut self,
+        items: &[Item],
+        guard_active: bool,
+        patch_defaults: &mut BTreeMap<String, ResolvedValue>,
+    ) {
+        for item in items {
+            match item {
+                Item::Use(use_stmt) => {
+                    if let Some(alias) = &use_stmt.alias {
+                        self.aliases.insert(alias.value.clone(), use_stmt.path.to_string());
+                    }
                 }
-            }
-            Item::Require(_)
-            | Item::Constraint(_)
-            | Item::Enum(_)
-            | Item::Option(_)
-            | Item::Export(_) => {}
-            Item::Patch(patch) => {
-                if !guard_active {
-                    continue;
-                }
+                Item::Require(_)
+                | Item::Constraint(_)
+                | Item::Enum(_)
+                | Item::Option(_)
+                | Item::Export(_) => {}
+                Item::Patch(patch) => {
+                    if !guard_active {
+                        continue;
+                    }
 
-                let Some(target_prefix) =
-                    resolve_patch_target_path(symbols, scope, &patch.target, aliases)
-                else {
-                    continue;
-                };
+                    let Some(target_prefix) = resolve_patch_target_path(
+                        self.symbols,
+                        &self.scope,
+                        &patch.target,
+                        &self.aliases,
+                    ) else {
+                        continue;
+                    };
 
-                for stmt in &patch.stmts {
-                    match stmt {
-                        PatchStmt::Default(default_stmt) => {
-                            let Some(option_path) = resolve_patch_default_option_path(
-                                symbols,
-                                &target_prefix,
-                                &default_stmt.path,
-                                aliases,
-                            ) else {
-                                continue;
-                            };
+                    for stmt in &patch.stmts {
+                        match stmt {
+                            PatchStmt::Default(default_stmt) => {
+                                let Some(option_path) = resolve_patch_default_option_path(
+                                    self.symbols,
+                                    &target_prefix,
+                                    &default_stmt.path,
+                                    &self.aliases,
+                                ) else {
+                                    continue;
+                                };
 
-                            if let Some(value) = resolve_const_value(
-                                &default_stmt.value,
-                                symbols,
-                                Some(&option_path),
-                            ) {
-                                patch_defaults.insert(option_path, value);
+                                if let Some(value) = resolve_const_value(
+                                    &default_stmt.value,
+                                    self.symbols,
+                                    Some(&option_path),
+                                ) {
+                                    patch_defaults.insert(option_path, value);
+                                }
                             }
                         }
                     }
                 }
-            }
-            Item::Mod(module) => {
-                scope.push(module.name.value.clone());
-                collect_patch_defaults_from_items(
-                    symbols,
-                    &module.items,
-                    scope,
-                    aliases,
-                    runtime,
-                    guard_active,
-                    patch_defaults,
-                    ctx_references,
-                );
-                scope.pop();
-            }
-            Item::When(when_block) => {
-                let cond = eval_expr_as_bool(
-                    &when_block.condition,
-                    symbols,
-                    scope,
-                    aliases,
-                    runtime,
-                    ctx_references,
-                )
-                .unwrap_or(false);
-                collect_patch_defaults_from_items(
-                    symbols,
-                    &when_block.items,
-                    scope,
-                    aliases,
-                    runtime,
-                    guard_active && cond,
-                    patch_defaults,
-                    ctx_references,
-                );
-            }
-            Item::Match(match_block) => {
-                let selected = select_match_case_index(
-                    match_block,
-                    symbols,
-                    scope,
-                    aliases,
-                    runtime,
-                    ctx_references,
-                );
-                if let Some(index) = selected {
-                    collect_patch_defaults_from_items(
-                        symbols,
-                        &match_block.cases[index].items,
-                        scope,
-                        aliases,
-                        runtime,
+                Item::Mod(module) => {
+                    self.scope.push(module.name.value.clone());
+                    self.collect_patch_defaults_from_items(
+                        &module.items,
                         guard_active,
                         patch_defaults,
-                        ctx_references,
                     );
+                    self.scope.pop();
+                }
+                Item::When(when_block) => {
+                    let cond = eval_expr_as_bool(
+                        &when_block.condition,
+                        self.symbols,
+                        &self.scope,
+                        &self.aliases,
+                        self.runtime,
+                        self.ctx_references,
+                    )
+                    .unwrap_or(false);
+                    self.collect_patch_defaults_from_items(
+                        &when_block.items,
+                        guard_active && cond,
+                        patch_defaults,
+                    );
+                }
+                Item::Match(match_block) => {
+                    let selected = select_match_case_index(
+                        match_block,
+                        self.symbols,
+                        &self.scope,
+                        &self.aliases,
+                        self.runtime,
+                        self.ctx_references,
+                    );
+                    if let Some(index) = selected {
+                        self.collect_patch_defaults_from_items(
+                            &match_block.cases[index].items,
+                            guard_active,
+                            patch_defaults,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_active_options(
+        &mut self,
+        items: &[Item],
+        guard_active: bool,
+        active: &mut BTreeSet<String>,
+    ) {
+        for item in items {
+            match item {
+                Item::Use(use_stmt) => {
+                    if let Some(alias) = &use_stmt.alias {
+                        self.aliases.insert(alias.value.clone(), use_stmt.path.to_string());
+                    }
+                }
+                Item::Require(_)
+                | Item::Constraint(_)
+                | Item::Enum(_)
+                | Item::Patch(_)
+                | Item::Export(_) => {}
+                Item::Option(option) => {
+                    let option_path = build_full_path(&self.scope, &option.name.value);
+                    if guard_active {
+                        active.insert(option_path);
+                    }
+                }
+                Item::Mod(module) => {
+                    self.scope.push(module.name.value.clone());
+                    self.collect_active_options(&module.items, guard_active, active);
+                    self.scope.pop();
+                }
+                Item::When(when_block) => {
+                    let cond = eval_expr_as_bool(
+                        &when_block.condition,
+                        self.symbols,
+                        &self.scope,
+                        &self.aliases,
+                        self.runtime,
+                        self.ctx_references,
+                    )
+                    .unwrap_or(false);
+                    self.collect_active_options(&when_block.items, guard_active && cond, active);
+                }
+                Item::Match(match_block) => {
+                    let selected = select_match_case_index(
+                        match_block,
+                        self.symbols,
+                        &self.scope,
+                        &self.aliases,
+                        self.runtime,
+                        self.ctx_references,
+                    );
+                    for (index, case) in match_block.cases.iter().enumerate() {
+                        let case_active =
+                            selected.is_some_and(|selected_index| selected_index == index);
+                        self.collect_active_options(
+                            &case.items,
+                            guard_active && case_active,
+                            active,
+                        );
+                    }
                 }
             }
         }
@@ -297,116 +361,17 @@ pub(super) fn evaluate_activation_once(
         .filter(|path| symbols.option_is_always_active(path.as_str()))
         .map(|path| path.as_str().to_string())
         .collect::<BTreeSet<_>>();
-    let mut scope = Vec::new();
-    let mut aliases = HashMap::new();
     let mut ctx_references = BTreeSet::new();
-    collect_active_options(
-        symbols,
-        symbols.schema_items(),
-        &mut scope,
-        &mut aliases,
-        runtime,
-        true,
-        &mut active,
-        &mut ctx_references,
-    );
+    {
+        let mut context = RuntimeContext::new(symbols, runtime, &mut ctx_references);
+        context.collect_active_options(symbols.schema_items(), true, &mut active);
+    }
 
     RuntimeState {
         active,
         values: runtime.values.clone(),
         sources: runtime.sources.clone(),
         ctx_references,
-    }
-}
-
-pub(super) fn collect_active_options(
-    symbols: &SymbolTable,
-    items: &[Item],
-    scope: &mut Vec<String>,
-    aliases: &mut HashMap<String, String>,
-    runtime: &RuntimeState,
-    guard_active: bool,
-    active: &mut BTreeSet<String>,
-    ctx_references: &mut BTreeSet<String>,
-) {
-    for item in items {
-        match item {
-            Item::Use(use_stmt) => {
-                if let Some(alias) = &use_stmt.alias {
-                    aliases.insert(alias.value.clone(), use_stmt.path.to_string());
-                }
-            }
-            Item::Require(_)
-            | Item::Constraint(_)
-            | Item::Enum(_)
-            | Item::Patch(_)
-            | Item::Export(_) => {}
-            Item::Option(option) => {
-                let option_path = build_full_path(scope, &option.name.value);
-                if guard_active {
-                    active.insert(option_path);
-                }
-            }
-            Item::Mod(module) => {
-                scope.push(module.name.value.clone());
-                collect_active_options(
-                    symbols,
-                    &module.items,
-                    scope,
-                    aliases,
-                    runtime,
-                    guard_active,
-                    active,
-                    ctx_references,
-                );
-                scope.pop();
-            }
-            Item::When(when_block) => {
-                let cond = eval_expr_as_bool(
-                    &when_block.condition,
-                    symbols,
-                    scope,
-                    aliases,
-                    runtime,
-                    ctx_references,
-                )
-                .unwrap_or(false);
-                collect_active_options(
-                    symbols,
-                    &when_block.items,
-                    scope,
-                    aliases,
-                    runtime,
-                    guard_active && cond,
-                    active,
-                    ctx_references,
-                );
-            }
-            Item::Match(match_block) => {
-                let selected = select_match_case_index(
-                    match_block,
-                    symbols,
-                    scope,
-                    aliases,
-                    runtime,
-                    ctx_references,
-                );
-                for (index, case) in match_block.cases.iter().enumerate() {
-                    let case_active =
-                        selected.is_some_and(|selected_index| selected_index == index);
-                    collect_active_options(
-                        symbols,
-                        &case.items,
-                        scope,
-                        aliases,
-                        runtime,
-                        guard_active && case_active,
-                        active,
-                        ctx_references,
-                    );
-                }
-            }
-        }
     }
 }
 

@@ -1,6 +1,14 @@
 use super::*;
 use regex::Regex;
 
+pub(super) struct EvalContext<'a> {
+    pub(super) symbols: &'a SymbolTable,
+    pub(super) scope: &'a [String],
+    pub(super) aliases: &'a HashMap<String, String>,
+    pub(super) runtime: &'a RuntimeState,
+    pub(super) ctx_references: &'a mut BTreeSet<String>,
+}
+
 pub(super) fn eval_expr_as_bool(
     expr: &Expr,
     symbols: &SymbolTable,
@@ -57,11 +65,13 @@ pub(super) fn eval_expr(
             *op,
             left,
             right,
-            symbols,
-            scope,
-            aliases,
-            runtime,
-            ctx_references,
+            &mut EvalContext {
+                symbols,
+                scope,
+                aliases,
+                runtime,
+                ctx_references,
+            },
         ),
         Expr::InRange { expr, range, .. } => {
             let value = eval_expr(
@@ -124,57 +134,103 @@ pub(super) fn eval_binary_expr(
     op: BinaryOp,
     left: &Expr,
     right: &Expr,
-    symbols: &SymbolTable,
-    scope: &[String],
-    aliases: &HashMap<String, String>,
-    runtime: &RuntimeState,
-    ctx_references: &mut BTreeSet<String>,
+    context: &mut EvalContext<'_>,
 ) -> Option<ResolvedValue> {
     match op {
         BinaryOp::Or => Some(ResolvedValue::Bool(
-            eval_expr_as_bool(left, symbols, scope, aliases, runtime, ctx_references)?
-                || eval_expr_as_bool(right, symbols, scope, aliases, runtime, ctx_references)?,
+            eval_expr_as_bool(
+                left,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
+            )? || eval_expr_as_bool(
+                right,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
+            )?,
         )),
         BinaryOp::And => Some(ResolvedValue::Bool(
-            eval_expr_as_bool(left, symbols, scope, aliases, runtime, ctx_references)?
-                && eval_expr_as_bool(right, symbols, scope, aliases, runtime, ctx_references)?,
+            eval_expr_as_bool(
+                left,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
+            )? && eval_expr_as_bool(
+                right,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
+            )?,
         )),
         BinaryOp::Eq => {
-            let lhs = eval_expr(left, symbols, scope, aliases, runtime, ctx_references, true)?;
+            let lhs = eval_expr(
+                left,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
+                true,
+            )?;
             let rhs = eval_expr(
                 right,
-                symbols,
-                scope,
-                aliases,
-                runtime,
-                ctx_references,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
                 true,
             )?;
             Some(ResolvedValue::Bool(values_equal(&lhs, &rhs)))
         }
         BinaryOp::Ne => {
-            let lhs = eval_expr(left, symbols, scope, aliases, runtime, ctx_references, true)?;
+            let lhs = eval_expr(
+                left,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
+                true,
+            )?;
             let rhs = eval_expr(
                 right,
-                symbols,
-                scope,
-                aliases,
-                runtime,
-                ctx_references,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
                 true,
             )?;
             Some(ResolvedValue::Bool(!values_equal(&lhs, &rhs)))
         }
         BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-            let lhs = eval_expr(left, symbols, scope, aliases, runtime, ctx_references, true)?
-                .as_int()?;
+            let lhs = eval_expr(
+                left,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
+                true,
+            )?
+            .as_int()?;
             let rhs = eval_expr(
                 right,
-                symbols,
-                scope,
-                aliases,
-                runtime,
-                ctx_references,
+                context.symbols,
+                context.scope,
+                context.aliases,
+                context.runtime,
+                context.ctx_references,
                 true,
             )?
             .as_int()?;
