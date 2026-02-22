@@ -11,6 +11,7 @@ use crate::document::{DocumentKind, DocumentStore};
 use crate::providers::completion;
 use crate::providers::diagnostics::{AnalysisTrigger, analyze_document};
 use crate::providers::document_symbol;
+use crate::providers::formatting;
 use crate::providers::goto_def;
 use crate::providers::hover;
 
@@ -154,6 +155,7 @@ impl LanguageServer for Backend {
                     ..CompletionOptions::default()
                 }),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
             server_info: Some(ServerInfo {
@@ -330,6 +332,42 @@ impl LanguageServer for Backend {
             .find_map(|project| document_symbol::provide(project, &uri))
             .map(DocumentSymbolResponse::Nested);
         Ok(output)
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let uri = params.text_document.uri;
+
+        let state = self.state.lock().await;
+        let kind = state
+            .documents
+            .get_document(&uri)
+            .map(|doc| doc.kind)
+            .unwrap_or_else(|| DocumentKind::from_uri(&uri));
+
+        let source = state
+            .documents
+            .get_document(&uri)
+            .map(|doc| doc.text.as_str())
+            .or_else(|| {
+                state
+                    .documents
+                    .projects
+                    .values()
+                    .find_map(|project| project.schema_docs.get(&uri).map(String::as_str))
+            })
+            .or_else(|| {
+                state
+                    .documents
+                    .projects
+                    .values()
+                    .find_map(|project| project.doc_indexes.get(&uri).map(String::as_str))
+            });
+
+        let Some(source) = source else {
+            return Ok(None);
+        };
+
+        Ok(formatting::provide(source, kind))
     }
 }
 

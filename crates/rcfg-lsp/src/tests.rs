@@ -128,6 +128,62 @@ async fn initialize_reports_capabilities() {
     assert_eq!(capabilities["hoverProvider"], json!(true));
     assert_eq!(capabilities["definitionProvider"], json!(true));
     assert_eq!(capabilities["documentSymbolProvider"], json!(true));
+    assert_eq!(capabilities["documentFormattingProvider"], json!(true));
+}
+
+#[tokio::test]
+async fn formatting_returns_full_document_edit() {
+    let root = fixture_root("lsp_formatting_schema");
+    let schema_path = root.join("schema.rcfg");
+
+    write_file(&schema_path, "mod app{option enabled:bool=true;}\n");
+
+    let schema_text = std::fs::read_to_string(&schema_path).expect("read schema");
+    let schema_uri = as_file_uri(&schema_path);
+
+    let (mut service, mut socket) = LspService::new(Backend::new);
+    initialize(&mut service).await;
+
+    notify_service(
+        &mut service,
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": schema_uri,
+                "languageId": "rcfg",
+                "version": 1,
+                "text": schema_text,
+            }
+        }),
+    )
+    .await;
+
+    let _ = wait_for_publish(&mut socket).await;
+
+    let formatting_response = call_service(
+        &mut service,
+        "textDocument/formatting",
+        2,
+        json!({
+            "textDocument": {"uri": as_file_uri(&schema_path)},
+            "options": {
+                "tabSize": 4,
+                "insertSpaces": true
+            }
+        }),
+    )
+    .await;
+
+    let edits = formatting_response["result"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(edits.len(), 1, "{formatting_response:#?}");
+
+    let expected = "mod app {\n    option enabled: bool = true;\n}\n";
+    assert_eq!(edits[0]["newText"], json!(expected));
+    assert_eq!(edits[0]["range"]["start"]["line"], json!(0));
+    assert_eq!(edits[0]["range"]["start"]["character"], json!(0));
 }
 
 #[tokio::test]
