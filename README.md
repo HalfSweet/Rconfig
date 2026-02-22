@@ -5,7 +5,7 @@ Rconfig 是一个面向配置场景的声明式 DSL 工具链，目标是提供�
 
 当前仓库包含两部分：
 
-- `rcfg`：CLI 工具（`check` / `export` / `dump` / `i18n extract`）
+- `rcfg`：CLI 工具（`check` / `fmt` / `export` / `dump` / `i18n extract` / `menuconfig`）
 - `rcfg-lang`：语言核心库（词法、语法、语义、求解、导出）
 
 ## 快速开始
@@ -16,7 +16,15 @@ Rconfig 是一个面向配置场景的声明式 DSL 工具链，目标是提供�
 rcfg check --schema schema.rcfg --values profile.rcfgv
 ```
 
-### 2) 导出构建产物
+### 2) 格式化 DSL
+
+```bash
+rcfg fmt schema.rcfg profiles/dev.rcfgv
+```
+
+`--check` 用于 CI 校验，`--stdin --kind schema|values` 用于编辑器集成。
+
+### 3) 导出构建产物
 
 ```bash
 rcfg export \
@@ -26,7 +34,7 @@ rcfg export \
   --out-cmake build/config.cmake
 ```
 
-### 3) 导出求解结果与调试信息
+### 4) 导出求解结果与调试信息
 
 ```bash
 rcfg dump \
@@ -37,7 +45,7 @@ rcfg dump \
   --out-diagnostics build/diagnostics.json
 ```
 
-### 4) 生成 i18n 模板
+### 5) 生成 i18n 模板
 
 ```bash
 rcfg i18n extract \
@@ -47,7 +55,7 @@ rcfg i18n extract \
 ```
 
 
-### 5) 交互式配置编辑（menuconfig）
+### 6) 交互式配置编辑（menuconfig）
 
 ```bash
 rcfg menuconfig   --schema schema.rcfg   --values profile.rcfgv

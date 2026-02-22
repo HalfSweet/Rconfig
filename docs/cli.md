@@ -34,6 +34,28 @@ rcfg check --schema schema.rcfg --values profile.rcfgv
 - `--values <PATH>`（必填）
 - `--format human|json`（默认 `human`）
 
+## `rcfg fmt`
+
+格式化 `.rcfg` / `.rcfgv` 文件（幂等，默认原地覆写）。
+
+```bash
+# 原地格式化多个文件
+rcfg fmt schema.rcfg profiles/dev.rcfgv
+
+# 仅检查是否需要格式化（CI 常用）
+rcfg fmt --check schema.rcfg
+
+# 从 stdin 读取并输出到 stdout
+cat schema.rcfg | rcfg fmt --stdin --kind schema
+```
+
+关键参数：
+
+- `<FILE>...`：输入文件路径（后缀需为 `.rcfg` 或 `.rcfgv`）
+- `--check`：仅检查，不覆写；若存在需要格式化的文件返回非 0
+- `--stdin`：从标准输入读取源文本
+- `--kind schema|values`：`--stdin` 模式下必填，指定输入类型
+
 ## `rcfg export`
 
 生成配置导出文件。
