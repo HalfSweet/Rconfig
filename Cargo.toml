@@ -14,7 +14,7 @@ name = "rcfg"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5.31", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 rcfg-app = { path = "crates/rcfg-app" }
 rcfg-lang = { path = "crates/rcfg-lang" }
 rcfg-tui = { path = "crates/rcfg-tui" }
