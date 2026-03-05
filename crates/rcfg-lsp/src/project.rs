@@ -154,7 +154,7 @@ fn load_manifest(manifest_path: &Path) -> Result<ManifestModel, String> {
     let text = fs::read_to_string(&manifest_path)
         .map_err(|err| format!("failed to read manifest {}: {err}", manifest_path.display()))?;
 
-    let value = text.parse::<toml::Value>().map_err(|err| {
+    let value = toml::from_str::<toml::Value>(&text).map_err(|err| {
         format!(
             "failed to parse manifest {}: {err}",
             manifest_path.display()

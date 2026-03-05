@@ -830,9 +830,22 @@ fn dedup_lsp_diagnostics(diagnostics: &mut Vec<Diagnostic>) {
 }
 
 fn same_path(left: &Path, right: &Path) -> bool {
-    let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
-    let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
-    left == right
+    normalized_path_key(left) == normalized_path_key(right)
+}
+
+fn normalized_path_key(path: &Path) -> String {
+    let path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    #[cfg(windows)]
+    {
+        path.to_string_lossy()
+            .replace('\\', "/")
+            .trim_start_matches("//?/")
+            .to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_string_lossy().into_owned()
+    }
 }
 
 #[cfg(test)]
@@ -841,9 +854,10 @@ mod tests {
 
     #[test]
     fn collects_alias_binding_with_scoped_resolution() {
+        let path = std::env::temp_dir().join("alias_scope_schema.rcfg");
         let source = SchemaSource {
-            uri: Url::from_file_path("/tmp/alias_scope_schema.rcfg").expect("uri"),
-            path: PathBuf::from("/tmp/alias_scope_schema.rcfg"),
+            uri: Url::from_file_path(&path).expect("uri"),
+            path,
             text: r#"
 mod app {
   option enabled: bool = true;
@@ -878,7 +892,8 @@ mod mapping_tests {
     #[test]
     fn rcfg_diag_to_lsp_maps_severity_code_source_range_and_related() {
         let source_text = "option enabled: bool = false;\n";
-        let source_uri = Url::from_file_path("/tmp/diag_mapping_schema.rcfg").expect("uri");
+        let source_path = std::env::temp_dir().join("diag_mapping_schema.rcfg");
+        let source_uri = Url::from_file_path(&source_path).expect("uri");
 
         let diag = RcfgDiagnostic::warning("W_TEST", "warn message", rcfg_lang::Span::new(0, 6))
             .with_note("note text")
