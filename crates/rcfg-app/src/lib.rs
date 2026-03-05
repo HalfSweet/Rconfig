@@ -282,8 +282,7 @@ pub fn load_i18n_catalog(path: Option<&Path>) -> Result<Option<I18nCatalog>, Str
 
     let text = fs::read_to_string(path)
         .map_err(|err| format!("failed to read i18n {}: {err}", path.display()))?;
-    let value = text
-        .parse::<toml::Value>()
+    let value = toml::from_str::<toml::Value>(&text)
         .map_err(|err| format!("failed to parse i18n {}: {err}", path.display()))?;
     let Some(strings) = value.get("strings").and_then(toml::Value::as_table) else {
         return Ok(Some(I18nCatalog {
@@ -312,7 +311,7 @@ pub fn load_manifest(path: Option<&Path>) -> Result<Option<ManifestModel>, Strin
 
     let text = fs::read_to_string(&manifest_path)
         .map_err(|err| format!("failed to read manifest {}: {err}", manifest_path.display()))?;
-    let value = text.parse::<toml::Value>().map_err(|err| {
+    let value = toml::from_str::<toml::Value>(&text).map_err(|err| {
         format!(
             "failed to parse manifest {}: {err}",
             manifest_path.display()
